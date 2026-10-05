@@ -1,0 +1,60 @@
+; Exercise Unlock — sound configuration for the lock-screen tile.
+;
+; Copy this file to:
+;   C:\ProgramData\ExerciseUnlock\sounds.ini
+; and drop any WAV files you want to use alongside it in:
+;   C:\ProgramData\ExerciseUnlock\sounds\
+;
+; Edits take effect on the next tile-poll (~500ms); no sign-out
+; or service restart needed.
+;
+; How the lists work:
+;   Each key accepts a comma-separated list of WAV files. When the
+;   event fires, the provider picks ONE at random from the list and
+;   plays it. One file = always that one; three files = ~1/3 chance
+;   each. An entry can be a bare file name (resolved against
+;   `library` below) or an absolute path like D:\mysounds\x.wav.
+;
+; Fallback:
+;   An empty / missing list -> standard Windows MessageBeep for
+;   that event. A listed file that doesn't exist on disk -> same
+;   fallback (so a typo doesn't make the tile silent).
+;
+; First-time setup:
+;   This file needs to be readable by SYSTEM (the account LogonUI
+;   runs as). ProgramData child files inherit from the parent
+;   directory, which may only grant the admin user — in which
+;   case tile beeps silently fall back to MessageBeep. Run
+;     tools\install-sounds.ps1
+;   from an elevated PowerShell once; it creates sounds\, seeds
+;   this file from the sample, and grants SYSTEM read on both.
+;   The service also re-applies the ACL at every startup, so an
+;   out-of-band file edit won't permanently break the sound path.
+;
+; Format:
+;   .wav only (PCM). MP3 is NOT supported by PlaySound. Keep
+;   files short (100-500ms) — long clips overlap on fast reps.
+
+[sounds]
+
+; Directory the bare file names below are resolved against.
+; Default (if blank or key omitted) is the "sounds" subfolder
+; next to this ini.
+library = C:\ProgramData\ExerciseUnlock\sounds
+
+; Fired when the PostureClassifier latches Squat (= "detector
+; sees you in a squat stance, start the rep now").
+squat_ready    = ready1.wav, ready2.wav
+
+; Same, but for push-up stance.
+pushup_ready   = ready_pu.wav
+
+; Fired every time the squat counter increments.
+squat_counted  = ding1.wav, ding2.wav, ding3.wav
+
+; Fired every time the push-up counter increments.
+pushup_counted = ding_pu.wav
+
+; Fired on tile errors: service unreachable, vault missing, or
+; tapping Submit before the earned-time threshold is reached.
+error          = oops.wav

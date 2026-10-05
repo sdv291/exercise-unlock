@@ -1,0 +1,7 @@
+#include "resource.h"
+
+// Custom "PNG" resource type. RC just packs the file bytes in; we decode
+// through WIC at runtime in Credential::GetBitmapValue. Doing it this
+// way (instead of pre-converting to BMP) keeps the icon's alpha channel,
+// which matters on the sign-in screen background.
+IDB_TILE_IMAGE PNG "icon.png"

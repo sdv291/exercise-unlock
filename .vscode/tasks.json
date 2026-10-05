@@ -1,0 +1,69 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build ExerciseUnlockProvider (Release x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/d", "/c",
+          "call \"%VS2022_VCVARS%\" && msbuild ExerciseUnlock.sln /p:Configuration=Release /p:Platform=x64 /m /nologo /v:m"
+        ],
+        "options": {
+          "env": {
+            "VS2022_VCVARS": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+          }
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$msCompile"]
+    },
+    {
+      "label": "Build ExerciseUnlockProvider (Debug x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/d", "/c",
+          "call \"%VS2022_VCVARS%\" && msbuild ExerciseUnlock.sln /p:Configuration=Debug /p:Platform=x64 /m /nologo /v:m"
+        ],
+        "options": {
+          "env": {
+            "VS2022_VCVARS": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+          }
+        }
+      },
+      "problemMatcher": ["$msCompile"]
+    },
+    {
+      "label": "Clean",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/d", "/c",
+          "call \"%VS2022_VCVARS%\" && msbuild ExerciseUnlock.sln /t:Clean /p:Configuration=Release /p:Platform=x64 /nologo /v:m"
+        ],
+        "options": {
+          "env": {
+            "VS2022_VCVARS": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+          }
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}

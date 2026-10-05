@@ -1,0 +1,5 @@
+LIBRARY   "ExerciseUnlockProvider"
+
+EXPORTS
+    DllGetClassObject       PRIVATE
+    DllCanUnloadNow         PRIVATE

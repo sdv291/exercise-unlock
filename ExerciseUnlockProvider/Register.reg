@@ -1,0 +1,17 @@
+Windows Registry Editor Version 5.00
+
+; Register the Exercise Unlock Credential Provider so LogonUI enumerates it.
+; The CLSID here MUST match the value in guids.h (CLSID_ExerciseUnlockProvider).
+
+; COM in-proc server: LogonUI CoCreates by this CLSID and expects to find
+; ExerciseUnlockProvider.dll in System32.
+[HKEY_CLASSES_ROOT\CLSID\{8FDE7B3A-3E5A-4F1C-9C88-6B5F1B7D9E20}]
+@="ExerciseUnlockProvider"
+
+[HKEY_CLASSES_ROOT\CLSID\{8FDE7B3A-3E5A-4F1C-9C88-6B5F1B7D9E20}\InprocServer32]
+@="C:\\Windows\\System32\\ExerciseUnlockProvider.dll"
+"ThreadingModel"="Apartment"
+
+; Advertise as a credential provider so LogonUI actually asks for us.
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{8FDE7B3A-3E5A-4F1C-9C88-6B5F1B7D9E20}]
+@="ExerciseUnlockProvider"

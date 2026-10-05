@@ -1,0 +1,37 @@
+# Visual Studio
+.vs/
+x64/
+x86/
+Debug/
+Release/
+*.user
+*.suo
+*.opendb
+*.db
+*.log
+*.tlog
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.idb
+*.aps
+*.pch
+*.res
+*.tlb
+
+# CMake
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Tools/output
+out/
+bin/
+
+# External deps and model artifacts — download separately, don't commit.
+third_party/
+models/
+tools/dashboard.html

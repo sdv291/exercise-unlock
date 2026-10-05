@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0002}</ProjectGuid>
+    <RootNamespace>ExerciseUnlockService</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>ExerciseUnlockService</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup>
+    <TargetName>ExerciseUnlockService</TargetName>
+    <OutDir>$(SolutionDir)x64\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)x64\$(Configuration)\obj\$(ProjectName)\</IntDir>
+    <IncludePath>$(ProjectDir)..\ExerciseUnlockCommon;$(SolutionDir)third_party\onnxruntime\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)third_party\onnxruntime\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <DisableSpecificWarnings>4100;4324;4201</DisableSpecificWarnings>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(SolutionDir)third_party\onnxruntime\lib\onnxruntime.dll" copy /Y "$(SolutionDir)third_party\onnxruntime\lib\onnxruntime.dll" "$(OutDir)"
+if exist "$(SolutionDir)models\movenet_lightning.onnx" copy /Y "$(SolutionDir)models\movenet_lightning.onnx" "$(OutDir)"
+if exist "$(SolutionDir)models\movenet.data" copy /Y "$(SolutionDir)models\movenet.data" "$(OutDir)"
+if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$(ProjectDir)config.ini" "$(OutDir)"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <DisableSpecificWarnings>4100;4324;4201</DisableSpecificWarnings>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(SolutionDir)third_party\onnxruntime\lib\onnxruntime.dll" copy /Y "$(SolutionDir)third_party\onnxruntime\lib\onnxruntime.dll" "$(OutDir)"
+if exist "$(SolutionDir)models\movenet_lightning.onnx" copy /Y "$(SolutionDir)models\movenet_lightning.onnx" "$(OutDir)"
+if exist "$(SolutionDir)models\movenet.data" copy /Y "$(SolutionDir)models\movenet.data" "$(OutDir)"
+if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$(ProjectDir)config.ini" "$(OutDir)"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="ServiceMain.cpp" />
+    <ClCompile Include="PipeServer.cpp" />
+    <ClCompile Include="State.cpp" />
+    <ClCompile Include="WebcamProbe.cpp" />
+    <ClCompile Include="PoseEstimator.cpp" />
+    <ClCompile Include="SquatDetector.cpp" />
+    <ClCompile Include="PushUpDetector.cpp" />
+    <ClCompile Include="PostureClassifier.cpp" />
+    <ClCompile Include="Config.cpp" />
+    <ClCompile Include="SessionManager.cpp" />
+    <ClCompile Include="ActivityLog.cpp" />
+    <ClCompile Include="PersistentState.cpp" />
+    <ClCompile Include="Log.cpp" />
+    <ClCompile Include="UpdateChecker.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ServiceMain.h" />
+    <ClInclude Include="PipeServer.h" />
+    <ClInclude Include="State.h" />
+    <ClInclude Include="Log.h" />
+    <ClInclude Include="WebcamProbe.h" />
+    <ClInclude Include="PoseEstimator.h" />
+    <ClInclude Include="SquatDetector.h" />
+    <ClInclude Include="PushUpDetector.h" />
+    <ClInclude Include="PostureClassifier.h" />
+    <ClInclude Include="AngleFilter.h" />
+    <ClInclude Include="Config.h" />
+    <ClInclude Include="SessionManager.h" />
+    <ClInclude Include="ActivityLog.h" />
+    <ClInclude Include="PersistentState.h" />
+    <ClInclude Include="UpdateChecker.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
