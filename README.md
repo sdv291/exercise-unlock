@@ -222,8 +222,10 @@ rmdir /S /Q %ProgramData%\ExerciseUnlock
 - Visual Studio 2022+ (Community OK) с workload *Desktop development with C++*
 - MSVC v145 toolset (или адаптируйте `PlatformToolset` в `.vcxproj`)
 - Windows SDK 10/11
-- ONNX Runtime CPU x64 в `third_party/onnxruntime/` (см. `README` для скачивания)
-- MoveNet SinglePose Thunder ONNX в `models/movenet_lightning.onnx`
+- ONNX Runtime 1.30.0 CPU x64: скачать `onnxruntime-win-x64-1.30.0.zip` с
+  https://github.com/microsoft/onnxruntime/releases и распаковать папки
+  `include` и `lib` в `third_party/onnxruntime/`
+- MoveNet SinglePose ONNX → `models/movenet_lightning.onnx` (источник: <откуда вы её скачали>)
 - Внешняя webcam или встроенная — в `[camera]/preferred` подстрока friendly name
 
 ## Лицензия
