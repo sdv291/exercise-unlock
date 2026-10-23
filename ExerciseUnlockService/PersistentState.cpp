@@ -1,6 +1,7 @@
 #include "PersistentState.h"
 #include "State.h"
 #include "Log.h"
+#include "Paths.h"
 
 #include <windows.h>
 #include <shlobj.h>
@@ -17,38 +18,35 @@ namespace ExerciseUnlock::Svc
     //   v1 (16B): magic, version, reserved, pushupCount, squatCount
     //   v2 (20B): + earnedBankSeconds
     //   v3 (36B): + sessionExpiresAtUnix, installStartUnix
+    //   v4 (40B): + dayKey (YYYYMMDD the counters belong to)
     #pragma pack(push, 1)
     struct FileLayout
     {
         uint32_t magic;              // 'EUST'
         uint16_t version;            // 3
-        uint16_t reserved;
+        uint16_t pausedSessionSeconds; // was reserved (0 in old files)
         uint32_t pushupCount;
         uint32_t squatCount;
         uint32_t earnedBankSeconds;  // v2+
         int64_t  sessionExpiresAtUnix; // v3+
         int64_t  installStartUnix;   // v3+
+        int32_t  dayKey;             // v4+
     };
     #pragma pack(pop)
-    static_assert(sizeof(FileLayout) == 36, "unexpected layout");
+    static_assert(sizeof(FileLayout) == 40, "unexpected layout");
 
     static constexpr uint32_t kMagic     = 0x54535545;  // 'EUST' little-endian
-    static constexpr uint16_t kVersion   = 3;
+    static constexpr uint16_t kVersion   = 4;
     static constexpr size_t   kSizeV1    = 16;
     static constexpr size_t   kSizeV2    = 20;
     static constexpr size_t   kSizeV3    = 36;
+    static constexpr size_t   kSizeV4    = 40;
 
     static std::mutex g_ioMx;
 
     static std::wstring ProgramDataDir()
     {
-        wchar_t buf[MAX_PATH]{};
-        if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                       nullptr, SHGFP_TYPE_CURRENT, buf)))
-        {
-            return std::wstring(buf) + L"\\ExerciseUnlock";
-        }
-        return L"C:\\ProgramData\\ExerciseUnlock";
+        return DataDir();   // see Paths.h
     }
 
     static std::wstring StatePath()
@@ -94,13 +92,13 @@ namespace ExerciseUnlock::Svc
         DWORD read = 0;
         BOOL ok = ReadFile(f, &data, sizeof(data), &read, nullptr);
         CloseHandle(f);
-        if (!ok || (read != kSizeV1 && read != kSizeV2 && read != kSizeV3))
+        if (!ok || (read != kSizeV1 && read != kSizeV2 && read != kSizeV3 && read != kSizeV4))
         {
             LogF(L"persistent: short read (%lu) — ignoring", read);
             return;
         }
         if (data.magic != kMagic ||
-            (data.version != 1 && data.version != 2 && data.version != kVersion))
+            (data.version < 1 || data.version > kVersion))
         {
             LogF(L"persistent: bad magic/version (0x%08X v%u) — ignoring",
                  data.magic, data.version);
@@ -110,6 +108,7 @@ namespace ExerciseUnlock::Svc
         auto& st = GetState();
         st.pushUpCount.store(data.pushupCount);
         st.squatCount.store(data.squatCount);
+        st.pausedSessionSeconds.store(data.pausedSessionSeconds);
         if (read >= kSizeV2) st.earnedBankSeconds.store(data.earnedBankSeconds);
         if (read >= kSizeV3)
         {
@@ -122,10 +121,14 @@ namespace ExerciseUnlock::Svc
                 st.sessionExpiresAtUnix.store(data.sessionExpiresAtUnix);
             st.installStartUnix.store(data.installStartUnix);
         }
-        LogF(L"persistent: loaded pushups=%u squats=%u bank=%us "
+        if (read >= kSizeV4)
+        {
+            st.dayKey.store(data.dayKey);
+        }
+        LogF(L"persistent: loaded pushups=%u squats=%u bank=%us paused=%us "
              L"session=%lld install=%lld",
              data.pushupCount, data.squatCount,
-             st.earnedBankSeconds.load(),
+             st.earnedBankSeconds.load(), st.pausedSessionSeconds.load(),
              (long long)st.sessionExpiresAtUnix.load(),
              (long long)st.installStartUnix.load());
     }
@@ -168,9 +171,12 @@ namespace ExerciseUnlock::Svc
         data.version              = kVersion;
         data.pushupCount          = st.pushUpCount.load();
         data.squatCount           = st.squatCount.load();
+        const uint32_t paused     = st.pausedSessionSeconds.load();
+        data.pausedSessionSeconds = static_cast<uint16_t>(paused > 0xFFFF ? 0xFFFF : paused);
         data.earnedBankSeconds    = st.earnedBankSeconds.load();
         data.sessionExpiresAtUnix = st.sessionExpiresAtUnix.load();
         data.installStartUnix     = st.installStartUnix.load();
+        data.dayKey               = st.dayKey.load();
 
         HANDLE f = CreateFileW(StatePath().c_str(),
                                GENERIC_WRITE, 0, sd ? &sa : nullptr,

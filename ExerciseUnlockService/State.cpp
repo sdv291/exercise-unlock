@@ -1,5 +1,7 @@
 #include "State.h"
 #include "Config.h"
+#include "Log.h"
+#include "PersistentState.h"
 
 #include <chrono>
 #include <cstring>
@@ -22,8 +24,38 @@ namespace ExerciseUnlock::Svc
         return g_state.sessionExpiresAtUnix.load() > now;
     }
 
+    static int32_t TodayKey()
+    {
+        SYSTEMTIME lt{};
+        GetLocalTime(&lt);
+        return lt.wYear * 10000 + lt.wMonth * 100 + lt.wDay;
+    }
+
+    void RollOverDayIfNeeded()
+    {
+        const int32_t today = TodayKey();
+        int32_t prev = g_state.dayKey.load();
+        if (prev == today) return;
+        if (!g_state.dayKey.compare_exchange_strong(prev, today)) return;  // another thread did it
+
+        if (prev != 0)
+        {
+            LogF(L"day rollover %d -> %d: reset squats=%u pushups=%u bank=%us paused=%us",
+                 prev, today,
+                 g_state.squatCount.load(), g_state.pushUpCount.load(),
+                 g_state.earnedBankSeconds.load(), g_state.pausedSessionSeconds.load());
+            g_state.squatCount.store(0);
+            g_state.pushUpCount.store(0);
+            g_state.earnedBankSeconds.store(0);
+            g_state.pausedSessionSeconds.store(0);
+        }
+        PersistentState::Save();
+    }
+
     void SnapshotInto(Ipc::Response& out)
     {
+        RollOverDayIfNeeded();
+
         out.magic   = Ipc::kMagic;
         out.version = Ipc::kVersion;
         out.op      = static_cast<uint16_t>(Ipc::Op::GetStatus);
@@ -98,10 +130,18 @@ namespace ExerciseUnlock::Svc
         const float scale = progressionScale();
         const uint32_t puSec = static_cast<uint32_t>(Config::PushupSeconds() * scale);
         const uint32_t sqSec = static_cast<uint32_t>(Config::SquatSeconds()  * scale);
-        const uint32_t earned =
+        const uint32_t paused = g_state.pausedSessionSeconds.load();
+        uint32_t earned =
             g_state.earnedBankSeconds.load() +
+            paused +
             out.pushUpCount * puSec +
             out.squatCount  * sqSec;
+        // Hard cap: never hold more than max_session_seconds of
+        // earned time. Reps above the cap still count on the tile
+        // but add nothing.
+        const int cap = Config::MaxSessionSeconds();
+        if (cap > 0 && earned > static_cast<uint32_t>(cap))
+            earned = static_cast<uint32_t>(cap);
         // Weekend-aware min_unlock — same window logic as schedule.
         const uint32_t minUnlock =
             static_cast<uint32_t>(Config::MinUnlockSecondsToday());
@@ -116,18 +156,20 @@ namespace ExerciseUnlock::Svc
 
         // Grace window: the child's session just ended, give them a
         // short "close your apps" unlock without the earned-time
-        // floor. Only inside the schedule window — grace at 02:00
-        // would be a backdoor around the overnight block.
+        // floor. Allowed past the schedule end too (session cut off
+        // at 20:00) — it's one minute, once: lastSessionEndedUnix is
+        // cleared on use and a grace session's expiry doesn't set it.
         const int64_t nowUnixGrace = duration_cast<seconds>(
             system_clock::now().time_since_epoch()).count();
         const int64_t lastEnd      = g_state.lastSessionEndedUnix.load();
         const int     graceWin     = Config::GraceWindowSeconds();
-        const bool    inGrace      = (inWindow && graceWin > 0 && lastEnd > 0 &&
+        const bool    inGrace      = (graceWin > 0 && lastEnd > 0 &&
                                       (nowUnixGrace - lastEnd) <= graceWin &&
                                       g_state.sessionExpiresAtUnix.load() == 0);
 
-        out.rewardEnough           = (inWindow && earned >= minUnlock) ? 1 :
-                                     (inGrace                        ) ? 1 : 0;
+        // A paused session remainder unlocks even below min_unlock.
+        out.rewardEnough           = (inWindow && (earned >= minUnlock || paused > 0)) ? 1 :
+                                     (inGrace                                        ) ? 1 : 0;
         out.reserved7[0] = out.reserved7[1] = out.reserved7[2] = 0;
 
         const int64_t nowUnix = duration_cast<seconds>(

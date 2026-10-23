@@ -8,7 +8,7 @@ namespace ExerciseUnlock::Svc
     // Plain-text log of user-visible events for parents to review:
     // when unlocks happened, how many reps went into them, when
     // sessions ended. Appends to
-    //   %ProgramData%\ExerciseUnlock\activity.log
+    //   <DataDir>\activity.log
     // Idempotent: file is created on first Append with a restrictive
     // ACL inherited from the vault directory.
     class ActivityLog

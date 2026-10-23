@@ -1,6 +1,7 @@
 #include "Provider.h"
 #include "Credential.h"
 #include "Log.h"
+#include "Paths.h"
 
 #include <new>
 #include <cwchar>
@@ -40,7 +41,7 @@ namespace ExerciseUnlock
     };
 
     // Read a newline-separated list of usernames from
-    // %ProgramData%\ExerciseUnlock\users.allow. When the file
+    // <DataDir>\users.allow (Paths.h). When the file
     // exists and is non-empty, EnumerateLocalUserSids restricts
     // tile creation to those names (case-insensitive). Empty /
     // missing file -> every local user gets a tile (old
@@ -49,12 +50,7 @@ namespace ExerciseUnlock
     static std::vector<std::wstring> ReadAllowedUserNames()
     {
         std::vector<std::wstring> allow;
-        wchar_t buf[MAX_PATH]{};
-        if (!SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                        nullptr, SHGFP_TYPE_CURRENT, buf)))
-            return allow;
-        const std::wstring path =
-            std::wstring(buf) + L"\\ExerciseUnlock\\users.allow";
+        const std::wstring path = DataPath(L"users.allow");
 
         HANDLE f = CreateFileW(path.c_str(), GENERIC_READ,
                                FILE_SHARE_READ | FILE_SHARE_WRITE,

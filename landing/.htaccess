@@ -1,0 +1,11 @@
+# Deny direct access to the request log — it's inside the web root
+# so PHP can append to it, but visitors have no business reading it.
+<Files "requests.log">
+    Require all denied
+</Files>
+
+# Optional: force HTTPS if you're behind Apache without an SSL redirect
+# already in place. Comment out if your host does this at the vhost level.
+# RewriteEngine On
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

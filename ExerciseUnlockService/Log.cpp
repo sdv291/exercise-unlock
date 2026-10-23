@@ -1,4 +1,5 @@
 #include "Log.h"
+#include "Paths.h"
 
 #include <windows.h>
 #include <shlobj.h>
@@ -15,14 +16,14 @@ namespace ExerciseUnlock::Svc
     static std::mutex g_logFileMx;
     static std::mutex g_traceFileMx;
 
-    // Unmistakable canary — writes to a fixed world-writable path,
-    // separate mutex, minimal code path, so we can see whether LogF is
-    // even reaching us when service.log misbehaves.
+    // Unmistakable canary — separate file, separate mutex, minimal
+    // code path, so we can see whether LogF is even reaching us when
+    // service.log misbehaves.
     void LogWriteToTraceFile(const wchar_t* text)
     {
         std::lock_guard<std::mutex> lk(g_traceFileMx);
         HANDLE f = CreateFileW(
-            L"C:\\Users\\Public\\eu-service-trace.log",
+            DataPath(L"service-trace.log").c_str(),
             FILE_APPEND_DATA,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -51,13 +52,7 @@ namespace ExerciseUnlock::Svc
 
     static std::wstring LogFilePath()
     {
-        wchar_t buf[MAX_PATH]{};
-        if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                       nullptr, SHGFP_TYPE_CURRENT, buf)))
-        {
-            return std::wstring(buf) + L"\\ExerciseUnlock\\service.log";
-        }
-        return L"C:\\ProgramData\\ExerciseUnlock\\service.log";
+        return DataPath(L"service.log");
     }
 
     // SD granting SYSTEM + Admins full access. Applied when the log
@@ -142,15 +137,9 @@ namespace ExerciseUnlock::Svc
 
     void LogResetFiles()
     {
-        // Mirror LogWriteToFile's prelude: ensure the ProgramData dir
-        // exists (first-ever start) before trying to touch service.log.
-        wchar_t root[MAX_PATH]{};
-        if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                       nullptr, SHGFP_TYPE_CURRENT, root)))
-        {
-            const std::wstring dir = std::wstring(root) + L"\\ExerciseUnlock";
-            CreateDirectoryW(dir.c_str(), nullptr);
-        }
+        // Ensure the data dir exists (first-ever start) before trying
+        // to touch service.log.
+        EnsureDataDir();
 
         // service.log: delete + recreate with explicit SD so a stale
         // sdv29-only ACL from a previous build is replaced in one shot
@@ -185,12 +174,11 @@ namespace ExerciseUnlock::Svc
             }
         }
 
-        // trace file: just truncate; it lives in C:\Users\Public and
-        // doesn't need the hardened SD (world-writable by design).
+        // trace file: just truncate; it inherits the data dir's ACL.
         {
             std::lock_guard<std::mutex> lk(g_traceFileMx);
             HANDLE f = CreateFileW(
-                L"C:\\Users\\Public\\eu-service-trace.log",
+                DataPath(L"service-trace.log").c_str(),
                 GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -202,22 +190,7 @@ namespace ExerciseUnlock::Svc
     {
         std::lock_guard<std::mutex> lk(g_logFileMx);
 
-        wchar_t root[MAX_PATH]{};
-        if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                       nullptr, SHGFP_TYPE_CURRENT, root)))
-        {
-            const std::wstring dir = std::wstring(root) + L"\\ExerciseUnlock";
-            if (!CreateDirectoryW(dir.c_str(), nullptr))
-            {
-                DWORD e = GetLastError();
-                if (e != ERROR_ALREADY_EXISTS)
-                    TraceFmt(L"[LWF] CreateDirectory('%s') err=%lu", dir.c_str(), e);
-            }
-        }
-        else
-        {
-            TraceFmt(L"[LWF] SHGetFolderPathW failed err=%lu", GetLastError());
-        }
+        EnsureDataDir();
 
         const std::wstring path = LogFilePath();
         DWORD lastErr = 0;

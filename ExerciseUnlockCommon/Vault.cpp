@@ -1,4 +1,5 @@
 #include "Vault.h"
+#include "Paths.h"
 
 #include <windows.h>
 #include <wincrypt.h>
@@ -24,13 +25,7 @@ namespace ExerciseUnlock::Vault
 
     static std::wstring ProgramDataDir()
     {
-        wchar_t buf[MAX_PATH]{};
-        if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                       nullptr, SHGFP_TYPE_CURRENT, buf)))
-        {
-            return std::wstring(buf) + L"\\ExerciseUnlock";
-        }
-        return L"C:\\ProgramData\\ExerciseUnlock";
+        return DataDir();   // see Paths.h
     }
 
     std::wstring VaultPath()
@@ -134,7 +129,14 @@ namespace ExerciseUnlock::Vault
         }
         SecureZeroMemory(w.out.data(), w.out.size());
 
-        HANDLE f = CreateFileW(VaultPath().c_str(),
+        // Write a new file next to the vault and swap it in. Replacing
+        // only needs delete-child rights on the folder, so it still works
+        // when the old vault.dat ended up with an unwritable ACL, and a
+        // crash mid-write can't leave a truncated vault behind. The new
+        // file inherits the folder's SYSTEM + Administrators ACL.
+        const std::wstring path = VaultPath();
+        const std::wstring tmp  = path + L".tmp";
+        HANDLE f = CreateFileW(tmp.c_str(),
                                GENERIC_WRITE, 0, nullptr,
                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (f == INVALID_HANDLE_VALUE) {
@@ -144,18 +146,34 @@ namespace ExerciseUnlock::Vault
         }
         DWORD wrote = 0;
         BOOL ok = WriteFile(f, out.pbData, out.cbData, &wrote, nullptr) &&
-                  wrote == out.cbData;
+                  wrote == out.cbData && FlushFileBuffers(f);
+        DWORD err = ok ? ERROR_SUCCESS : GetLastError();
         CloseHandle(f);
         LocalFree(out.pbData);
-        return ok ? S_OK : HRESULT_FROM_WIN32(GetLastError());
+        if (!ok) { DeleteFileW(tmp.c_str()); return HRESULT_FROM_WIN32(err); }
+
+        // The credential provider may be reading the vault this instant.
+        for (int attempt = 0; ; ++attempt) {
+            if (MoveFileExW(tmp.c_str(), path.c_str(),
+                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                return S_OK;
+            err = GetLastError();
+            if (err != ERROR_SHARING_VIOLATION || attempt == 10) break;
+            Sleep(200);
+        }
+        DeleteFileW(tmp.c_str());
+        return HRESULT_FROM_WIN32(err);
     }
 
     static HRESULT ReadDecrypted(std::vector<Credentials>& out)
     {
         out.clear();
+        // Backup semantics only matter to a caller that enabled
+        // SeBackupPrivilege (ExerciseUnlockAdmin verify): it can then
+        // read a vault whose ACL an older build broke.
         HANDLE f = CreateFileW(VaultPath().c_str(),
                                GENERIC_READ, FILE_SHARE_READ, nullptr,
-                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (f == INVALID_HANDLE_VALUE) return HRESULT_FROM_WIN32(GetLastError());
 
         LARGE_INTEGER size{};

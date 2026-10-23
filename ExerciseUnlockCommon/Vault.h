@@ -16,7 +16,7 @@ namespace ExerciseUnlock::Vault
         std::wstring password;
     };
 
-    // C:\ProgramData\ExerciseUnlock\vault.dat by default. Created on
+    // <DataDir>\vault.dat by default. Created on
     // first Store() with an ACL that only SYSTEM and the local
     // Administrators group can read/write.
     std::wstring VaultPath();

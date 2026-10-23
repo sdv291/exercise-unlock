@@ -3,7 +3,7 @@
 namespace ExerciseUnlock::Svc
 {
     // Small binary snapshot at
-    //   %ProgramData%\ExerciseUnlock\state.dat
+    //   <DataDir>\state.dat
     // that survives service restarts (and reboots) so the child
     // doesn't lose partial-earn progress every time the service
     // stops. Contains just the rep counters — session state is

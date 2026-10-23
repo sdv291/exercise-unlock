@@ -6,6 +6,7 @@
 #include "SessionManager.h"
 #include "PersistentState.h"
 #include "Config.h"
+#include "Paths.h"
 
 #include <sddl.h>
 #include <aclapi.h>
@@ -51,13 +52,15 @@ namespace ExerciseUnlock::Svc
         return true;
     }
 
-    // Fixed path we dump the latest webcam frame to on Op::SaveWebcamFrame.
-    // C:\Users\Public\ inherits an ACL that grants Read to Everyone, so
-    // an unelevated PowerShell running as the child (or the tester) can
-    // pick the file up. The service runs as SYSTEM and can freely write
-    // there.
-    static constexpr wchar_t kWebcamDumpPath[] =
-        L"C:\\Users\\Public\\ExerciseUnlockWebcam.bmp";
+    // Where Op::SaveWebcamFrame dumps the latest frame: the data dir,
+    // readable by SYSTEM + Administrators only (the frame shows the
+    // child). tools\skeleton-viewer.ps1 runs elevated anyway — the
+    // pipe itself is SYSTEM + Admins only.
+    static const std::wstring& WebcamDumpPath()
+    {
+        static const std::wstring p = DataPath(L"webcam.bmp");
+        return p;
+    }
 
     // Dump one BGRA (top-down) frame from State to a 24-bit BMP file at
     // the fixed path above. Returns true on success. Called on
@@ -81,12 +84,12 @@ namespace ExerciseUnlock::Svc
             h = st.latestFrameHeight;
         }
 
-        HANDLE f = CreateFileW(kWebcamDumpPath, GENERIC_WRITE, 0, nullptr,
+        HANDLE f = CreateFileW(WebcamDumpPath().c_str(), GENERIC_WRITE, 0, nullptr,
                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (f == INVALID_HANDLE_VALUE)
         {
             LogF(L"SaveWebcamFrame: CreateFile('%s') failed %lu",
-                 kWebcamDumpPath, GetLastError());
+                 WebcamDumpPath().c_str(), GetLastError());
             return false;
         }
         #pragma pack(push, 1)
@@ -124,7 +127,7 @@ namespace ExerciseUnlock::Svc
             WriteFile(f, row.data(), rowSize, &wrote, nullptr);
         }
         CloseHandle(f);
-        LogF(L"SaveWebcamFrame: wrote %ux%u -> %s", w, h, kWebcamDumpPath);
+        LogF(L"SaveWebcamFrame: wrote %ux%u -> %s", w, h, WebcamDumpPath().c_str());
         return true;
     }
 
@@ -337,7 +340,7 @@ namespace ExerciseUnlock::Svc
         case Op::SaveWebcamFrame:
         {
             // Dumps the most recently captured RGB32 frame to
-            // kWebcamDumpPath. If the camera has never produced a frame
+            // WebcamDumpPath().c_str(). If the camera has never produced a frame
             // (e.g. session is active and camera released, or the
             // device just isn't there) the write is a no-op — a stale
             // file from a previous call is left alone rather than
@@ -363,7 +366,7 @@ namespace ExerciseUnlock::Svc
             }
             const uint32_t seconds = minutes * 60u;
             LogF(L"Grant: parent override — %u minutes", minutes);
-            GetSessionManager().ArmSession(seconds);
+            GetSessionManager().ArmSession(seconds, SessionManager::Kind::Parent);
             // Do NOT zero counters / bank — override is orthogonal
             // to earned time; the child keeps whatever they'd built.
             SnapshotInto(resp);
@@ -372,15 +375,12 @@ namespace ExerciseUnlock::Svc
 
         case Op::StartSession:
         {
-            // Refuse to arm an unlock outside the schedule window.
-            // Bank + counters are left intact so they carry over to
-            // the next allowed period.
-            if (!Config::IsWithinActiveWindowNow())
-            {
-                LogF(L"StartSession refused — outside schedule window");
-                SnapshotInto(resp);
-                break;
-            }
+            // Earned time can only be spent inside the schedule
+            // window (bank + counters carry over to the next allowed
+            // period). The grace minute below is the one exception:
+            // a session cut off at e.g. 20:00 still lets the child
+            // unlock once for a minute to close their apps.
+            const bool inWindow = Config::IsWithinActiveWindowNow();
 
             // Arm countdown for the currently-earned time, THEN zero
             // the earned bank AND the rep counters — everything the
@@ -395,11 +395,14 @@ namespace ExerciseUnlock::Svc
             Response tmp{};
             SnapshotInto(tmp);
             const int   minUnlock = Config::MinUnlockSecondsToday();
-            const bool  earnedOk  = (tmp.rewardEarnedSeconds >= (uint32_t)minUnlock);
+            auto& st = GetState();
+            // A paused session remainder resumes even below min_unlock.
+            const bool  earnedOk  = inWindow &&
+                                    ((tmp.rewardEarnedSeconds >= (uint32_t)minUnlock) ||
+                                     st.pausedSessionSeconds.load() > 0);
             uint32_t grantSec = tmp.rewardEarnedSeconds;
             bool graceGrant = false;
 
-            auto& st = GetState();
             if (!earnedOk)
             {
                 const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
@@ -417,20 +420,25 @@ namespace ExerciseUnlock::Svc
                 }
             }
 
-            if (grantSec == 0)
+            if ((!earnedOk && !graceGrant) || grantSec == 0)
             {
+                LogF(L"StartSession refused — %s",
+                     inWindow ? L"not enough earned" : L"outside schedule window");
                 SnapshotInto(resp);
                 break;
             }
 
             LogF(L"StartSession requested %s=%u sec",
                  graceGrant ? L"grace" : L"earned", grantSec);
-            GetSessionManager().ArmSession(grantSec);
+            GetSessionManager().ArmSession(grantSec,
+                graceGrant ? SessionManager::Kind::Grace
+                           : SessionManager::Kind::Earned);
             if (!graceGrant)
             {
                 st.squatCount.store(0);
                 st.pushUpCount.store(0);
                 st.earnedBankSeconds.store(0);
+                st.pausedSessionSeconds.store(0);   // resumed into this session
             }
             // Clear the grace trigger so a single grace unlock can
             // only be redeemed once per expired session.

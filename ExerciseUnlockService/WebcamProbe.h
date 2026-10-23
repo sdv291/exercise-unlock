@@ -38,11 +38,13 @@ namespace ExerciseUnlock::Svc
 
     private:
         static DWORD WINAPI Thunk(LPVOID param);
+        static DWORD WINAPI WatchdogThunk(LPVOID param);
         void Run();
 
         PoseEstimator* m_pose      = nullptr;
         HANDLE         m_stopEvent = nullptr;
         HANDLE         m_thread    = nullptr;
+        HANDLE         m_watchdog  = nullptr;   // unsticks a stalled camera
         // Auto-reset. Lives for the whole process: the SCM handler may
         // call Wake() at any point, even while the service is stopping.
         std::atomic<HANDLE> m_wakeEvent{ nullptr };

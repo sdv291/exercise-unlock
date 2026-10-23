@@ -43,6 +43,30 @@ namespace ExerciseUnlock::Svc
         return static_cast<int64_t>(end);
     }
 
+    // When today's [schedule] window closes (e.g. 20:00), as a Unix
+    // timestamp. Overnight windows (from > to) end tomorrow if `to`
+    // has already passed today. from == to means "all day" -> end of
+    // the local day.
+    static int64_t EndOfActiveWindowUnix()
+    {
+        const int from = Config::ScheduleFromMinutesToday();
+        const int to   = Config::ScheduleToMinutesToday();
+        if (from == to) return EndOfLocalDayUnix();
+
+        time_t nowT = time(nullptr);
+        struct tm lt{};
+        localtime_s(&lt, &nowT);
+        const int nowMin = lt.tm_hour * 60 + lt.tm_min;
+
+        struct tm e = lt;
+        e.tm_hour  = to / 60;
+        e.tm_min   = to % 60;
+        e.tm_sec   = 0;
+        e.tm_isdst = -1;
+        if (to <= nowMin) e.tm_mday += 1;   // mktime normalizes
+        return static_cast<int64_t>(mktime(&e));
+    }
+
     // Runs a command line in the interactive console user's session,
     // detached. Used for LockWorkStation and for the PowerShell toast
     // one-liner. `cmdLine` is copied into a mutable buffer for the
@@ -177,7 +201,7 @@ namespace ExerciseUnlock::Svc
         LaunchInConsoleSession(L"rundll32.exe user32.dll,LockWorkStation");
     }
 
-    void SessionManager::ArmSession(uint32_t seconds)
+    void SessionManager::ArmSession(uint32_t seconds, Kind kind)
     {
         if (seconds == 0)
         {
@@ -201,15 +225,21 @@ namespace ExerciseUnlock::Svc
 
         const int64_t now      = NowUnix();
         const int64_t requested = now + static_cast<int64_t>(seconds);
-        const int64_t endOfDay = EndOfLocalDayUnix();
+        // Earned time stops when today's schedule window closes —
+        // 60 min earned at 19:30 with active_to=20:00 locks at 20:00.
+        // Grace / parent unlocks only respect end-of-day.
+        const bool    windowCap = (kind == Kind::Earned);
+        const int64_t limit     = windowCap ? EndOfActiveWindowUnix()
+                                            : EndOfLocalDayUnix();
         int64_t expiresAt = requested;
         uint32_t effective = seconds;
-        if (expiresAt > endOfDay)
+        if (expiresAt > limit)
         {
-            expiresAt = endOfDay;
+            expiresAt = limit;
             effective = (expiresAt > now)
                 ? static_cast<uint32_t>(expiresAt - now) : 0u;
-            LogF(L"session: capped to end-of-day — %u sec (requested %u)",
+            LogF(L"session: capped to %s — %u sec (requested %u)",
+                 windowCap ? L"schedule end" : L"end-of-day",
                  effective, seconds);
         }
         if (effective == 0)
@@ -218,11 +248,42 @@ namespace ExerciseUnlock::Svc
             return;
         }
 
+        st.sessionIsGrace.store(kind == Kind::Grace);
         st.sessionExpiresAtUnix.store(expiresAt);
         // Persist so a crash / reboot doesn't grant untimed unlock.
         PersistentState::Save();
         LogF(L"session: armed for %u seconds", effective);
         ActivityLog::UnlockGranted(pu, sq, effective);
+        if (m_wakeEvent) SetEvent(m_wakeEvent);
+    }
+
+    void SessionManager::PauseOnLock()
+    {
+        auto& st = GetState();
+        const int64_t expiresAt = st.sessionExpiresAtUnix.exchange(0);
+        if (expiresAt == 0) return;           // no session running
+
+        const int64_t remaining = expiresAt - NowUnix();
+        if (st.sessionIsGrace.exchange(false))
+        {
+            // Grace minute is close-your-apps only — nothing to save.
+            LogF(L"session: grace unlock ended by lock (%lld s unused)",
+                 static_cast<long long>(remaining));
+        }
+        else if (remaining > 0)
+        {
+            uint32_t paused = st.pausedSessionSeconds.load() +
+                              static_cast<uint32_t>(remaining);
+            const int cap = Config::MaxSessionSeconds();
+            if (cap > 0 && paused > static_cast<uint32_t>(cap))
+                paused = static_cast<uint32_t>(cap);
+            st.pausedSessionSeconds.store(paused);
+            LogF(L"session: paused on lock — %lld s left saved (paused total %u s)",
+                 static_cast<long long>(remaining), paused);
+        }
+        PersistentState::Save();
+        // Countdown thread sees expiresAt == 0 and goes idle — no
+        // warnings / auto-lock while the lock screen is up.
         if (m_wakeEvent) SetEvent(m_wakeEvent);
     }
 
@@ -267,7 +328,10 @@ namespace ExerciseUnlock::Svc
                 // provider's grace-window check (close-your-apps) reads
                 // this to decide whether to grant a short unlock
                 // without the usual earned-time floor.
-                st.lastSessionEndedUnix.store(NowUnix());
+                // A grace session's own expiry must not open another
+                // grace window, or grace unlocks could be chained.
+                if (!st.sessionIsGrace.exchange(false))
+                    st.lastSessionEndedUnix.store(NowUnix());
                 st.squatCount.store(0);
                 st.pushUpCount.store(0);
                 PersistentState::Save();   // clears persisted session

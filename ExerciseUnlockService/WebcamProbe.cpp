@@ -4,9 +4,11 @@
 #include "PushUpDetector.h"
 #include "PostureClassifier.h"
 #include "Config.h"
+#include "PersistentState.h"
 #include "State.h"
 #include "Log.h"
 #include "Protocol.h"
+#include "Paths.h"
 
 #include <mfapi.h>
 #include <mfidl.h>
@@ -14,6 +16,7 @@
 #include <mferror.h>
 #include <wtsapi32.h>
 
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -132,16 +135,12 @@ namespace ExerciseUnlock::Svc
         return v;
     }
 
-    // Should the camera be open right now? Logs every change of the
-    // answer so service.log shows when / why the LED went on and off.
-    // Webcam thread only (s_lastOn isn't synchronized).
-    static bool CameraWanted()
+    // Should the camera be open right now? Pure — no logging, safe from
+    // any thread (the watchdog calls it too).
+    static bool ComputeCameraWanted(ConsoleView& v, const wchar_t*& why)
     {
-        static int s_lastOn = -1;
-
-        const ConsoleView v = QueryConsoleView();
-        bool           on;
-        const wchar_t* why;
+        v = QueryConsoleView();
+        bool on;
         if (IsSessionActive())
         {
             // Reps don't count during a session, and the child may
@@ -164,7 +163,19 @@ namespace ExerciseUnlock::Svc
             on  = false;
             why = L"desktop in use";
         }
+        return on;
+    }
 
+    // Same answer, logging every change so service.log shows when / why
+    // the LED went on and off. Webcam thread only (s_lastOn isn't
+    // synchronized).
+    static bool CameraWanted()
+    {
+        static int s_lastOn = -1;
+
+        ConsoleView    v;
+        const wchar_t* why = L"";
+        const bool     on  = ComputeCameraWanted(v, why);
         if ((on ? 1 : 0) != s_lastOn)
         {
             s_lastOn = on ? 1 : 0;
@@ -421,6 +432,68 @@ namespace ExerciseUnlock::Svc
         return S_OK;
     }
 
+    // ---- capture watchdog ----
+    // A camera can hand over one frame and then stall (seen with an
+    // OsmoPocket3 at the lock screen). The synchronous ReadSample then
+    // blocks forever: no frames, no gate checks, the device stays open
+    // even after unlock. The watchdog shuts the media source down from
+    // outside, which fails the pending ReadSample so the webcam thread
+    // closes the device and reopens it. If even that doesn't free the
+    // thread, the service exits and the SCM restarts it (failure
+    // actions are set by setup).
+    static constexpr uint64_t kStallMs         = 8000;    // open, no frame for this long
+    static constexpr uint64_t kUnwantedStuckMs = 3000;    // not wanted, still open
+    static constexpr uint64_t kHardStuckMs     = 20000;   // after Shutdown, still open
+
+    static std::mutex            g_srcMx;
+    static IMFMediaSource*       g_openSource = nullptr;  // AddRef'd while the device is open
+    static std::atomic<uint64_t> g_lastFrameMs{ 0 };
+
+    static void NoteFrame() { g_lastFrameMs.store(GetTickCount64()); }
+
+    static void WatchdogLoop(HANDLE stopEvent)
+    {
+        uint64_t unwantedSince = 0;
+        uint64_t firedAt = 0;
+        while (WaitForSingleObject(stopEvent, 1000) == WAIT_TIMEOUT)
+        {
+            ConsoleView    v;
+            const wchar_t* why = L"";
+            const bool     wanted = ComputeCameraWanted(v, why);
+            const uint64_t now = GetTickCount64();
+
+            std::lock_guard<std::mutex> lk(g_srcMx);
+            if (!g_openSource)
+            {
+                unwantedSince = 0;
+                firedAt = 0;
+                continue;
+            }
+            if (firedAt != 0)
+            {
+                if (now - firedAt > kHardStuckMs)
+                {
+                    LogF(L"watchdog: webcam thread still stuck %llu ms after shutdown - restarting the service",
+                         static_cast<unsigned long long>(now - firedAt));
+                    PersistentState::Save();
+                    TerminateProcess(GetCurrentProcess(), 3);
+                }
+                continue;
+            }
+            unwantedSince = wanted ? 0 : (unwantedSince ? unwantedSince : now);
+            const uint64_t idle = now - g_lastFrameMs.load();
+            if (idle > kStallMs)
+                LogF(L"watchdog: no frame for %llu ms - resetting the camera",
+                     static_cast<unsigned long long>(idle));
+            else if (unwantedSince && now - unwantedSince > kUnwantedStuckMs)
+                LogF(L"watchdog: camera not wanted (%s) but capture is stuck - releasing it", why);
+            else
+                continue;
+            firedAt = now;
+            g_openSource->Shutdown();
+        }
+    }
+
     // Read N frames just to prove the pipeline is alive. Publishes
     // WebcamState / frame count / dims into State along the way.
     static HRESULT ProbeStreamingReader(IMFSourceReader* reader,
@@ -443,14 +516,28 @@ namespace ExerciseUnlock::Svc
             hr = reader->ReadSample(
                 static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
                 0, &streamIdx, &flags, &ts, &sample);
-            if (FAILED(hr)) break;
+            if (FAILED(hr))
+            {
+                LogF(L"probe: ReadSample failed 0x%08X", static_cast<unsigned>(hr));
+                break;
+            }
 
             if (flags & MF_SOURCE_READERF_ENDOFSTREAM)
             {
                 if (sample) sample->Release();
                 break;
             }
-            if (sample)
+            if (!sample)
+            {
+                static int s_emptyLogged = 0;
+                if (s_emptyLogged < 10)
+                {
+                    ++s_emptyLogged;
+                    LogF(L"probe: ReadSample returned no sample (flags=0x%lX)", flags);
+                }
+                continue;
+            }
+            NoteFrame();
             {
                 if (width == 0)
                 {
@@ -591,6 +678,7 @@ namespace ExerciseUnlock::Svc
                 }
             }
             if (!sample) continue;
+            NoteFrame();
 
             IMFMediaBuffer* buffer = nullptr;
             if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buffer)) && buffer)
@@ -627,12 +715,12 @@ namespace ExerciseUnlock::Svc
                         // (open in Paint / any image viewer). BMP layout
                         // is bottom-up 24bpp, so we downgrade from BGRA
                         // and flip vertically while writing.
-                        wchar_t path[MAX_PATH];
-                        if (GetModuleFileNameW(nullptr, path, MAX_PATH))
+                        // Data dir, not next to the exe: the frame shows
+                        // whoever stood at the lock screen, and Program
+                        // Files is readable by every user.
+                        const std::wstring dumpPath = DataPath(L"debug_frame.bmp");
+                        const wchar_t* path = dumpPath.c_str();
                         {
-                            wchar_t* slash = wcsrchr(path, L'\\');
-                            if (slash) *(slash + 1) = 0;
-                            wcscat_s(path, L"debug_frame.bmp");
                             HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr,
                                                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
                             if (f != INVALID_HANDLE_VALUE)
@@ -822,6 +910,14 @@ namespace ExerciseUnlock::Svc
                 continue;
             }
 
+            // Hand the open device to the watchdog (see WatchdogLoop).
+            {
+                std::lock_guard<std::mutex> lk(g_srcMx);
+                source->AddRef();
+                g_openSource = source;
+                NoteFrame();   // the stall clock starts at open
+            }
+
             hr = ProbeStreamingReader(reader, m_stopEvent);
             HRESULT streamHr = E_FAIL;
             if (SUCCEEDED(hr) && m_pose && m_pose->IsLoaded())
@@ -843,6 +939,11 @@ namespace ExerciseUnlock::Svc
                 streamHr = S_FALSE;
             }
 
+            {
+                std::lock_guard<std::mutex> lk(g_srcMx);
+                if (g_openSource) g_openSource->Release();
+                g_openSource = nullptr;
+            }
             CloseCamera(source, reader);
             ClearLiveState();
 
@@ -885,13 +986,38 @@ namespace ExerciseUnlock::Svc
         {
             LogF(L"webcam CreateThread failed: %lu", GetLastError());
         }
+        m_watchdog = CreateThread(nullptr, 0, WatchdogThunk, this, 0, nullptr);
+    }
+
+    DWORD WINAPI WebcamProbe::WatchdogThunk(LPVOID param)
+    {
+        WatchdogLoop(static_cast<WebcamProbe*>(param)->m_stopEvent);
+        return 0;
     }
 
     void WebcamProbe::Join()
     {
+        // Service stop: a ReadSample stuck on a stalled camera would hold
+        // the stop forever (setup then can't replace the exe). Shut the
+        // device down so the read returns, and don't wait more than a
+        // few seconds for the webcam thread either way.
+        {
+            std::lock_guard<std::mutex> lk(g_srcMx);
+            if (g_openSource) g_openSource->Shutdown();
+        }
+        if (m_watchdog)
+        {
+            WaitForSingleObject(m_watchdog, INFINITE);   // exits on the stop event
+            CloseHandle(m_watchdog);
+            m_watchdog = nullptr;
+        }
         if (m_thread)
         {
-            WaitForSingleObject(m_thread, INFINITE);
+            if (WaitForSingleObject(m_thread, 8000) == WAIT_TIMEOUT)
+            {
+                LogF(L"webcam thread did not stop within 8 s - leaving it behind");
+                return;   // process exit takes it down
+            }
             CloseHandle(m_thread);
             m_thread = nullptr;
         }

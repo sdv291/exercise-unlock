@@ -35,3 +35,9 @@ bin/
 third_party/
 models/
 tools/dashboard.html
+# Promo video build output (narration cache, mix, rendered mp4)
+promo/out/
+
+# Installer build output
+installer/build/
+installer/out/

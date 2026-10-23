@@ -1,4 +1,5 @@
 #include "SoundConfig.h"
+#include "Paths.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -30,13 +31,7 @@ namespace ExerciseUnlock
 
     std::wstring SoundConfig::ConfigPath()
     {
-        wchar_t buf[MAX_PATH]{};
-        if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                       nullptr, SHGFP_TYPE_CURRENT, buf)))
-        {
-            return std::wstring(buf) + L"\\ExerciseUnlock\\sounds.ini";
-        }
-        return L"C:\\ProgramData\\ExerciseUnlock\\sounds.ini";
+        return DataPath(L"sounds.ini");
     }
 
     // True for chars we eat silently around and inside an entry —
@@ -143,12 +138,7 @@ namespace ExerciseUnlock
         if (lib.empty())
         {
             // Default: the "sounds" folder next to the ini.
-            wchar_t buf[MAX_PATH]{};
-            if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                           nullptr, SHGFP_TYPE_CURRENT, buf)))
-            {
-                lib = std::wstring(buf) + L"\\ExerciseUnlock\\sounds";
-            }
+            lib = DataPath(L"sounds");
         }
         m_library = lib;
 

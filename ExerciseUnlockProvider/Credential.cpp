@@ -33,6 +33,12 @@ namespace ExerciseUnlock
     // ACL inheritance leaving sounds.ini sdv29-only. ServiceMain
     // now fixes that at startup, so the direct path is the whole
     // story.
+    //
+    // SND_SYSTEM: play in the "System Sounds" audio session — the same
+    // one MessageBeep uses. Without it the WAV goes to LogonUI.exe's own
+    // app session, whose per-app volume Windows remembers separately;
+    // once that ended up at zero the tile reported "PlaySound ok" while
+    // nothing was audible, yet the MessageBeep fallbacks still were.
     static void PlayWavOrFallback(const std::wstring& path, UINT fallbackSound)
     {
         const bool haveFile = !path.empty() && PathFileExistsW(path.c_str());
@@ -41,7 +47,7 @@ namespace ExerciseUnlock
         if (haveFile)
         {
             if (PlaySoundW(path.c_str(), nullptr,
-                           SND_FILENAME | SND_ASYNC | SND_NODEFAULT))
+                           SND_FILENAME | SND_ASYNC | SND_NODEFAULT | SND_SYSTEM))
             {
                 LogF(L"PlayWavOrFallback: PlaySound ok");
                 return;

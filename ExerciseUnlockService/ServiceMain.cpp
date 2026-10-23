@@ -10,6 +10,7 @@
 #include "State.h"
 #include "Log.h"
 #include "Protocol.h"
+#include "Paths.h"
 
 #include <aclapi.h>
 #include <sddl.h>
@@ -187,11 +188,7 @@ namespace ExerciseUnlock::Svc
     // comment in RunUntilStopped for the full rationale.
     static void EnsureSoundsAccessible()
     {
-        wchar_t buf[MAX_PATH]{};
-        if (!SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                        nullptr, SHGFP_TYPE_CURRENT, buf)))
-            return;
-        const std::wstring base = std::wstring(buf) + L"\\ExerciseUnlock";
+        const std::wstring base = DataDir();
         AddSystemReadAcl(base + L"\\sounds.ini",   /*inherit=*/false);
         AddSystemReadAcl(base + L"\\sounds",       /*inherit=*/true);
         // users.allow restricts which local accounts get a tile.
@@ -208,9 +205,12 @@ namespace ExerciseUnlock::Svc
         // Reuse SnapshotInto's math to keep the two paths consistent.
         Ipc::Response snap{};
         SnapshotInto(snap);
-        const uint32_t existingBank = st.earnedBankSeconds.load();
-        const uint32_t add = (snap.rewardEarnedSeconds > existingBank)
-            ? (snap.rewardEarnedSeconds - existingBank) : 0;
+        // rewardEarnedSeconds = bank + paused + reps, already capped
+        // at max_session_seconds, so the bank can never exceed the cap.
+        const uint32_t existing = st.earnedBankSeconds.load() +
+                                  st.pausedSessionSeconds.load();
+        const uint32_t add = (snap.rewardEarnedSeconds > existing)
+            ? (snap.rewardEarnedSeconds - existing) : 0;
         st.earnedBankSeconds.fetch_add(add);
         st.pushUpCount.store(0);
         st.squatCount.store(0);
@@ -241,6 +241,9 @@ namespace ExerciseUnlock::Svc
             LogF(L"session change: eventType=%lu", eventType);
             if (eventType == WTS_SESSION_LOCK)
             {
+                // Stop the unlock countdown first: remaining time is
+                // parked, not burned, while the lock screen is up.
+                g_session.PauseOnLock();
                 BankCurrentReps();
             }
             // Lock / unlock / logon / logoff / console switch can all
@@ -269,6 +272,7 @@ namespace ExerciseUnlock::Svc
         LogF(L"RunUntilStopped: <- Config::Load");
         LogF(L"RunUntilStopped: -> PersistentState::Load");
         PersistentState::Load();    // restore rep counters from last run
+        RollOverDayIfNeeded();      // yesterday's earned time doesn't carry over
         LogF(L"RunUntilStopped: <- PersistentState::Load");
         LogF(L"RunUntilStopped: -> InitPose");
         InitPose();                 // one-shot at start; result lives in State

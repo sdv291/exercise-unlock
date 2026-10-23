@@ -1,0 +1,765 @@
+<!doctype html>
+<!--
+  Exercise Unlock — promo animation.
+  Every frame is a pure function of time: render(t) rebuilds the SVG.
+  build.py injects the narration timeline (setTimeline) and grabs frames;
+  opened directly in a browser it plays a silent preview with a scrubber.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Exercise Unlock — promo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800;900&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; background: #11131f; overflow: hidden; }
+  svg { display: block; }
+  #ui { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 12px; align-items: center;
+        padding: 10px 16px; background: rgba(0,0,0,.55); color: #fff; font: 14px system-ui; }
+  #ui input { flex: 1; }
+  body.render #ui { display: none; }
+</style>
+</head>
+<body>
+<svg id="stage" xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"></svg>
+<div id="ui"><button id="play">Pause</button><input id="scrub" type="range" min="0" max="1000" value="0"><span id="clock">0.0</span></div>
+<script>
+'use strict';
+// ---------------------------------------------------------------- basics
+const C = { ink:'#1F2547', muted:'#5F6690', indigo:'#5B6CFF', coral:'#FF7A59', mint:'#1FBF9C',
+            yellow:'#FFC53D', pink:'#FF6FAE', red:'#FF4D6A', neon:'#2BFF88', line:'#E3E7FF' };
+const SK = { skin:'#F6C7A1', skinD:'#E2A982', hair:'#5B3A29', shirt:'#FF7A59', shirtD:'#E0603F',
+             shorts:'#4256D6', shortsD:'#2F3FAE', shoe:'#1F2547', shoeD:'#151933' };
+const LEN = { shin:92, thigh:98, torso:116, ua:64, fa:60, R:46, neck:10 };
+const FONT_B = "Nunito, 'Segoe UI', sans-serif";
+let FONT_H = "Fredoka, 'Segoe UI', sans-serif", H_WEIGHT = 700;
+
+// ---------------------------------------------------------------- on-screen text
+// Fredoka has no Cyrillic, so the Russian cut sets headings in Nunito Black.
+const I18N = {
+  en: {
+    font: 'Fredoka', hw: 700,
+    tagline: 'Move first. Then play.',
+    kid: 'Kid', squats: 'Squats', pushups: 'Push-ups', earned: 'Earned', ready: 'Ready to unlock', exercise: 'Exercise to unlock',
+    drawing: 'My drawing — not saved', save: 'Save', left: s => `0:${s} left`,
+    toast: 'Computer will lock in 5 minutes', toastW: 640, toastSize: 29,
+    sitting: 'Hours of sitting, no breaks', hm: (h, m) => `${h} h ${m} min`, posture: 'Posture', energy: 'Energy', focus: 'Focus',
+    how: c => `Your new password: <tspan fill="${c}">exercise</tspan>`, plusMin: n => `+${n} min`,
+    ai: 'On-device AI counts every real rep', knee: a => `knee ${a}°`, counter: n => `Squats: ${n}`, counterW: 320,
+    shallow: "Too shallow — doesn't count", shallowW: 520,
+    earn: 'Every rep earns screen time', earnedTime: 'Earned time', unlockFrom: 'unlock from 10 min', readyW: 380, readySize: 32, max: 'Max: 1 hour', maxW: 330,
+    hour: 'One session lasts 60 minutes, max', minutesLeft: 'minutes left', newSession: 'new session!',
+    cycle: c => `A movement break <tspan fill="${c}">every hour</tspan>`, play: '60 min play', move: 'Move!', repeat: 'repeat, every session',
+    health: 'Healthy kids move every day', min: 'min', act: 'of physical activity a day, on average', who: 'WHO guideline for kids aged 5–17',
+    cardSize: 40, cards: [['Strong muscles', '&amp; bones'], ['Better mood', '&amp; energy'], ['Sharper', 'focus'], ['Less time', 'sitting still']],
+    parents: 'Parents stay in control', allowed: 'Allowed hours', extra: '+1 minute to save &amp; close apps', extraW: 600, extraSize: 32,
+    resets1: 'Earned time resets', resets2: 'every day — no hoarding', resetsSize: 34,
+    privacy: 'Private by design', rows: ['Camera turns on only at the lock screen', 'All processing stays on your PC', 'Nothing is sent to the cloud'], rowSize: 36,
+    outro: 'More movement. Healthier habits. One rep at a time.', outroSize: 42, oss: 'Free &amp; open source · github.com/sdv291/exercise-unlock', ossW: 900,
+  },
+  ru: {
+    font: 'Nunito', hw: 900,
+    tagline: 'Сначала движение — потом игра.',
+    kid: 'Саша', squats: 'Приседания', pushups: 'Отжимания', earned: 'Время', ready: 'Можно разблокировать', exercise: 'Сделай упражнения',
+    drawing: 'Мой рисунок — не сохранён', save: 'Сохранить', left: s => `осталось 0:${s}`,
+    toast: 'Компьютер заблокируется через 5 минут', toastW: 730, toastSize: 25,
+    sitting: 'Часы сидения без перерыва', hm: (h, m) => `${h} ч ${m} мин`, posture: 'Осанка', energy: 'Энергия', focus: 'Внимание',
+    how: c => `Новый пароль — <tspan fill="${c}">упражнения</tspan>`, plusMin: n => `+${n} мин`,
+    ai: 'ИИ засчитывает только честные повторы', knee: a => `колено ${a}°`, counter: n => `Приседания: ${n}`, counterW: 430,
+    shallow: 'Мелко — не засчитано', shallowW: 470,
+    earn: 'Каждый повтор — это экранное время', earnedTime: 'Заработано', unlockFrom: 'разблокировка с 10 мин', readyW: 480, readySize: 28, max: 'Максимум: 1 час', maxW: 390,
+    hour: 'Одна сессия — максимум 60 минут', minutesLeft: 'минут осталось', newSession: 'новая сессия!',
+    cycle: c => `Перерыв на движение <tspan fill="${c}">каждый час</tspan>`, play: '60 мин игры', move: 'Двигайся!', repeat: 'и так — каждую сессию',
+    health: 'Здоровые дети двигаются каждый день', min: 'мин', act: 'физической активности в день, в среднем', who: 'Рекомендация ВОЗ для детей 5–17 лет',
+    cardSize: 34, cards: [['Крепкие мышцы', 'и кости'], ['Настроение', 'и энергия'], ['Внимание', 'и концентрация'], ['Меньше', 'сидения']],
+    parents: 'Родители всё контролируют', allowed: 'Разрешённое время', extra: '+1 минута, чтобы сохранить и закрыть', extraW: 700, extraSize: 30,
+    resets1: 'Время обнуляется', resets2: 'каждый день — копить нельзя', resetsSize: 30,
+    privacy: 'Приватность прежде всего', rows: ['Камера работает только при блокировке', 'Вся обработка — на вашем компьютере', 'Ничего не уходит в облако'], rowSize: 32,
+    outro: 'Больше движения. Полезные привычки. Повтор за повтором.', outroSize: 36, oss: 'Бесплатно, открытый код · github.com/sdv291/exercise-unlock', ossW: 1000,
+  },
+  uk: {
+    font: 'Nunito', hw: 900,
+    tagline: 'Спершу рух — потім гра.',
+    kid: 'Саша', squats: 'Присідання', pushups: 'Віджимання', earned: 'Час', ready: 'Можна розблокувати', exercise: 'Зроби вправи',
+    drawing: 'Мій малюнок — не збережено', save: 'Зберегти', left: s => `залишилось 0:${s}`,
+    toast: 'Комп’ютер заблокується через 5 хвилин', toastW: 730, toastSize: 25,
+    sitting: 'Години сидіння без перерви', hm: (h, m) => `${h} год ${m} хв`, posture: 'Постава', energy: 'Енергія', focus: 'Увага',
+    how: c => `Новий пароль — <tspan fill="${c}">вправи</tspan>`, plusMin: n => `+${n} хв`,
+    ai: 'ШІ зараховує лише чесні повтори', knee: a => `коліно ${a}°`, counter: n => `Присідання: ${n}`, counterW: 430,
+    shallow: 'Мілко — не зараховано', shallowW: 480,
+    earn: 'Кожен повтор — це екранний час', earnedTime: 'Зароблено', unlockFrom: 'розблокування з 10 хв', readyW: 480, readySize: 28, max: 'Максимум: 1 година', maxW: 480,
+    hour: 'Одна сесія — максимум 60 хвилин', minutesLeft: 'хв залишилось', newSession: 'нова сесія!',
+    cycle: c => `Перерва на рух <tspan fill="${c}">щогодини</tspan>`, play: '60 хв гри', move: 'Рухайся!', repeat: 'і так — кожну сесію',
+    health: 'Здорові діти рухаються щодня', min: 'хв', act: 'фізичної активності щодня, у середньому', who: 'Рекомендація ВООЗ для дітей 5–17 років',
+    cardSize: 34, cards: [['Міцні м’язи', 'і кістки'], ['Настрій', 'та енергія'], ['Увага', 'й концентрація'], ['Менше', 'сидіння']],
+    parents: 'Батьки все контролюють', allowed: 'Дозволений час', extra: '+1 хвилина, щоб зберегти й закрити', extraW: 700, extraSize: 30,
+    resets1: 'Час обнуляється', resets2: 'щодня — накопичувати не можна', resetsSize: 30,
+    privacy: 'Приватність понад усе', rows: ['Камера працює лише під час блокування', 'Уся обробка — на вашому комп’ютері', 'Нічого не йде в хмару'], rowSize: 32,
+    outro: 'Більше руху. Корисні звички. Повтор за повтором.', outroSize: 36, oss: 'Безкоштовно, відкритий код · github.com/sdv291/exercise-unlock', ossW: 1000,
+  },
+};
+let L = I18N.en;
+function setLang(lang) {
+  L = I18N[lang] || I18N.en;
+  FONT_H = `${L.font}, 'Segoe UI', sans-serif`;
+  H_WEIGHT = L.hw;
+}
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp  = (a, b, t) => a + (b - a) * t;
+const seg   = (t, a, b) => clamp((t - a) / (b - a));
+const eOut  = t => 1 - Math.pow(1 - t, 3);
+const eIO   = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const eBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const f  = v => Math.round(v * 10) / 10;
+const f3 = v => Math.round(v * 1000) / 1000;
+const rnd = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const mid = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k });
+// angle convention: degrees from "up", clockwise positive (90 = right, 180 = down)
+const mv = (p, len, a) => { const r = a * Math.PI / 180; return { x: p.x + len * Math.sin(r), y: p.y - len * Math.cos(r) }; };
+const hex = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16));
+const mix = (a, b, k) => { const A = hex(a), B = hex(b); return 'rgb(' + A.map((v, i) => Math.round(lerp(v, B[i], k))).join(',') + ')'; };
+
+// ---------------------------------------------------------------- timeline
+let TL = null;
+function defaultTimeline() {
+  const d = [['intro',6],['sitting',10.5],['how',10.5],['ai',10.5],['earn',11],['hour',18],
+             ['health',20],['parents',14],['privacy',10],['outro',8]];
+  let t = 0;
+  return { scenes: d.map(([id, dur]) => { const s = { id, start: t, dur, cues: [] }; t += dur; return s; }), total: t };
+}
+function setTimeline(tl) { TL = tl; }
+// Scene-local time of a named moment in the narration (build.py maps each
+// mark to the word that says it, per language); fallback for the preview.
+function mark(S, name, fallback) { return S.marks && S.marks[name] != null ? S.marks[name] : fallback; }
+
+// ---------------------------------------------------------------- primitives
+function txt(x, y, s, size, o = {}) {
+  const { fill = C.ink, anchor = 'middle', family = FONT_H, op = 1 } = o;
+  const weight = o.weight ?? (family === FONT_H ? H_WEIGHT : 700);
+  return `<text x="${f(x)}" y="${f(y)}" font-family="${family}" font-weight="${weight}" font-size="${size}" fill="${fill}" text-anchor="${anchor}"${op < 1 ? ` opacity="${f3(op)}"` : ''}>${s}</text>`;
+}
+function ln(a, b, w, c, extra = '') {
+  return `<line x1="${f(a.x)}" y1="${f(a.y)}" x2="${f(b.x)}" y2="${f(b.y)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round" ${extra}/>`;
+}
+function ci(p, r, c, extra = '') { return `<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${r}" fill="${c}" ${extra}/>`; }
+function pop(lt, t0, cx, cy, inner, dur = .45) {
+  const k = eBack(seg(lt, t0, t0 + dur));
+  if (lt < t0) return '';
+  return `<g transform="translate(${f(cx)} ${f(cy)}) scale(${f3(k)}) translate(${f(-cx)} ${f(-cy)})" opacity="${f3(seg(lt, t0, t0 + dur * .5))}">${inner}</g>`;
+}
+function headline(lt, html, o = {}) {
+  const { x = 960, y = 150, size = 70, delay = .1, anchor = 'middle', fill = C.ink } = o;
+  const a = eOut(seg(lt, delay, delay + .55));
+  return `<g opacity="${f3(a)}" transform="translate(0 ${f((1 - a) * 26)})">${txt(x, y, html, size, { anchor, fill })}</g>`;
+}
+function floor(y, op = .55) { return `<rect x="0" y="${y}" width="1920" height="${1080 - y}" fill="#DCE4FF" opacity="${op}"/>`; }
+function shadowEl(x, y, rx, ry) { return `<ellipse cx="${f(x)}" cy="${f(y)}" rx="${f(rx)}" ry="${f(ry)}" fill="${C.ink}" opacity=".12"/>`; }
+function card(x, y, w, h, r = 28, fill = '#fff') {
+  return `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" rx="${r}" fill="${fill}" filter="url(#shadow)"/>`;
+}
+
+// ---------------------------------------------------------------- icons (100x100 box)
+const ICONS = {
+  heart: c => `<path d="M50 88 C22 68 6 52 6 32 C6 17 17 7 31 7 C40 7 46 12 50 19 C54 12 60 7 69 7 C83 7 94 17 94 32 C94 52 78 68 50 88Z" fill="${c}"/>`,
+  dumbbell: c => `<rect x="22" y="45" width="56" height="10" rx="5" fill="${c}"/><rect x="12" y="24" width="14" height="52" rx="6" fill="${c}"/><rect x="74" y="24" width="14" height="52" rx="6" fill="${c}"/><rect x="2" y="34" width="12" height="32" rx="5" fill="${c}"/><rect x="86" y="34" width="12" height="32" rx="5" fill="${c}"/>`,
+  bulb: c => `<circle cx="50" cy="40" r="27" fill="${c}"/><rect x="38" y="62" width="24" height="12" rx="3" fill="#9AA0C4"/><rect x="41" y="76" width="18" height="9" rx="4" fill="#9AA0C4"/>` +
+             [[-38, 0], [38, 0], [-28, -28], [28, -28], [0, -40]].map(([dx, dy]) => ln({ x: 50 + dx * .85, y: 40 + dy * .85 }, { x: 50 + dx * 1.1, y: 40 + dy * 1.1 }, 6, c)).join(''),
+  sun: c => `<circle cx="50" cy="50" r="27" fill="${c}"/>` +
+            Array.from({ length: 8 }, (_, i) => { const a = i * 45; return ln(mv({ x: 50, y: 50 }, 34, a), mv({ x: 50, y: 50 }, 45, a), 7, c); }).join('') +
+            `<circle cx="41" cy="45" r="3.5" fill="${C.ink}"/><circle cx="59" cy="45" r="3.5" fill="${C.ink}"/><path d="M39 56 Q50 66 61 56" stroke="${C.ink}" stroke-width="4" fill="none" stroke-linecap="round"/>`,
+  clock: c => `<circle cx="50" cy="50" r="40" fill="#fff" stroke="${c}" stroke-width="9"/>` + ln({ x: 50, y: 50 }, { x: 50, y: 26 }, 7, c) + ln({ x: 50, y: 50 }, { x: 68, y: 58 }, 7, c),
+  shield: c => `<path d="M50 4 L90 18 V46 C90 72 72 88 50 97 C28 88 10 72 10 46 V18Z" fill="${c}"/><path d="M31 50 L45 64 L71 36" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>`,
+  camera: c => `<rect x="6" y="28" width="88" height="60" rx="14" fill="${c}"/><rect x="33" y="17" width="34" height="18" rx="6" fill="${c}"/><circle cx="50" cy="58" r="20" fill="#fff"/><circle cx="50" cy="58" r="10" fill="${c}"/>`,
+  pc: c => `<rect x="8" y="12" width="84" height="58" rx="9" fill="${c}"/><rect x="16" y="20" width="68" height="42" rx="4" fill="#fff" opacity=".92"/><path d="M38 34 L50 42 L62 34" stroke="${c}" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><rect x="41" y="70" width="18" height="12" fill="${c}"/><rect x="27" y="82" width="46" height="8" rx="4" fill="${c}"/>`,
+  cloudOff: c => `<path d="M28 76 H74 C86 76 94 67 94 56 C94 45 85 37 74 37 C71 24 60 16 47 16 C33 16 22 26 21 40 C12 42 6 50 6 58 C6 68 16 76 28 76Z" fill="${c}"/>` + ln({ x: 16, y: 14 }, { x: 86, y: 88 }, 10, C.red),
+  spine: c => `<path d="M50 6 C28 26 72 48 50 68 C40 78 44 88 50 96" stroke="${c}" stroke-width="11" fill="none" stroke-linecap="round"/>` +
+              [[44, 20], [52, 38], [56, 54], [46, 74]].map(([x, y]) => `<rect x="${x - 13}" y="${y - 4}" width="26" height="8" rx="4" fill="${c}" opacity=".55"/>`).join(''),
+  battery: c => `<rect x="6" y="28" width="78" height="44" rx="9" fill="none" stroke="${c}" stroke-width="8"/><rect x="86" y="40" width="9" height="20" rx="3" fill="${c}"/><rect x="16" y="38" width="16" height="24" rx="3" fill="${C.red}"/>`,
+  zzz: c => `<text x="6" y="88" font-family="${FONT_H}" font-weight="700" font-size="58" fill="${c}">z</text><text x="44" y="60" font-family="${FONT_H}" font-weight="700" font-size="42" fill="${c}">z</text><text x="72" y="34" font-family="${FONT_H}" font-weight="700" font-size="30" fill="${c}">z</text>`,
+  warn: c => `<path d="M50 8 L94 88 H6Z" fill="${c}" stroke="${c}" stroke-width="8" stroke-linejoin="round"/><rect x="45" y="34" width="10" height="30" rx="5" fill="${C.ink}"/><circle cx="50" cy="75" r="6" fill="${C.ink}"/>`,
+  check: c => `<circle cx="50" cy="50" r="46" fill="${c}"/><path d="M28 52 L44 67 L73 36" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>`,
+  cross: c => `<circle cx="50" cy="50" r="46" fill="${c}"/>` + ln({ x: 33, y: 33 }, { x: 67, y: 67 }, 10, '#fff') + ln({ x: 67, y: 33 }, { x: 33, y: 67 }, 10, '#fff'),
+  calendar: c => `<rect x="8" y="16" width="84" height="76" rx="12" fill="#fff" stroke="${c}" stroke-width="7"/><rect x="8" y="16" width="84" height="22" rx="10" fill="${c}"/><rect x="26" y="6" width="9" height="20" rx="4" fill="${C.ink}"/><rect x="65" y="6" width="9" height="20" rx="4" fill="${C.ink}"/>`,
+  timer: c => `<circle cx="50" cy="56" r="36" fill="#fff" stroke="${c}" stroke-width="9"/><rect x="42" y="6" width="16" height="10" rx="4" fill="${c}"/>` + ln({ x: 50, y: 56 }, { x: 50, y: 34 }, 7, c) + ln({ x: 50, y: 56 }, { x: 64, y: 64 }, 7, c),
+  play: c => `<rect x="6" y="14" width="88" height="62" rx="10" fill="${c}"/><path d="M42 30 L64 45 L42 60Z" fill="#fff"/><rect x="30" y="80" width="40" height="8" rx="4" fill="${c}"/>`,
+};
+function icon(name, cx, cy, size, c) {
+  return `<g transform="translate(${f(cx - size / 2)} ${f(cy - size / 2)}) scale(${f3(size / 100)})">${ICONS[name](c)}</g>`;
+}
+function padlock(cx, cy, size, k, c = '#fff', hole = C.indigo) {
+  const lift = (1 - k) * 22;
+  return `<g transform="translate(${f(cx - size / 2)} ${f(cy - size / 2)}) scale(${f3(size / 100)})">
+    <path d="M32 ${f(50 - lift)} V${f(34 - lift)} A18 18 0 0 1 68 ${f(34 - lift)} V${f(50 - lift)}" fill="none" stroke="${c}" stroke-width="10" stroke-linecap="round"/>
+    <rect x="16" y="44" width="68" height="50" rx="13" fill="${c}"/>
+    <circle cx="50" cy="64" r="8" fill="${hole}"/><rect x="46.5" y="66" width="7" height="15" rx="3" fill="${hole}"/></g>`;
+}
+function logo(size) {
+  return `<g transform="scale(${f3(size / 100)}) translate(-50 -50)">
+    <rect width="100" height="100" rx="26" fill="url(#gLogo)"/>
+    <path d="M35 46 V34 A15 15 0 0 1 65 34 V46" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+    <rect x="23" y="43" width="54" height="42" rx="11" fill="#fff"/>
+    <g transform="translate(33 52) scale(.34)">${ICONS.dumbbell(C.indigo)}</g></g>`;
+}
+
+// ---------------------------------------------------------------- the kid (side view, facing right)
+function poseSquat(k) {                       // k: 0 standing .. 1 deep squat
+  const ankle = { x: 0, y: -16 };
+  const knee = mv(ankle, LEN.shin, 32 * k);
+  const hip = mv(knee, LEN.thigh, -82 * k);
+  const sh = mv(hip, LEN.torso, 36 * k);
+  const el = mv(sh, LEN.ua, lerp(172, 95, k));
+  const wr = mv(el, LEN.fa, lerp(165, 88, k));
+  const headA = lerp(0, 16, k);
+  return { ankle, knee, hip, sh, el, wr, head: mv(sh, LEN.neck + LEN.R, headA), headA, foot: { x: 30, y: -14 } };
+}
+function poseCheer(k, bounce = 0) {           // arms up
+  const p = poseSquat(bounce);
+  p.el = mv(p.sh, LEN.ua, lerp(172, 52, k));          // front arm: forward-up, clear of the face
+  p.wr = mv(p.el, LEN.fa, lerp(165, 4, k));
+  p.back = { el: mv(p.sh, LEN.ua, lerp(172, -38, k)) };  // back arm: up and behind
+  p.back.wr = mv(p.back.el, LEN.fa, lerp(165, -12, k));
+  return p;
+}
+function ik(a, b, l1, l2, side) {
+  const dx = b.x - a.x, dy = b.y - a.y; const d = Math.min(Math.hypot(dx, dy), l1 + l2 - .01);
+  const A = Math.acos(clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1));
+  const t = Math.atan2(dy, dx) + side * A;
+  return { x: a.x + l1 * Math.cos(t), y: a.y + l1 * Math.sin(t) };
+}
+function posePush(k) {                        // k: 0 arms straight .. 1 chest down
+  const arm = LEN.ua + LEN.fa, ah = 16, body = LEN.shin + LEN.thigh + LEN.torso;
+  const h = lerp(arm + 4, 60, k);
+  const a = 90 - Math.asin(clamp((h - ah) / body)) * 180 / Math.PI;
+  const ankle = { x: 0, y: -ah };
+  const knee = mv(ankle, LEN.shin, a), hip = mv(knee, LEN.thigh, a), sh = mv(hip, LEN.torso, a);
+  const wr = { x: sh.x + 22, y: -12 };
+  const el = ik(sh, wr, LEN.ua, LEN.fa, 1);
+  return { ankle, knee, hip, sh, el, wr, head: mv(sh, LEN.neck + LEN.R, a - 12), headA: a - 30, foot: { x: -3, y: -4 } };
+}
+function poseSit(s) {                         // origin = hip on the seat, s: slouch 0..1
+  const hip = { x: 0, y: 0 };
+  const knee = mv(hip, LEN.thigh, 92), ankle = mv(knee, LEN.shin, 178);
+  const sh = mv(hip, LEN.torso, lerp(6, 30, s));
+  const el = mv(sh, LEN.ua, lerp(150, 140, s)), wr = mv(el, LEN.fa, lerp(92, 98, s));
+  const headA = lerp(4, 38, s);
+  return { ankle, knee, hip, sh, el, wr, head: mv(sh, LEN.neck + LEN.R, lerp(4, 34, s)), headA, foot: { x: ankle.x + 30, y: ankle.y + 2 } };
+}
+function headSvg(c, tilt, expr, R = LEN.R) {
+  const ex = R * .42, ey = -R * .06;
+  let face = '';
+  if (expr === 'tired') {
+    face += `<path d="M${f(ex - 9)} ${f(ey)} Q${f(ex)} ${f(ey + 6)} ${f(ex + 9)} ${f(ey)}" stroke="${C.ink}" stroke-width="4" fill="none" stroke-linecap="round"/>`;
+    face += `<path d="M${f(ex - 11)} ${f(ey - 10)} L${f(ex + 9)} ${f(ey - 6)}" stroke="${SK.hair}" stroke-width="4" stroke-linecap="round"/>`;
+    face += `<path d="M${f(R * .3)} ${f(R * .5)} L${f(R * .68)} ${f(R * .45)}" stroke="${C.ink}" stroke-width="4" stroke-linecap="round"/>`;
+  } else if (expr === 'joy') {
+    face += `<path d="M${f(ex - 8)} ${f(ey + 3)} Q${f(ex)} ${f(ey - 9)} ${f(ex + 8)} ${f(ey + 3)}" stroke="${C.ink}" stroke-width="4.5" fill="none" stroke-linecap="round"/>`;
+    face += `<path d="M${f(R * .16)} ${f(R * .3)} Q${f(R * .5)} ${f(R * .88)} ${f(R * .88)} ${f(R * .24)} Z" fill="#B8344F"/>`;
+  } else if (expr === 'effort') {
+    face += `<ellipse cx="${f(ex)}" cy="${f(ey)}" rx="5" ry="6.5" fill="${C.ink}"/>`;
+    face += `<path d="M${f(ex - 10)} ${f(ey - 12)} L${f(ex + 9)} ${f(ey - 8)}" stroke="${SK.hair}" stroke-width="4" stroke-linecap="round"/>`;
+    face += `<ellipse cx="${f(R * .56)}" cy="${f(R * .46)}" rx="7" ry="6" fill="#B8344F"/>`;
+    face += `<path d="M${f(R * .82)} ${f(-R * .72)} q6 10 0 14 q-6 -4 0 -14z" fill="#7CC6FF"/>`;
+  } else {
+    face += `<ellipse cx="${f(ex)}" cy="${f(ey)}" rx="5.5" ry="7.5" fill="${C.ink}"/>`;
+    face += `<path d="M${f(R * .22)} ${f(R * .36)} Q${f(R * .5)} ${f(R * .68)} ${f(R * .8)} ${f(R * .3)}" stroke="${C.ink}" stroke-width="4.5" fill="none" stroke-linecap="round"/>`;
+  }
+  if (expr !== 'tired') face += `<circle cx="${f(R * .28)}" cy="${f(R * .26)}" r="${f(R * .18)}" fill="${C.pink}" opacity=".35"/>`;
+  return `<g transform="translate(${f(c.x)} ${f(c.y)}) rotate(${f(tilt)})">
+    <circle cx="-6" cy="-6" r="${R + 5}" fill="${SK.hair}"/>
+    <circle r="${R}" fill="${SK.skin}"/>
+    <circle cx="${f(R * .97)}" cy="${f(R * .08)}" r="${f(R * .15)}" fill="${SK.skin}"/>
+    <path d="M${f(-R * .98)} ${f(-R * .2)} Q${f(-R * .45)} ${f(-R * 1.32)} ${f(R * .92)} ${f(-R * .6)} Q${f(R * .32)} ${f(-R * .5)} ${f(-R * .05)} ${f(-R * .32)} Q${f(-R * .45)} ${f(-R * .15)} ${f(-R * .98)} ${f(-R * .2)}Z" fill="${SK.hair}"/>
+    <circle cx="${f(-R * .2)}" cy="${f(R * .12)}" r="${f(R * .22)}" fill="${SK.skin}" stroke="${SK.skinD}" stroke-width="3"/>
+    ${face}</g>`;
+}
+function skeletonSvg(J, a) {
+  const bones = [[J.sh, J.el], [J.el, J.wr], [J.sh, J.hip], [J.hip, J.knee], [J.knee, J.ankle], [J.sh, J.head]];
+  let g = bones.map(b => ln(b[0], b[1], 6, C.neon)).join('');
+  g += [J.head, J.sh, J.el, J.wr, J.hip, J.knee, J.ankle].map(p => ci(p, 9, '#fff', `stroke="${C.neon}" stroke-width="5"`)).join('');
+  return `<g opacity="${f3(a)}" filter="url(#glow)">${g}</g>`;
+}
+function drawKid(J, x, y, s, expr = 'happy', o = {}) {
+  const d = { x: -11, y: -4 }, B = p => ({ x: p.x + d.x, y: p.y + d.y });
+  let g = '';
+  const be = J.back ? J.back.el : J.el, bw = J.back ? J.back.wr : J.wr;
+  g += ln(B(be), B(bw), 23, SK.skinD) + ci(B(bw), 12.5, SK.skinD) + ln(B(J.sh), B(be), 26, SK.skinD) + ln(B(J.sh), mid(B(J.sh), B(be), .5), 31, SK.shirtD);
+  g += ln(B(J.knee), B(J.ankle), 29, SK.skinD) + ln(B(J.ankle), B(J.foot), 23, SK.shoeD);
+  g += ln(B(J.hip), B(J.knee), 31, SK.skinD) + ln(B(J.hip), mid(B(J.hip), B(J.knee), .55), 41, SK.shortsD);
+  g += ln(J.knee, J.ankle, 29, SK.skin) + ln(J.ankle, J.foot, 23, SK.shoe);
+  g += ln(J.hip, J.knee, 31, SK.skin) + ln(J.hip, mid(J.hip, J.knee, .55), 43, SK.shorts) + ci(J.hip, 25, SK.shorts);
+  g += ln(mid(J.hip, J.sh, .15), J.sh, 60, SK.shirt);
+  g += ln(J.sh, mid(J.sh, J.head, .6), 20, SK.skin) + headSvg(J.head, J.headA, expr);
+  g += ln(J.el, J.wr, 23, SK.skin) + ci(J.wr, 12.5, SK.skin) + ln(J.sh, J.el, 26, SK.skin) + ln(J.sh, mid(J.sh, J.el, .5), 31, SK.shirt);
+  if (o.skel > 0) g += skeletonSvg(J, o.skel);
+  return `<g transform="translate(${f(x)} ${f(y)}) scale(${f3(s)})">${g}</g>`;
+}
+function angleAt(a, b, c) {
+  const v1 = { x: a.x - b.x, y: a.y - b.y }, v2 = { x: c.x - b.x, y: c.y - b.y };
+  return Math.acos(clamp((v1.x * v2.x + v1.y * v2.y) / (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y)), -1, 1)) * 180 / Math.PI;
+}
+
+// ---------------------------------------------------------------- reps
+const DONE = .97;
+const tcOf = r => r.s + r.d * DONE;
+function repsFill(t0, t1, period, depth = 1) { const a = []; for (let s = t0; s + period * .92 <= t1; s += period) a.push({ s, d: period * .92, depth }); return a; }
+function repK(reps, lt) {
+  for (const r of reps) if (lt >= r.s && lt <= r.s + r.d) return r.depth * (1 - Math.cos(2 * Math.PI * (lt - r.s) / r.d)) / 2;
+  return 0;
+}
+function repCount(reps, lt) { let n = 0; for (const r of reps) if (r.counts !== false && lt >= tcOf(r)) n++; return n; }
+function lastCount(reps, lt) { let t = null; for (const r of reps) if (r.counts !== false && lt >= tcOf(r)) t = tcOf(r); return t; }
+function floaters(reps, lt, x, y, label, color = C.mint) {
+  let g = '';
+  for (const r of reps) {
+    if (r.counts === false) continue;
+    const p = (lt - tcOf(r)) / .9;
+    if (p < 0 || p > 1) continue;
+    g += txt(x, y - 70 * eOut(p), label, 48, { fill: color, op: 1 - p * p });
+  }
+  return g;
+}
+
+// ---------------------------------------------------------------- devices & widgets
+function laptop(cx, cy, w, content, o = {}) {
+  const h = w * 520 / 840, x = cx - w / 2, y = cy - h / 2, b = w * .022, by = y + h + b;
+  return `<g filter="url(#shadow)">
+    <rect x="${f(x - b)}" y="${f(y - b)}" width="${f(w + 2 * b)}" height="${f(h + 2 * b)}" rx="${f(b * 1.4)}" fill="#262A44"/>
+    <path d="M${f(x - b - w * .05)} ${f(by)} H${f(x + w + b + w * .05)} L${f(x + w + b + w * .09)} ${f(by + w * .034)} Q${f(x + w + b + w * .09)} ${f(by + w * .046)} ${f(x + w + b + w * .07)} ${f(by + w * .046)} H${f(x - b - w * .07)} Q${f(x - b - w * .09)} ${f(by + w * .046)} ${f(x - b - w * .09)} ${f(by + w * .034)} Z" fill="#CBD0EA"/>
+    <rect x="${f(cx - w * .08)}" y="${f(by)}" width="${f(w * .16)}" height="${f(w * .012)}" rx="3" fill="#A9AFCF"/></g>
+    <svg x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" viewBox="0 0 840 520" preserveAspectRatio="none">${content}</svg>
+    <circle cx="${f(cx)}" cy="${f(y - b / 2)}" r="${f(Math.max(3, b * .24))}" fill="${o.camOn ? C.neon : '#5A6082'}"/>`;
+}
+function camPoint(cx, cy, w) { const h = w * 520 / 840; return { x: cx, y: cy - h / 2 - w * .011 }; }
+function scrLock(o) {
+  let g = `<rect width="840" height="520" fill="url(#gWall)"/><circle cx="110" cy="440" r="170" fill="#fff" opacity=".08"/><circle cx="760" cy="70" r="130" fill="#fff" opacity=".08"/>`;
+  g += txt(420, 98, o.time || '19:30', 70, { fill: '#fff', weight: 600 });
+  g += `<circle cx="420" cy="192" r="54" fill="#fff" opacity=".92"/>` + headSvg({ x: 414, y: 200 }, 0, 'happy', 32);
+  g += txt(420, 280, L.kid, 30, { fill: '#fff', family: FONT_B, weight: 800 });
+  const pwA = o.pwA ?? 0;
+  if (pwA > 0) {
+    g += `<g opacity="${f3(pwA)}"><rect x="262" y="304" width="316" height="56" rx="14" fill="#fff" opacity=".93"/>`;
+    for (let i = 0; i < 7; i++) g += `<circle cx="${296 + i * 28}" cy="332" r="7" fill="#8A90B0"/>`;
+    g += `<rect x="526" y="311" width="42" height="42" rx="10" fill="${C.indigo}"/><path d="M538 332 H556 M549 324 L557 332 L549 340" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (o.strike > 0) g += ln({ x: 245, y: 332 }, { x: 245 + 350 * o.strike, y: 332 }, 9, C.red);
+    g += `</g>`;
+  }
+  const tk = o.tileK ?? 0;
+  if (tk > 0) {
+    let t = `<rect x="240" y="298" width="360" height="200" rx="22" fill="#fff" opacity=".96"/>`;
+    const row = (y, ic, label, val) => icon(ic, 290, y - 10, 34, C.indigo) + txt(322, y, label, 28, { anchor: 'start', family: FONT_B, weight: 800 }) + txt(560, y, val, 30, { anchor: 'end', fill: C.indigo });
+    t += row(340, 'dumbbell', L.squats, o.sq ?? 0) + row(384, 'dumbbell', L.pushups, o.pu ?? 0);
+    t += `<rect x="270" y="402" width="300" height="3" rx="1.5" fill="${C.line}"/>`;
+    t += txt(272, 438, L.earned, 26, { anchor: 'start', family: FONT_B, weight: 800, fill: C.muted }) + txt(568, 438, `${o.earned || '0:00'} / 10:00`, 26, { anchor: 'end', family: FONT_B, weight: 800 });
+    t += o.ready ? `<rect x="285" y="452" width="270" height="34" rx="17" fill="${C.mint}"/>` + txt(420, 476, L.ready, 20, { fill: '#fff', family: FONT_B, weight: 800 })
+                 : txt(420, 476, L.exercise, 20, { fill: C.muted, family: FONT_B, weight: 800 });
+    g += `<g transform="translate(420 398) scale(${f3(tk)}) translate(-420 -398)">${t}</g>`;
+  }
+  if (o.lockK != null) g += `<rect width="840" height="520" fill="#151933" opacity="${f3(.35 * o.lockK)}"/>` + padlock(420, 400, 110, o.lockK, '#fff', C.indigo);
+  return g;
+}
+function scrGame(lt) {
+  let g = `<rect width="840" height="520" fill="url(#gGame)"/><circle cx="720" cy="86" r="44" fill="#FFE27A"/>
+    <ellipse cx="190" cy="470" rx="330" ry="120" fill="#7BD88F"/><ellipse cx="660" cy="495" rx="300" ry="110" fill="#5CC97A"/><rect y="440" width="840" height="80" fill="#4CB86B"/>`;
+  for (let i = 0; i < 5; i++) { const x = ((i * 210 - lt * 170) % 1050 + 1050) % 1050 - 60; g += `<circle cx="${f(x)}" cy="${240 + (i % 2) * 50}" r="17" fill="#FFC53D" stroke="#E0A400" stroke-width="5"/>`; }
+  const j = Math.abs(Math.sin(lt * 3.2)) * 110;
+  g += `<rect x="350" y="${f(352 - j)}" width="88" height="88" rx="26" fill="${C.coral}"/><circle cx="404" cy="${f(384 - j)}" r="8" fill="#fff"/><circle cx="406" cy="${f(384 - j)}" r="4" fill="${C.ink}"/>`;
+  g += txt(30, 56, '★ 1250', 34, { anchor: 'start', fill: '#fff' });
+  return g;
+}
+function scrDesktop(lt, secs) {
+  let g = `<rect width="840" height="520" fill="#4F6BEA"/><circle cx="700" cy="420" r="260" fill="#fff" opacity=".07"/>`;
+  g += `<rect x="150" y="80" width="540" height="330" rx="16" fill="#fff"/><rect x="150" y="80" width="540" height="46" rx="16" fill="#E9ECFB"/><rect x="150" y="110" width="540" height="16" fill="#E9ECFB"/>`;
+  g += txt(176, 112, L.drawing, 22, { anchor: 'start', family: FONT_B, weight: 800, fill: C.muted });
+  g += `<circle cx="300" cy="250" r="70" fill="${C.yellow}"/><rect x="400" y="190" width="200" height="120" rx="14" fill="${C.pink}" opacity=".8"/>`;
+  g += `<rect x="500" y="350" width="160" height="44" rx="12" fill="${C.mint}"/>` + txt(580, 380, L.save, 24, { fill: '#fff' });
+  g += `<rect x="270" y="440" width="300" height="56" rx="28" fill="${C.ink}" opacity=".85"/>` + txt(420, 478, L.left(String(secs).padStart(2, '0')), 28, { fill: '#fff' });
+  return g;
+}
+function toast(x, y) {
+  return `<g transform="translate(${f(x)} ${f(y)})"><rect width="${L.toastW}" height="132" rx="24" fill="#fff" filter="url(#shadow)"/><rect width="14" height="132" rx="7" fill="${C.yellow}"/>
+    ${icon('warn', 72, 66, 72, C.yellow)}${txt(132, 56, 'Exercise Unlock', 32, { anchor: 'start' })}${txt(132, 100, L.toast, L.toastSize, { anchor: 'start', family: FONT_B, weight: 800, fill: C.muted })}</g>`;
+}
+function pill(cx, cy, label, o = {}) {
+  const { w = 200, h = 64, fill = '#fff', color = C.ink, size = 30, ic = null, icColor = C.mint } = o;
+  let g = `<rect x="${f(cx - w / 2)}" y="${f(cy - h / 2)}" width="${w}" height="${h}" rx="${h / 2}" fill="${fill}" filter="url(#shadow)"/>`;
+  if (ic) g += icon(ic, cx - w / 2 + h / 2 + 4, cy, h * .62, icColor) + txt(cx + h * .32, cy + size * .35, label, size, { fill: color });
+  else g += txt(cx, cy + size * .35, label, size, { fill: color });
+  return g;
+}
+function clockSvg(cx, cy, r, hours) {
+  let g = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" stroke="${C.ink}" stroke-width="10" filter="url(#shadow)"/>`;
+  for (let i = 0; i < 12; i++) g += ln(mv({ x: cx, y: cy }, r * .74, i * 30), mv({ x: cx, y: cy }, r * .86, i * 30), i % 3 ? 4 : 7, C.ink);
+  g += ln({ x: cx, y: cy }, mv({ x: cx, y: cy }, r * .5, (4 + hours) * 30), 10, C.ink);
+  g += ln({ x: cx, y: cy }, mv({ x: cx, y: cy }, r * .74, hours * 360), 7, C.coral) + ci({ x: cx, y: cy }, 9, C.ink);
+  return g;
+}
+function badge(x, y, w, h, ic, label, col) {
+  return card(x, y, w, h, h / 2) + `<circle cx="${x + h / 2}" cy="${y + h / 2}" r="${h * .38}" fill="${col}" opacity=".16"/>` + icon(ic, x + h / 2, y + h / 2, h * .5, col) +
+         txt(x + h + 8, y + h * .64, label, 38, { anchor: 'start' }) +
+         `<path d="M${x + w - 52} ${y + h * .32} V${y + h * .68} M${x + w - 64} ${y + h * .55} L${x + w - 52} ${y + h * .7} L${x + w - 40} ${y + h * .55}" stroke="${C.red}" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+}
+function ring(cx, cy, r, frac, col) {
+  const circ = 2 * Math.PI * r;
+  let g = `<circle cx="${cx}" cy="${cy}" r="${r + 34}" fill="#fff" filter="url(#shadow)"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${C.line}" stroke-width="36"/>`;
+  if (frac > .003) g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${col}" stroke-width="36" stroke-linecap="round" stroke-dasharray="${f(frac * circ)} ${f(circ)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+  return g;
+}
+function confetti(lt, n = 70, a = 1) {
+  const cols = [C.coral, C.indigo, C.mint, C.yellow, C.pink];
+  let g = '';
+  for (let i = 0; i < n; i++) {
+    const x = rnd(i) * 1920 + Math.sin(lt * 1.5 + i) * 30, sp = 160 + rnd(i + 99) * 220;
+    const y = ((rnd(i + 7) * 1300 + lt * sp) % 1300) - 120;
+    g += `<rect x="-9" y="-5" width="18" height="10" rx="3" fill="${cols[i % 5]}" transform="translate(${f(x)} ${f(y)}) rotate(${f(lt * 160 * (rnd(i + 3) - .5) * 2 + i * 37)})"/>`;
+  }
+  return `<g opacity="${f3(a)}">${g}</g>`;
+}
+
+// ---------------------------------------------------------------- scene plans (shared by render + sfx)
+const PLAN = {
+  how: S => { const tPw = mark(S, 'password', 4.2), tSq = mark(S, 'squats', 6.6); return { tPw, tSq, reps: repsFill(tSq + .3, S.dur + .2, 1.7) }; },
+  ai: S => {
+    const tAI = mark(S, 'ai', 1.8), tH = mark(S, 'half', S.dur * .62);
+    const reps = repsFill(.6, tH - .1, 1.7);
+    reps.push({ s: tH, d: 1.5, depth: .3, counts: false });
+    reps.push(...repsFill(tH + 1.7, S.dur + .3, 1.7));
+    return { tAI, tH, reps };
+  },
+  earn: S => { const reps = []; for (let i = 0; i < 10; i++) reps.push({ s: .7 + i * .95, d: .9, depth: 1 }); return { reps }; },
+  hour: S => {
+    const t60 = mark(S, 'sixty', 2.4), tFive = mark(S, 'five', 5.6), tLock = mark(S, 'locks', 8.6);
+    const tBack = mark(S, 'back', 10.6), tGuar = mark(S, 'guar', 12.6);
+    return { t60, tFive, tLock, tBack, tGuar, reps: repsFill(tBack - .3, tBack - .3 + 1.6 * 2, 1.6) };
+  },
+  health: S => ({ tW: mark(S, 'who', 2.2),
+                  cards: [mark(S, 'muscles', 9), mark(S, 'mood', 10.8), mark(S, 'focus', 12.4), mark(S, 'sitting', 14.2)],
+                  reps: repsFill(.8, S.dur + .3, 1.8) }),
+  parents: S => ({ tLock: mark(S, 'locks', 4.6), tExtra: mark(S, 'extra', 6.6), tReset: mark(S, 'resets', 9.6) }),
+  privacy: S => ({ rows: [mark(S, 'camera', 2.2), mark(S, 'processing', 4.4), mark(S, 'nothing', 6.4)] }),
+};
+
+// ---------------------------------------------------------------- scenes
+function sIntro(lt) {
+  let g = `<ellipse cx="960" cy="1140" rx="1300" ry="240" fill="#DCE4FF" opacity=".75"/>`;
+  const k = eBack(seg(lt, .1, .75));
+  g += `<g transform="translate(960 320) scale(${f3(k)}) rotate(${f(Math.sin(lt * 1.8) * 3)})">${logo(250)}</g>`;
+  [['heart', C.pink, -290, -40], ['dumbbell', C.indigo, 290, -90], ['bulb', C.yellow, 300, 100], ['sun', C.coral, -300, 130]].forEach(([n, c, dx, dy], i) => {
+    const y = 320 + dy + Math.sin(lt * 2.2 + i * 1.7) * 12;
+    g += pop(lt, .55 + i * .12, 960 + dx, y, icon(n, 960 + dx, y, 92, c));
+  });
+  const a1 = eOut(seg(lt, .5, 1.1)), a2 = eOut(seg(lt, .9, 1.5));
+  g += `<g opacity="${f3(a1)}" transform="translate(0 ${f((1 - a1) * 40)})">${txt(960, 610, `Exercise <tspan fill="${C.indigo}">Unlock</tspan>`, 124)}</g>`;
+  g += `<g opacity="${f3(a2)}">${txt(960, 692, L.tagline, 46, { family: FONT_B, weight: 800, fill: C.muted })}</g>`;
+  const kx = lerp(-260, 300, eOut(seg(lt, .2, 1.0)));
+  const jump = lt > 1 ? Math.abs(Math.sin(Math.PI * (lt - 1) / .75)) * 60 : 0;
+  g += shadowEl(kx + 10, 962, 90 * (1 - jump / 160), 16) + drawKid(poseCheer(1), kx, 960 - jump, 1.3, 'joy');
+  const la = eOut(seg(lt, .5, 1.2));
+  g += `<g opacity="${f3(la)}" transform="translate(${f((1 - la) * 140)} 0)">${laptop(1610, 820, 360, scrLock({ time: '19:30', tileK: 1, sq: 12, pu: 3, earned: '54:00', ready: true }))}</g>`;
+  return g;
+}
+
+function sSitting(lt, S) {
+  const gy = 850;
+  let g = floor(gy) + headline(lt, L.sitting, { x: 120, y: 175, anchor: 'start', size: 68 });
+  const hrs = 3.4 * eIO(seg(lt, .8, 6.5));
+  g += clockSvg(1470, 290, 100, hrs);
+  const H = Math.floor(hrs), M = Math.floor((hrs - H) * 60);
+  g += txt(1470, 450, L.hm(H, String(M).padStart(2, '0')), 46, { fill: C.coral, op: seg(lt, .8, 1.2) });
+  // chair, desk, laptop
+  const hx = 700, hy = 690, s = 1.3;
+  g += `<rect x="${hx - 98}" y="${hy - 160}" width="24" height="230" rx="12" fill="#7C88E8"/><rect x="${hx - 92}" y="${hy + 30}" width="160" height="20" rx="10" fill="#7C88E8"/>
+        <rect x="${hx - 84}" y="${hy + 50}" width="14" height="${gy - hy - 50}" fill="#6672D6"/><rect x="${hx + 46}" y="${hy + 50}" width="14" height="${gy - hy - 50}" fill="#6672D6"/>`;
+  g += `<rect x="840" y="640" width="640" height="24" rx="10" fill="#D9A066"/><rect x="866" y="664" width="22" height="${gy - 664}" fill="#C08850"/><rect x="1434" y="664" width="22" height="${gy - 664}" fill="#C08850"/>`;
+  const sl = eIO(seg(lt, .6, 6));
+  g += drawKid(poseSit(sl), hx, hy, s, lt > 3.4 ? 'tired' : 'happy');
+  g += `<rect x="870" y="627" width="232" height="14" rx="5" fill="#A3A9C9"/>` + ln({ x: 1098, y: 630 }, { x: 1142, y: 440 }, 16, '#262A44');
+  g += `<polygon points="1092,620 1134,452 830,400 830,600" fill="url(#gBeam)" opacity="${f3(.5 + .15 * Math.sin(lt * 6))}"/>`;
+  if (lt > 4) for (let i = 0; i < 3; i++) {
+    const p = ((lt - 4) * .6 + i / 3) % 1;
+    g += txt(860 + p * 60, 470 - p * 120, 'z', 34 + i * 6, { fill: C.indigo, op: Math.sin(Math.PI * p) });
+  }
+  [['spine', L.posture, mark(S, 'posture', 5)], ['battery', L.energy, mark(S, 'energy', 6)], ['zzz', L.focus, mark(S, 'focus', 7)]].forEach(([ic, label, t0], i) => {
+    const y = 300 + i * 112;
+    g += pop(lt, t0, 310, y, badge(120, y - 46, 390, 92, ic, label, C.coral));
+  });
+  return g;
+}
+
+function sHow(lt, S) {
+  const P = PLAN.how(S);
+  let g = floor(905) + headline(lt, L.how(C.coral));
+  const strike = eIO(seg(lt, P.tPw, P.tPw + .45));
+  const pwA = 1 - seg(lt, P.tPw + .7, P.tPw + 1);
+  const tileK = eBack(seg(lt, P.tPw + .9, P.tPw + 1.4));
+  const sq = repCount(P.reps, lt);
+  g += laptop(1190, 545, 820, scrLock({ time: '19:30', pwA, strike, tileK, sq, pu: 0, earned: `${sq * 3}:00`, ready: sq * 3 >= 10 }));
+  const k = repK(P.reps, lt);
+  g += shadowEl(450, 905, 110, 18) + drawKid(poseSquat(k), 430, 905, 1.45, k > .5 ? 'effort' : 'happy');
+  g += floaters(P.reps, lt, 470, 255, L.plusMin(3));
+  return g;
+}
+
+function sAI(lt, S) {
+  const P = PLAN.ai(S);
+  let g = floor(930) + headline(lt, L.ai);
+  const lx = 1500, ly = 540, lw = 540, cam = camPoint(lx, ly, lw);
+  const sq = repCount(P.reps, lt), ca = seg(lt, .2, .8);
+  g += `<polygon points="${f(cam.x)},${f(cam.y)} 450,300 450,960" fill="url(#gCone)" opacity="${f3(.55 * ca)}"/>`;
+  g += ln(cam, { x: 450, y: 300 + 660 * (.5 + .5 * Math.sin(lt * 2.4)) }, 3, C.neon, `opacity="${f3(.6 * ca)}"`);
+  g += laptop(lx, ly, lw, scrLock({ time: '19:31', tileK: 1, sq, pu: 0, earned: `${sq * 3}:00`, ready: sq * 3 >= 10 }), { camOn: true });
+  const k = repK(P.reps, lt), J = poseSquat(k), kx = 700, ky = 930, ks = 1.5;
+  const skel = seg(lt, P.tAI, P.tAI + .5);
+  g += shadowEl(kx + 20, ky, 120, 20) + drawKid(J, kx, ky, ks, k > .5 ? 'effort' : 'happy', { skel });
+  if (skel > 0) {
+    const kn = { x: kx + J.knee.x * ks, y: ky + J.knee.y * ks };
+    g += `<g opacity="${f3(skel)}">${pill(kn.x + 120, kn.y - 30, L.knee(Math.round(angleAt(J.hip, J.knee, J.ankle))), { w: 210, h: 54, size: 26, color: C.ink })}</g>`;
+  }
+  const lc = lastCount(P.reps, lt), bump = lc != null ? 1 + .22 * Math.max(0, 1 - (lt - lc) / .35) : 1;
+  g += `<g transform="translate(${lx} 262) scale(${f3(bump)}) translate(${-lx} -262)">${pill(lx, 262, L.counter(sq), { w: L.counterW, h: 78, size: 38, ic: 'check', color: C.ink })}</g>`;
+  g += floaters(P.reps, lt, kx + 60, 250, '+1');
+  const na = seg(lt, P.tH + .3, P.tH + .55) * (1 - seg(lt, P.tH + 2, P.tH + 2.3));
+  if (na > 0) g += `<g opacity="${f3(na)}">${pill(kx + 60, 252, L.shallow, { w: L.shallowW, h: 72, size: 30, ic: 'cross', icColor: C.red, color: C.red })}</g>`;
+  return g;
+}
+
+function sEarn(lt, S) {
+  const P = PLAN.earn(S);
+  let g = floor(880) + headline(lt, L.earn);
+  const n = repCount(P.reps, lt), done = n >= P.reps.length;
+  const lc = lastCount(P.reps, lt);
+  const fm = lc == null ? 0 : lerp(Math.max(0, n - 1) * 6, n * 6, eOut(clamp((lt - lc) / .45)));
+  const k = done ? 0 : repK(P.reps, lt);
+  g += shadowEl(450, 880, 260, 18) + drawKid(posePush(k), 230, 880, 1.3, done ? 'joy' : (k > .5 ? 'effort' : 'happy'));
+  const bx = 1000, bw = 760, by = 470, bh = 76;
+  g += txt(bx, 425, L.earnedTime, 42, { anchor: 'start' }) + txt(bx + bw, 425, `${Math.floor(fm)}:00 <tspan fill="${C.muted}" font-size="34">/ 60:00</tspan>`, 56, { anchor: 'end', fill: C.indigo });
+  g += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${bh / 2}" fill="${C.line}"/>`;
+  if (fm > 0) g += `<rect x="${bx}" y="${by}" width="${f(Math.max(bh, bw * fm / 60))}" height="${bh}" rx="${bh / 2}" fill="url(#gFill)"/>`;
+  const tx = bx + bw * 10 / 60;
+  g += ln({ x: tx, y: by - 14 }, { x: tx, y: by + bh + 14 }, 4, C.ink, 'stroke-dasharray="2 10" opacity=".55"') + txt(tx, by + bh + 52, L.unlockFrom, 26, { family: FONT_B, weight: 800, fill: C.muted });
+  P.reps.forEach((r, i) => {
+    const p = (lt - tcOf(r)) / .7;
+    if (p < 0 || p > 1) return;
+    const e = eIO(p), sx = 700, sy = 640, ex = bx + bw * Math.min(60, (i + 1) * 6) / 60 - 30, ey = by + bh / 2;
+    const x = lerp(lerp(sx, (sx + ex) / 2, e), lerp((sx + ex) / 2, ex, e), e), y = lerp(lerp(sy, 230, e), lerp(230, ey, e), e);
+    g += `<g opacity="${f3(1 - Math.pow(p, 4))}">${pill(x, y, L.plusMin(6), { w: 160, h: 54, size: 28, fill: C.coral, color: '#fff' })}</g>`;
+  });
+  g += pop(lt, tcOf(P.reps[1]) + .45, bx + L.readyW / 2, 660, pill(bx + L.readyW / 2, 660, L.ready, { w: L.readyW, h: 76, size: L.readySize, ic: 'check', color: C.ink }));
+  g += pop(lt, tcOf(P.reps[9]) + .45, bx + bw - L.maxW / 2, 770, pill(bx + bw - L.maxW / 2, 770, L.max, { w: L.maxW, h: 76, size: 32, ic: 'timer', icColor: C.coral, color: C.ink }));
+  if (done) g += confetti(lt - tcOf(P.reps[9]), 40, seg(lt, tcOf(P.reps[9]), tcOf(P.reps[9]) + .3));
+  return g;
+}
+
+function cycleDiagram(t) {
+  let g = `<rect width="1920" height="1080" fill="#F3F1FF" opacity="${f3(.9 * seg(t, -.3, .3))}"/>`;
+  g += headline(t + .1, L.cycle(C.coral), { y: 250, size: 76 });
+  const xs = [360, 760, 1160, 1560], cy = 560;
+  xs.forEach((x, i) => {
+    const t0 = .15 + i * .25;
+    if (i > 0) { const a = seg(t, t0 - .1, t0 + .2); g += `<g opacity="${f3(a)}">${ln({ x: xs[i - 1] + 140, y: cy }, { x: x - 150, y: cy }, 8, C.coral)}<path d="M${x - 166} ${cy - 16} L${x - 146} ${cy} L${x - 166} ${cy + 16}" stroke="${C.coral}" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`; }
+    let inner = `<circle cx="${x}" cy="${cy}" r="120" fill="#fff" filter="url(#shadow)"/>`;
+    if (i % 2 === 0) inner += laptop(x, cy - 8, 150, scrGame(t + i)) + txt(x, cy + 175, L.play, 34);
+    else inner += drawKid(poseSquat((1 - Math.cos(t * 3.6 + i)) / 2), x - 12, cy + 88, .42, 'effort') + txt(x, cy + 175, L.move, 34, { fill: C.coral });
+    g += pop(t, t0, x, cy, inner);
+  });
+  const la = seg(t, 1.2, 1.6);
+  g += `<path d="M1560 790 Q960 960 360 790" stroke="${C.indigo}" stroke-width="6" fill="none" stroke-dasharray="14 14" opacity="${f3(la)}"/>` +
+       `<path d="M384 772 L358 790 L388 806" stroke="${C.indigo}" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${f3(la)}"/>` +
+       txt(960, 920, L.repeat, 30, { family: FONT_B, weight: 800, fill: C.indigo, op: la });
+  return g;
+}
+
+function sHour(lt, S) {
+  const P = PLAN.hour(S);
+  let m = headline(lt, L.hour);
+  let rem = 60;
+  if (lt >= P.t60) rem = lerp(60, 5, eIO(seg(lt, P.t60, P.tFive)));
+  if (lt >= P.tFive) rem = lerp(5, 0, seg(lt, P.tFive + .2, P.tLock));
+  const n = repCount(P.reps, lt), lc = lastCount(P.reps, lt);
+  if (lt >= P.tLock && lc != null) rem = 60 * lerp(Math.max(0, n - 1), n, eOut(clamp((lt - lc) / .6))) / P.reps.length;
+  const col = rem > 20 ? C.mint : rem > 6 ? mix(C.yellow, C.mint, (rem - 6) / 14) : mix(C.coral, C.yellow, rem / 6);
+  const cx = 560, cy = 545;
+  m += pop(lt, .4, cx, cy, ring(cx, cy, 200, rem / 60, col));
+  const locked = lt >= P.tLock && n === 0;
+  if (lt >= .4) {
+    if (locked) m += padlock(cx, cy, 170, eOut(seg(lt, P.tLock, P.tLock + .3)), C.coral, '#fff');
+    else {
+      const mm = Math.floor(rem), ss = Math.floor((rem - mm) * 60);
+      m += txt(cx, cy + 22, `${mm}:${String(ss).padStart(2, '0')}`, 104, { op: seg(lt, .5, .9) }) +
+           txt(cx, cy + 82, n >= P.reps.length ? L.newSession : L.minutesLeft, 32, { family: FONT_B, weight: 800, fill: n >= P.reps.length ? C.mint : C.muted, op: seg(lt, .5, .9) });
+    }
+  }
+  const scr = lt < P.tLock ? scrGame(lt) : scrLock({ time: '18:31', tileK: 1, sq: n, pu: 0, earned: `${n * 3}:00`, ready: n >= P.reps.length });
+  m += laptop(1450, 420, 540, scr);
+  const tin = eOut(seg(lt, P.tFive, P.tFive + .45)), tout = eIO(seg(lt, P.tLock + .3, P.tLock + .8));
+  if (tin > 0 && tout < 1) m += toast(1160 + (1 - tin) * 800 + tout * 800, 720);
+  const ka = eOut(seg(lt, P.tBack - .8, P.tBack - .3));
+  if (ka > 0) { const k = repK(P.reps, lt); m += `<g opacity="${f3(ka)}" transform="translate(${f((1 - ka) * 220)} 0)">${shadowEl(1020, 935, 95, 16)}${drawKid(poseSquat(k), 1000, 935, 1.15, k > .5 ? 'effort' : 'happy')}</g>`; m += floaters(P.reps, lt, 1030, 430, '+1'); }
+  const dim = 1 - eIO(seg(lt, P.tGuar - .3, P.tGuar + .3));
+  let g = `<g opacity="${f3(Math.max(dim, .0))}">${floor(935)}${m}</g>`;
+  if (lt > P.tGuar - .3) g += cycleDiagram(lt - P.tGuar);
+  return g;
+}
+
+function sHealth(lt, S) {
+  const P = PLAN.health(S);
+  let g = floor(990) + headline(lt, L.health);
+  g += pop(lt, P.tW, 465, 400, card(110, 260, 710, 280) +
+       txt(150, 395, `60<tspan font-size="64"> ${L.min}</tspan>`, 150, { anchor: 'start', fill: C.coral }) +
+       txt(150, 452, L.act, 30, { anchor: 'start', family: FONT_B, weight: 800 }) +
+       txt(150, 502, L.who, 28, { anchor: 'start', family: FONT_B, weight: 700, fill: C.muted }));
+  const items = [['dumbbell', C.indigo], ['sun', C.yellow], ['bulb', C.mint], ['clock', C.coral]].map((a, i) => a.concat(L.cards[i]));
+  items.forEach(([ic, col, l1, l2], i) => {
+    const x = 990 + (i % 2) * 420, y = 270 + Math.floor(i / 2) * 290, cx = x + 190, cy = y + 120;
+    g += pop(lt, P.cards[i], cx, cy, card(x, y, 380, 240) + `<circle cx="${x + 80}" cy="${y + 80}" r="50" fill="${col}" opacity=".16"/>` + icon(ic, x + 80, y + 80, 64, col) +
+         txt(x + 40, y + 175, l1, L.cardSize, { anchor: 'start' }) + txt(x + 40, y + 218, l2, 34, { anchor: 'start', family: FONT_B, weight: 800, fill: C.muted }));
+  });
+  const k = repK(P.reps, lt);
+  g += shadowEl(480, 990, 100, 18) + drawKid(poseSquat(k), 460, 990, 1.0, k > .5 ? 'effort' : 'joy');
+  for (let i = 0; i < 8; i++) {
+    const p = ((lt * .45 + i / 8) % 1);
+    if (lt < 1 + i * .3) continue;
+    g += `<g opacity="${f3(Math.sin(Math.PI * p) * .9)}">${icon('heart', 560 + Math.sin(i * 2.1 + lt) * 60 + i * 12, 760 - p * 240, 34 + (i % 3) * 8, C.pink)}</g>`;
+  }
+  return g;
+}
+
+function sParents(lt, S) {
+  const P = PLAN.parents(S);
+  let g = '';
+  for (let i = 0; i < 26; i++) g += `<circle cx="${f(rnd(i) * 1920)}" cy="${f(rnd(i + 50) * 420)}" r="${f(1.5 + rnd(i + 9) * 2.5)}" fill="#fff" opacity="${f3(.35 + .35 * Math.sin(lt * 3 + i))}"/>`;
+  g += `<circle cx="1730" cy="${f(250 - 100 * eOut(seg(lt, .2, 2)))}" r="62" fill="#FFF3C4"/><circle cx="1758" cy="${f(232 - 100 * eOut(seg(lt, .2, 2)))}" r="54" fill="url(#gBgTop)"/>`;
+  g += headline(lt, L.parents, { fill: '#fff' });
+  const hour = lerp(19.5, 20, eIO(seg(lt, .6, P.tLock)));
+  const hh = Math.floor(hour), mm = Math.min(59, Math.floor((hour - hh) * 60));
+  let c = card(110, 260, 760, 300) + txt(150, 330, L.allowed, 34, { anchor: 'start', family: FONT_B, weight: 800, fill: C.muted }) +
+          txt(150, 410, '07:00 – 20:00', 72, { anchor: 'start' });
+  const bx = 150, bw = 680, by = 460, X = h => bx + bw * h / 24;
+  c += `<rect x="${bx}" y="${by}" width="${bw}" height="26" rx="13" fill="${C.line}"/><rect x="${f(X(7))}" y="${by}" width="${f(X(20) - X(7))}" height="26" rx="13" fill="${C.mint}"/>`;
+  c += ln({ x: X(hour), y: by - 14 }, { x: X(hour), y: by + 40 }, 6, C.coral) + txt(X(hour), by + 78, `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, 30, { fill: C.coral });
+  g += pop(lt, .3, 490, 410, c);
+  const scr = lt < P.tLock ? scrGame(lt)
+            : lt < P.tExtra + .3 ? scrLock({ time: '20:00', lockK: eOut(seg(lt, P.tLock, P.tLock + .3)) })
+            : scrDesktop(lt, Math.max(0, 59 - Math.floor(lt - P.tExtra - .3)));
+  g += laptop(1390, 480, 620, scr);
+  g += pop(lt, P.tExtra, 1390, 790, pill(1390, 790, L.extra, { w: L.extraW, h: 80, size: L.extraSize, ic: 'timer', icColor: C.mint }));
+  g += pop(lt, P.tReset, 490, 750, card(110, 620, 760, 250) + icon('calendar', 220, 745, 150, C.coral) +
+       txt(220, 788, lt > P.tReset + .8 ? '19' : '18', 54, { fill: C.ink }) +
+       txt(330, 720, L.resets1, 40, { anchor: 'start' }) + txt(330, 772, L.resets2, L.resetsSize, { anchor: 'start', family: FONT_B, weight: 800, fill: C.muted }));
+  return g;
+}
+
+function sPrivacy(lt, S) {
+  const P = PLAN.privacy(S);
+  let g = headline(lt, L.privacy);
+  const pulse = 1 + .03 * Math.sin(lt * 3);
+  g += pop(lt, .3, 520, 570, `<circle cx="520" cy="570" r="${f(250 * pulse)}" fill="${C.indigo}" opacity=".08"/>` +
+        `<g transform="translate(520 570) scale(${f3(pulse)}) translate(-520 -570)"><g transform="translate(330 380) scale(3.8)"><path d="M50 4 L90 18 V46 C90 72 72 88 50 97 C28 88 10 72 10 46 V18Z" fill="url(#gLogo)"/></g>${padlock(520, 590, 170, 1, '#fff', C.indigo)}</g>`);
+  [['camera', L.rows[0]], ['pc', L.rows[1]], ['cloudOff', L.rows[2]]].forEach(([ic, label], i) => {
+    const y = 330 + i * 190, t0 = P.rows[i];
+    g += pop(lt, t0, 1340, y + 65, card(900, y, 900, 130, 65) + `<circle cx="965" cy="${y + 65}" r="46" fill="${C.indigo}" opacity=".12"/>` + icon(ic, 965, y + 65, 60, C.indigo) + txt(1035, y + 65 + L.rowSize * .36, label, L.rowSize, { anchor: 'start' }));
+  });
+  return g;
+}
+
+function sOutro(lt, S) {
+  let g = confetti(lt, 60, seg(lt, .2, .8)) + `<ellipse cx="960" cy="1140" rx="1300" ry="240" fill="#DCE4FF" opacity=".75"/>`;
+  g += `<g transform="translate(960 300) scale(${f3(eBack(seg(lt, .1, .7)))})">${logo(220)}</g>`;
+  const a1 = eOut(seg(lt, .4, 1)), a2 = eOut(seg(lt, .9, 1.5)), a3 = eOut(seg(lt, 1.6, 2.2));
+  g += `<g opacity="${f3(a1)}" transform="translate(0 ${f((1 - a1) * 30)})">${txt(960, 530, `Exercise <tspan fill="${C.indigo}">Unlock</tspan>`, 116)}</g>`;
+  g += `<g opacity="${f3(a2)}">${txt(960, 610, L.outro, L.outroSize, { family: FONT_B, weight: 800, fill: C.muted })}</g>`;
+  g += `<g opacity="${f3(a3)}">${pill(960, 705, L.oss, { w: L.ossW, h: 70, size: 28, color: C.indigo })}</g>`;
+  const k = (1 - Math.cos(lt * 3.4)) / 2;
+  g += shadowEl(310, 975, 90, 16) + drawKid(poseSquat(k), 290, 975, 1.1, k > .5 ? 'effort' : 'joy');
+  const pk = (1 - Math.cos(lt * 3.4 + 1.6)) / 2;
+  g += shadowEl(1650, 975, 200, 16) + drawKid(posePush(pk), 1460, 975, .95, pk > .5 ? 'effort' : 'happy');
+  return g;
+}
+
+const SCENES = { intro: sIntro, sitting: sSitting, how: sHow, ai: sAI, earn: sEarn, hour: sHour, health: sHealth, parents: sParents, privacy: sPrivacy, outro: sOutro };
+
+// ---------------------------------------------------------------- sound cues (scene-local seconds)
+const EV = {
+  intro: S => [[.12, 'pop'], [.6, 'sparkle']],
+  sitting: S => [[mark(S, 'posture', 5), 'pop'], [mark(S, 'energy', 6), 'pop'], [mark(S, 'focus', 7), 'pop']],
+  how: S => { const P = PLAN.how(S); return [[P.tPw, 'scratch'], [P.tPw + .9, 'pop'], ...P.reps.map(r => [tcOf(r), 'ding'])]; },
+  ai: S => { const P = PLAN.ai(S); return [...P.reps.filter(r => r.counts !== false).map(r => [tcOf(r), 'ding']), [P.tH + .3, 'buzz']]; },
+  earn: S => { const P = PLAN.earn(S); return [...P.reps.map(r => [tcOf(r), 'ding']), [tcOf(P.reps[1]) + .45, 'success'], [tcOf(P.reps[9]) + .45, 'success']]; },
+  hour: S => { const P = PLAN.hour(S); return [[.4, 'pop'], [P.tFive, 'chime'], [P.tLock, 'click'], ...P.reps.map(r => [tcOf(r), 'ding']),
+               [tcOf(P.reps[P.reps.length - 1]) + .3, 'success'], ...[0, 1, 2, 3].map(i => [P.tGuar + .15 + i * .25, 'pop'])]; },
+  health: S => { const P = PLAN.health(S); return [[P.tW, 'pop'], ...P.cards.map(t => [t, 'pop'])]; },
+  parents: S => { const P = PLAN.parents(S); return [[.3, 'pop'], [P.tLock, 'click'], [P.tExtra, 'pop'], [P.tReset, 'pop']]; },
+  privacy: S => { const P = PLAN.privacy(S); return [[.3, 'pop'], ...P.rows.map(t => [t, 'pop'])]; },
+  outro: S => [[.1, 'success']],
+};
+function collectSfx() {
+  const tl = TL || defaultTimeline(), out = [];
+  tl.scenes.forEach((S, i) => {
+    if (i > 0) out.push([S.start - .15, 'whoosh']);
+    for (const [t, type] of EV[S.id](S)) if (t >= 0 && t <= S.dur + .3) out.push([S.start + t, type]);
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------- frame
+const DEFS = `<defs>
+  <linearGradient id="gLogo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5B6CFF"/><stop offset="1" stop-color="#FF6FAE"/></linearGradient>
+  <linearGradient id="gWall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5B6CFF"/><stop offset=".55" stop-color="#9B6BFF"/><stop offset="1" stop-color="#FF8FB1"/></linearGradient>
+  <linearGradient id="gGame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7FD3FF"/><stop offset="1" stop-color="#D2F3FF"/></linearGradient>
+  <linearGradient id="gFill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1FBF9C"/><stop offset="1" stop-color="#5B6CFF"/></linearGradient>
+  <linearGradient id="gCone" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#2BFF88" stop-opacity=".55"/><stop offset="1" stop-color="#2BFF88" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gBeam" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#BFE6FF" stop-opacity=".85"/><stop offset="1" stop-color="#BFE6FF" stop-opacity="0"/></linearGradient>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#1F2547" flood-opacity=".14"/></filter>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
+
+function sceneVis(S, lt, fadeIn = .45, fadeOut = .45) {
+  return eOut(seg(lt, 0, fadeIn)) * (1 - eIO(seg(lt, S.dur, S.dur + fadeOut)));
+}
+function background(t, tl) {
+  let dusk = 0;
+  for (const S of tl.scenes) if (S.id === 'parents') dusk = Math.max(dusk, eIO(seg(t - S.start, -.2, .6)) * (1 - eIO(seg(t - S.start, S.dur - .2, S.dur + .5))));
+  const top = mix('#E8F2FF', '#2B2766', dusk), bot = mix('#F7F0FF', '#B86B9E', dusk);
+  let g = `<linearGradient id="gBg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bot}"/></linearGradient>
+           <linearGradient id="gBgTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${mix('#E8F2FF', '#3A2F78', dusk)}"/></linearGradient></defs>`;
+  g += `<rect width="1920" height="1080" fill="url(#gBg)"/>`;
+  const blobs = [[200, 180, 220, C.indigo], [1700, 160, 260, C.pink], [1600, 900, 300, C.mint], [300, 950, 240, C.yellow], [960, 540, 380, C.indigo]];
+  blobs.forEach(([x, y, r, c], i) => { g += `<circle cx="${f(x + Math.sin(t * .3 + i) * 40)}" cy="${f(y + Math.cos(t * .25 + i * 2) * 30)}" r="${r}" fill="${c}" opacity="${f3(.07 * (1 - dusk * .6))}"/>`; });
+  return g;
+}
+function render(t) {
+  const tl = TL || defaultTimeline();
+  let body = DEFS + background(t, tl);
+  tl.scenes.forEach((S, i) => {
+    const lt = t - S.start;
+    const last = i === tl.scenes.length - 1;
+    if (lt < -.01 || (!last && lt > S.dur + .45)) return;
+    const a = (i === 0 ? 1 : eOut(seg(lt, 0, .45))) * (last ? 1 : 1 - eIO(seg(lt, S.dur, S.dur + .45)));
+    const dy = i === 0 ? 0 : (1 - eOut(seg(lt, 0, .45))) * 30;
+    body += `<g opacity="${f3(a)}" transform="translate(0 ${f(dy)})">${SCENES[S.id](lt, S)}</g>`;
+  });
+  if (tl.total - t < .8) body += `<rect width="1920" height="1080" fill="#fff" opacity="${f3(eIO(seg(t, tl.total - .8, tl.total)))}"/>`;
+  document.getElementById('stage').innerHTML = body;
+}
+window.render = render; window.setTimeline = setTimeline; window.setLang = setLang; window.collectSfx = collectSfx;
+
+// ---------------------------------------------------------------- standalone preview
+const qLang = new URLSearchParams(location.search).get('lang');
+if (qLang) setLang(qLang);
+if (location.search.includes('render')) document.body.classList.add('render');
+else {
+  const tl = () => TL || defaultTimeline();
+  let playing = true, t0 = performance.now(), cur = 0;
+  const scrub = document.getElementById('scrub'), clock = document.getElementById('clock'), btn = document.getElementById('play');
+  btn.onclick = () => { playing = !playing; btn.textContent = playing ? 'Pause' : 'Play'; t0 = performance.now() - cur * 1000; };
+  scrub.oninput = () => { cur = scrub.value / 1000 * tl().total; t0 = performance.now() - cur * 1000; render(cur); };
+  const fit = () => { const s = Math.min(innerWidth / 1920, innerHeight / 1080); document.getElementById('stage').style.width = 1920 * s + 'px'; document.getElementById('stage').style.height = 1080 * s + 'px'; };
+  addEventListener('resize', fit); fit();
+  (function loop() {
+    if (playing) { cur = ((performance.now() - t0) / 1000) % tl().total; scrub.value = cur / tl().total * 1000; render(cur); clock.textContent = cur.toFixed(1); }
+    requestAnimationFrame(loop);
+  })();
+}
+</script>
+</body>
+</html>

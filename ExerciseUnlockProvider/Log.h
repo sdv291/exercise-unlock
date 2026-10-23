@@ -4,22 +4,23 @@
 #include <cstdio>
 #include <cwchar>
 #include <string>
+#include "Paths.h"
 
 // Lightweight debug logging. LogonUI hosts the DLL in a separate session
 // that is hard to attach a debugger to, so we tee output to:
 //   * OutputDebugStringW (viewable via DebugView with "Capture Global
 //     Win32" on, if a developer is actively watching), and
-//   * C:\Users\Public\exerciseunlock-provider.log — world-writable so
-//     the SYSTEM-hosted LogonUI session can append to it, and visible
-//     from any user account for post-mortem checking. Each line is
-//     prefixed with a local timestamp so audit against service.log
-//     is straightforward.
+//   * <DataDir>\provider.log (Paths.h) — LogonUI hosts us as SYSTEM,
+//     which can write there; admins read it next to service.log.
+//     Each line is prefixed with a local timestamp so audit against
+//     service.log is straightforward.
 namespace ExerciseUnlock
 {
     inline void LogWriteProviderFile(const wchar_t* line)
     {
+        static const std::wstring path = DataPath(L"provider.log");
         HANDLE f = CreateFileW(
-            L"C:\\Users\\Public\\exerciseunlock-provider.log",
+            path.c_str(),
             FILE_APPEND_DATA,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

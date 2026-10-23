@@ -79,10 +79,26 @@ namespace ExerciseUnlock::Svc
         // Submit grants a brief grace unlock without the earned
         // check so the child can close running apps. 0 = never.
         std::atomic<int64_t> lastSessionEndedUnix{ 0 };
+        // True while the running session is a grace unlock. Its expiry
+        // must not re-open the grace window (otherwise grace unlocks
+        // could be chained forever), and a lock drops it instead of
+        // parking the remainder.
+        std::atomic<bool>    sessionIsGrace{ false };
 
         // v1.0 bank — seconds already earned in past locked periods
         // that haven't been spent on an unlock yet.
         std::atomic<uint32_t> earnedBankSeconds{ 0 };
+
+        // Unused remainder of an unlock session that was paused by a
+        // workstation lock (see SessionManager::PauseOnLock). Counts
+        // toward earned time and is redeemable even below
+        // min_unlock — it was already earned and unlocked once.
+        std::atomic<uint32_t> pausedSessionSeconds{ 0 };
+
+        // Local calendar day (YYYYMMDD) the counters / bank / paused
+        // time belong to. Earned time doesn't carry over: on the
+        // first snapshot of a new day it is all zeroed. 0 = unknown.
+        std::atomic<int32_t>  dayKey{ 0 };
 
         // v1.1 first-install timestamp (Unix seconds). Written on
         // first save; used by Config's progression math to scale
@@ -126,6 +142,11 @@ namespace ExerciseUnlock::Svc
     bool IsSessionActive();
 
     State& GetState();
+
+    // Zero reps, bank and paused session time if the local date has
+    // changed since State::dayKey. Cheap; called on every snapshot
+    // and after loading state.dat (covers an overnight reboot).
+    void RollOverDayIfNeeded();
 
     // Fill a wire response from the current state.
     void SnapshotInto(Ipc::Response& out);

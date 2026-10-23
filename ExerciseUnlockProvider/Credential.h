@@ -100,7 +100,7 @@ namespace ExerciseUnlock
         uint32_t m_lastPushup{ UINT32_MAX };
         // Sound configuration (library dir + per-event file lists).
         // Hot-reloaded on each RefreshStatus so edits to
-        // %ProgramData%\ExerciseUnlock\sounds.ini take effect
+        // <DataDir>\sounds.ini take effect
         // without a sign-out.
         SoundConfig m_sounds;
     };

@@ -1,5 +1,6 @@
 #include "ActivityLog.h"
 #include "Log.h"
+#include "Paths.h"
 
 #include <windows.h>
 #include <shlobj.h>
@@ -18,13 +19,7 @@ namespace ExerciseUnlock::Svc
 
     static std::wstring ProgramDataDir()
     {
-        wchar_t buf[MAX_PATH]{};
-        if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_COMMON_APPDATA,
-                                       nullptr, SHGFP_TYPE_CURRENT, buf)))
-        {
-            return std::wstring(buf) + L"\\ExerciseUnlock";
-        }
-        return L"C:\\ProgramData\\ExerciseUnlock";
+        return DataDir();   // see Paths.h
     }
 
     static std::wstring LogPath()
@@ -35,11 +30,8 @@ namespace ExerciseUnlock::Svc
     static HRESULT EnsureDir()
     {
         const std::wstring dir = ProgramDataDir();
-        BOOL ok = CreateDirectoryW(dir.c_str(), nullptr);
-        if (!ok && GetLastError() != ERROR_ALREADY_EXISTS)
-        {
-            return HRESULT_FROM_WIN32(GetLastError());
-        }
+        (void)dir;
+        EnsureDataDir();
         return S_OK;
     }
 

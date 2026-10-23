@@ -8,7 +8,7 @@ namespace ExerciseUnlock
 {
     // Provider-side sound configuration.
     //
-    // Reads %ProgramData%\ExerciseUnlock\sounds.ini on construction
+    // Reads <DataDir>\sounds.ini on construction
     // and on every Reload() call. The provider calls Reload() each
     // RefreshStatus so edits to sounds.ini take effect without a
     // sign-out — handy while picking files.
@@ -16,7 +16,7 @@ namespace ExerciseUnlock
     // Config format (standard INI, UTF-16 or UTF-8):
     //
     //   [sounds]
-    //   library        = C:\ProgramData\ExerciseUnlock\sounds
+    //   library        = <DataDir>\sounds
     //   squat_ready    = ready1.wav, ready2.wav
     //   pushup_ready   = ready_pu.wav
     //   squat_counted  = ding1.wav, ding2.wav, ding3.wav

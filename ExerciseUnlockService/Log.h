@@ -7,7 +7,7 @@
 // Debug logging: writes to stdout in --console mode, to
 // OutputDebugString either way (so DebugView picks it up when we run
 // as a Windows service under the SCM), and appended to a rolling
-// service.log next to activity.log in %ProgramData%\ExerciseUnlock\.
+// service.log next to activity.log in <DataDir>\.
 namespace ExerciseUnlock::Svc
 {
     inline bool g_consoleMode = false;
@@ -16,7 +16,7 @@ namespace ExerciseUnlock::Svc
     // timestamp; safe to call from any thread.
     void LogWriteToFile(const wchar_t* text);
     // Same but always writes to the "trace" file at
-    // C:\Users\Public\eu-service-trace.log — used as an unmistakable
+    // <DataDir>\service-trace.log — used as an unmistakable
     // canary when service.log misbehaves for any reason.
     void LogWriteToTraceFile(const wchar_t* text);
 
