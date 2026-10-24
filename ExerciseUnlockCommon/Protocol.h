@@ -234,7 +234,11 @@ namespace ExerciseUnlock::Ipc
         // Appended at the end so readers of the shorter v1.2 response
         // (tools, admin grant) keep working.
         uint8_t   phoneState;           // PhoneState
-        uint8_t   reserved10[3];
+        // +1 (wrapping) per rep done outside the schedule window: the
+        // detectors recognize it but credit nothing. The tile plays the
+        // error sound when it changes.
+        uint8_t   offHoursReps;
+        uint8_t   reserved10[2];
         // What the lock-screen QR code encodes: an upper-case URL, so the
         // QR can use the compact alphanumeric mode. Empty unless Waiting /
         // Connected.

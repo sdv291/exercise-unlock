@@ -99,6 +99,12 @@ namespace ExerciseUnlock
         // dump a burst of beeps the first time we poll.
         uint32_t m_lastSquat{ UINT32_MAX };
         uint32_t m_lastPushup{ UINT32_MAX };
+        // Earned seconds at the last poll: a rep that didn't raise them
+        // hit the max_session_seconds cap -> error sound, not the ding.
+        uint32_t m_lastEarned{ UINT32_MAX };
+        // Service's offHoursReps at the last poll (-1 = not yet sampled):
+        // a change means reps outside the schedule window -> error sound.
+        int      m_lastOffHours{ -1 };
         // Sound configuration (library dir + per-event file lists).
         // Hot-reloaded on each RefreshStatus so edits to
         // <DataDir>\sounds.ini take effect

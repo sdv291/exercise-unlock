@@ -58,6 +58,11 @@ namespace ExerciseUnlock::Svc
         std::atomic<uint8_t>  pushUpPhase{
             static_cast<uint8_t>(Ipc::PushUpPhase::Unknown) };
 
+        // Reps (webcam or phone) done outside the schedule window: real
+        // reps, not credited. Wraps; the tile plays the error sound on
+        // every change.
+        std::atomic<uint8_t>  offHoursReps{ 0 };
+
         // v1.2 posture classifier — latched None / Squat / PushUp.
         // Written from the pose-per-frame thread, read on pipe accept.
         std::atomic<uint8_t>  postureKind{

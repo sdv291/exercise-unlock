@@ -99,14 +99,17 @@ namespace ExerciseUnlock::Svc
 
         // Freeze during an active unlock session — reps done while the
         // child is inside their earned time shouldn't stack up as a
-        // head-start for the NEXT unlock. Also freeze outside the
-        // configured schedule window so evening / early-morning
-        // exercising can't be banked toward a future unlock.
-        if (IsSessionActive() || !Config::IsWithinActiveWindowNow())
+        // head-start for the NEXT unlock.
+        if (IsSessionActive())
         {
             st.squatPhase.store(static_cast<uint8_t>(SquatPhase::Unknown));
             return;
         }
+        // Outside the configured schedule window reps are still
+        // recognized - so the tile can tell the child they don't count
+        // now (offHoursReps -> error sound) - but evening / early-morning
+        // exercising is never banked toward a future unlock.
+        const bool offHours = !Config::IsWithinActiveWindowNow();
 
         // v1.2 posture gate: never credit a rep unless the posture
         // classifier has latched Squat. MoveNet produces wild angle
@@ -570,7 +573,7 @@ namespace ExerciseUnlock::Svc
                                      oscillationOk && hipDropOk;
                 RepResult r;
                 r.seq        = m_lastRep.seq + 1;
-                r.counted    = counted;
+                r.counted    = counted && !offHours;
                 r.deepest    = m_repMinAngle;
                 r.durMs      = static_cast<uint32_t>(dur);
                 r.tooFast    = !timingOk && dur < kMinRepMs;
@@ -581,7 +584,12 @@ namespace ExerciseUnlock::Svc
                 r.hipsStayed = !hipDropOk;
                 r.hipDrop    = hipDrop;
                 m_lastRep    = r;
-                if (counted)
+                if (counted && offHours)
+                {
+                    st.offHoursReps.fetch_add(1);
+                    LogF(L"squat outside the schedule - not credited  dur=%llums", dur);
+                }
+                else if (counted)
                 {
                     // Add to the shared total rather than storing our own
                     // count: phone reps (PhoneLink) land in the same

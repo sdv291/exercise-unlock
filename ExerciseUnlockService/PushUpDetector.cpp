@@ -90,13 +90,15 @@ namespace ExerciseUnlock::Svc
     {
         auto& st = GetState();
 
-        // Freeze during an active unlock session and outside the
-        // configured schedule window — same rationale as SquatDetector.
-        if (IsSessionActive() || !Config::IsWithinActiveWindowNow())
+        // Freeze during an active unlock session; outside the schedule
+        // window recognize reps but credit nothing — same rationale as
+        // SquatDetector.
+        if (IsSessionActive())
         {
             st.pushUpPhase.store(static_cast<uint8_t>(PushUpPhase::Unknown));
             return;
         }
+        const bool offHours = !Config::IsWithinActiveWindowNow();
 
         // v1.2 posture gate: no reps unless the classifier latched
         // PushUp. Standing with arms outstretched or walking around
@@ -399,14 +401,20 @@ namespace ExerciseUnlock::Svc
                 const bool qualityOk = (qMin <= 0.0f) || (quality >= qMin);
                 RepResult r;
                 r.seq     = m_lastRep.seq + 1;
-                r.counted = timingOk && qualityOk;
+                const bool counted = timingOk && qualityOk;
+                r.counted = counted && !offHours;
                 r.deepest = m_repMinElbow;
                 r.durMs   = static_cast<uint32_t>(dur);
                 r.tooFast = !timingOk && dur < kMinRepMs;
                 r.tooSlow = !timingOk && dur > kMaxRepMs;
                 r.shallow = !qualityOk;
                 m_lastRep = r;
-                if (r.counted)
+                if (counted && offHours)
+                {
+                    st.offHoursReps.fetch_add(1);
+                    LogF(L"pushup outside the schedule - not credited  dur=%llums", dur);
+                }
+                else if (counted)
                 {
                     // Shared total (phone reps land here too) — see
                     // SquatDetector.

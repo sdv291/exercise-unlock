@@ -260,7 +260,9 @@ namespace ExerciseUnlock
         resp.phoneUrl[std::size(resp.phoneUrl) - 1] = L'\0';
         m_qr.SetContent(ok ? resp.phoneState : 0, ok ? std::wstring(resp.phoneUrl) : std::wstring());
 
-        // Audible feedback — two distinct cues:
+        // Audible feedback — two distinct cues (plus the error sound
+        // for a rep that earns nothing: done outside the schedule
+        // window, or with max_session_seconds already banked):
         //
         //   1) Posture-ready: SystemAsterisk (Squat) /
         //      SystemExclamation (PushUp). Fires on the
@@ -335,22 +337,47 @@ namespace ExerciseUnlock
             // select.
             const uint32_t sq = resp.squatCount;
             const uint32_t pu = resp.pushUpCount;
-            if (m_lastSquat != UINT32_MAX && sq > m_lastSquat)
+            const uint32_t earned = resp.rewardEarnedSeconds;
+            const bool squatUp  = m_lastSquat  != UINT32_MAX && sq > m_lastSquat;
+            const bool pushupUp = m_lastPushup != UINT32_MAX && pu > m_lastPushup;
+            // A rep that added no time: max_session_seconds is already
+            // banked. The error sound tells the child to stop.
+            const bool capped = (squatUp || pushupUp) &&
+                                m_lastEarned != UINT32_MAX && earned <= m_lastEarned;
+            if (capped)
             {
-                PlayWavOrFallback(
-                    m_sounds.PickOne(SoundConfig::SlotSquatCounted),
-                    MB_ICONHAND);
-                LogF(L"rep beep: squat %u -> %u", m_lastSquat, sq);
+                PlayWavOrFallback(m_sounds.PickOne(SoundConfig::SlotError), MB_ICONHAND);
+                LogF(L"rep beep: squat %u -> %u, pushup %u -> %u, earned stays %u s (cap) - error",
+                     m_lastSquat, sq, m_lastPushup, pu, earned);
             }
-            if (m_lastPushup != UINT32_MAX && pu > m_lastPushup)
+            else
             {
-                PlayWavOrFallback(
-                    m_sounds.PickOne(SoundConfig::SlotPushupCounted),
-                    MB_ICONHAND);
-                LogF(L"rep beep: pushup %u -> %u", m_lastPushup, pu);
+                if (squatUp)
+                {
+                    PlayWavOrFallback(
+                        m_sounds.PickOne(SoundConfig::SlotSquatCounted),
+                        MB_ICONHAND);
+                    LogF(L"rep beep: squat %u -> %u", m_lastSquat, sq);
+                }
+                if (pushupUp)
+                {
+                    PlayWavOrFallback(
+                        m_sounds.PickOne(SoundConfig::SlotPushupCounted),
+                        MB_ICONHAND);
+                    LogF(L"rep beep: pushup %u -> %u", m_lastPushup, pu);
+                }
             }
-            m_lastSquat  = sq;
-            m_lastPushup = pu;
+            // Reps outside the schedule window: recognized, not credited.
+            if (m_lastOffHours >= 0 && resp.offHoursReps != m_lastOffHours)
+            {
+                PlayWavOrFallback(m_sounds.PickOne(SoundConfig::SlotError), MB_ICONHAND);
+                LogF(L"rep beep: rep outside the schedule (%d -> %u) - error",
+                     m_lastOffHours, static_cast<unsigned>(resp.offHoursReps));
+            }
+            m_lastSquat    = sq;
+            m_lastPushup   = pu;
+            m_lastEarned   = earned;
+            m_lastOffHours = resp.offHoursReps;
         }
 
         {

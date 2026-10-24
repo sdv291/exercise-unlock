@@ -425,8 +425,7 @@ namespace ExerciseUnlock::Svc
         // Credit one phone rep under the webcam's rules. Caller holds s.mx.
         bool CreditRep(Session& s, const std::string& ex, std::string& why)
         {
-            if (IsSessionActive())                 { why = "session"; return false; }
-            if (!Config::IsWithinActiveWindowNow()) { why = "hours";   return false; }
+            if (IsSessionActive()) { why = "session"; return false; }
 
             // Not faster than a real rep allows (70 % of the configured
             // minimum: network jitter can bunch two reports together).
@@ -438,22 +437,30 @@ namespace ExerciseUnlock::Svc
                 return true;
             };
             auto& st = GetState();
-            uint32_t total = 0;
+            std::atomic<uint32_t>* counter = nullptr;
             if (ex == "squat")
             {
                 if (!paced(s.lastSquatMs, Config::SquatMinRepMs())) { why = "too_fast"; return false; }
-                total = st.squatCount.fetch_add(1) + 1;
+                counter = &st.squatCount;
             }
             else if (ex == "pushup")
             {
                 if (!paced(s.lastPushupMs, Config::PushupMinRepMs())) { why = "too_fast"; return false; }
-                total = st.pushUpCount.fetch_add(1) + 1;
+                counter = &st.pushUpCount;
             }
             else
             {
                 why = "unknown";
                 return false;
             }
+            if (!Config::IsWithinActiveWindowNow())
+            {
+                // A real rep, just not now: the tile plays the error sound.
+                st.offHoursReps.fetch_add(1);
+                why = "hours";
+                return false;
+            }
+            const uint32_t total = counter->fetch_add(1) + 1;
             PersistentState::Save();
             LogF(L"phone: %hs +1  total=%u", ex.c_str(), total);
             return true;

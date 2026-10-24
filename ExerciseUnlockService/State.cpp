@@ -262,7 +262,8 @@ namespace ExerciseUnlock::Svc
         out.statusText[n] = L'\0';
 
         out.phoneState = g_state.phoneState.load();
-        out.reserved10[0] = out.reserved10[1] = out.reserved10[2] = 0;
+        out.offHoursReps = g_state.offHoursReps.load();
+        out.reserved10[0] = out.reserved10[1] = 0;
         {
             std::lock_guard<std::mutex> lk(g_state.phoneMx);
             const size_t maxUrl = std::size(out.phoneUrl) - 1;
