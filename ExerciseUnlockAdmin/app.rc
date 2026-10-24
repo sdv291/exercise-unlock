@@ -1,0 +1,2 @@
+// The app icon: branding\app-icon.svg, rendered by branding\render-icons.ps1.
+1 ICON "../branding/app.ico"

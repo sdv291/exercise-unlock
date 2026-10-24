@@ -98,5 +98,8 @@
     <ClInclude Include="..\ExerciseUnlockService\PushUpDetector.h" />
     <ClInclude Include="..\ExerciseUnlockService\PostureClassifier.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="app.rc" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

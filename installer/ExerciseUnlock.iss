@@ -61,6 +61,8 @@ MinVersion=10.0
 LicenseFile=..\LICENSE
 SetupIconFile={#StageDir}\app.ico
 UninstallDisplayIcon={app}\app.ico
+; The app icon in the wizard's top corner; Setup picks the size for the DPI.
+WizardSmallImageFile=..\branding\png\wizard-55.png,..\branding\png\wizard-69.png,..\branding\png\wizard-83.png,..\branding\png\wizard-110.png,..\branding\png\wizard-138.png
 UninstallDisplayName={#AppName}
 VersionInfoVersion={#AppVersion}
 OutputDir=out

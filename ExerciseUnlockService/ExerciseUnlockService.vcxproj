@@ -134,5 +134,8 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClInclude Include="PhoneLink.h" />
     <ClInclude Include="MiniJson.h" />
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="app.rc" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

@@ -94,41 +94,9 @@ if (-not $redist)
 Copy-Item $redist.FullName (Join-Path $stage 'vc_redist.x64.exe') -Force
 Write-Host "VC++ redistributable $($redist.VersionInfo.FileVersion) <- $($redist.FullName)"
 
-# app.ico from the tile artwork (PNG-compressed entries, Vista+ format).
-$ico = Join-Path $stage 'app.ico'
-Add-Type -AssemblyName System.Drawing
-$src = [System.Drawing.Image]::FromFile((Join-Path $root 'ExerciseUnlockProvider\icon.png'))
-try
-{
-    $sizes = 256, 64, 48, 32, 16
-    $pngs = foreach ($s in $sizes)
-    {
-        $bmp = [System.Drawing.Bitmap]::new($s, $s)
-        $g = [System.Drawing.Graphics]::FromImage($bmp)
-        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-        $g.DrawImage($src, 0, 0, $s, $s)
-        $g.Dispose()
-        $ms = [IO.MemoryStream]::new()
-        $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-        $bmp.Dispose()
-        , $ms.ToArray()
-    }
-}
-finally { $src.Dispose() }
-$fs = [IO.File]::Create($ico)
-$w = [IO.BinaryWriter]::new($fs)
-$w.Write([UInt16]0); $w.Write([UInt16]1); $w.Write([UInt16]$sizes.Count)
-$offset = 6 + 16 * $sizes.Count
-for ($i = 0; $i -lt $sizes.Count; $i++)
-{
-    $dim = [byte]($sizes[$i] % 256)          # 256 is stored as 0
-    $w.Write($dim); $w.Write($dim); $w.Write([byte]0); $w.Write([byte]0)
-    $w.Write([UInt16]1); $w.Write([UInt16]32)
-    $w.Write([UInt32]$pngs[$i].Length); $w.Write([UInt32]$offset)
-    $offset += $pngs[$i].Length
-}
-foreach ($p in $pngs) { $w.Write($p) }
-$w.Dispose()
+# app.ico: the app icon (branding\app-icon.svg, rendered by
+# branding\render-icons.ps1 - the .ico is committed).
+Copy-Item (Join-Path $root 'branding\app.ico') (Join-Path $stage 'app.ico') -Force
 
 # --- 3. package -------------------------------------------------------
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",

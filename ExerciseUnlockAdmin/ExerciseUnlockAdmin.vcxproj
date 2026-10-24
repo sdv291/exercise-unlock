@@ -85,5 +85,8 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="..\ExerciseUnlockCommon\Vault.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="app.rc" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
