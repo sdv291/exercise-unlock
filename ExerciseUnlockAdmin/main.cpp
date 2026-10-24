@@ -126,8 +126,6 @@ static void PrintUsage()
         L"  clear                     delete the vault entirely\n"
         L"  harden                    lock service DACL so non-admins can't stop it\n"
         L"  secure-data               reset data folder ACLs to SYSTEM + Administrators\n"
-        L"  grant --minutes N         hand the child N minutes of unlocked time\n"
-        L"                            without requiring reps (parent override)\n"
         L"\n"
         L"Vault path: %ls\n"
         L"Run elevated. Domain '.' or empty means the local machine.\n",
@@ -284,45 +282,6 @@ static int CmdClear()
         return 1;
     }
     fwprintf(stdout, L"vault cleared\n");
-    return 0;
-}
-
-// --- Parent override: send an Op::Grant over the service pipe ---
-static int CmdGrant(int minutes)
-{
-    if (minutes <= 0 || minutes > 12 * 60) {
-        fwprintf(stderr, L"grant --minutes must be in 1..720\n"); return 2;
-    }
-    HANDLE h = CreateFileW(L"\\\\.\\pipe\\ExerciseUnlock",
-                           GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-                           OPEN_EXISTING, 0, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        fwprintf(stderr, L"cannot open pipe (service running?): %lu\n", GetLastError());
-        return 1;
-    }
-    // Request: magic 'EULK' + version=1 + op=5 (Grant) + minutes payload
-    // Existing Request layout is 8 bytes, extending here: total 12 bytes.
-    unsigned char req[12] = {
-        0x45, 0x55, 0x4C, 0x4B,   // 'EULK'
-        1, 0,                      // version
-        5, 0,                      // Op::Grant = 5
-        0, 0, 0, 0                 // minutes (u32 LE)
-    };
-    req[8]  = (unsigned char)(minutes         & 0xFF);
-    req[9]  = (unsigned char)((minutes >> 8)  & 0xFF);
-    req[10] = (unsigned char)((minutes >> 16) & 0xFF);
-    req[11] = (unsigned char)((minutes >> 24) & 0xFF);
-    DWORD wrote = 0;
-    if (!WriteFile(h, req, sizeof(req), &wrote, nullptr) || wrote != sizeof(req)) {
-        fwprintf(stderr, L"WriteFile failed: %lu\n", GetLastError());
-        CloseHandle(h); return 1;
-    }
-    // Drain fixed 592-byte response.
-    unsigned char resp[592];
-    DWORD read = 0;
-    ReadFile(h, resp, sizeof(resp), &read, nullptr);
-    CloseHandle(h);
-    fwprintf(stdout, L"granted %d minute(s) - session armed via pipe\n", minutes);
     return 0;
 }
 
@@ -538,16 +497,14 @@ int wmain(int argc, wchar_t** argv)
         return argc < 2 ? 1 : 0;
     }
 
-    // Parse common --user/--minutes flags once.
+    // Parse the common flags once.
     std::wstring optUser;
-    int optMinutes = 0;
     std::wstring optDomain, optPass, optPassEnv;
     for (int i = 2; i < argc - 1; ++i) {
         if      (ArgMatches(argv[i], L"--user"))         optUser    = argv[++i];
         else if (ArgMatches(argv[i], L"--domain"))       optDomain  = argv[++i];
         else if (ArgMatches(argv[i], L"--password"))     optPass    = argv[++i];
         else if (ArgMatches(argv[i], L"--password-env")) optPassEnv = argv[++i];
-        else if (ArgMatches(argv[i], L"--minutes"))      optMinutes = _wtoi(argv[++i]);
     }
 
     // Installer path: the password travels in this process's environment
@@ -580,7 +537,6 @@ int wmain(int argc, wchar_t** argv)
     if (ArgMatches(argv[1], L"harden"))          return CmdHarden();
     if (ArgMatches(argv[1], L"secure-data"))     return CmdSecureData();
     if (ArgMatches(argv[1], L"remove"))          return CmdRemove(optUser);
-    if (ArgMatches(argv[1], L"grant"))           return CmdGrant(optMinutes);
     if (ArgMatches(argv[1], L"set"))             return CmdSetInteractive(optDomain, optUser, optPass);
 
     fwprintf(stderr, L"unknown command: %ls\n", argv[1]);

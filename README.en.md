@@ -275,17 +275,6 @@ see what's happening. Default 0 = disabled.
   identical frames arrive in a row, the webcam is marked Failed
   (frozen / looped feed detected) and no reps are counted.
 
-## Parent overrides
-
-```cmd
-ExerciseUnlockAdmin.exe grant --minutes 30
-```
-
-Arms an unlock session for 30 minutes immediately, without requiring
-reps. Use when the child is sick / the camera is broken / etc. Rep
-counters and the bank are left alone. Uses the pipe, so the service
-must be running.
-
 ## Files
 
 `%ProgramData%\ExerciseUnlock\`:

@@ -27,10 +27,14 @@ namespace ExerciseUnlock::Svc
     // SeRestorePrivilege which normal admins don't have.
     //   D:P   = protected DACL (does not inherit)
     //     (A;;GA;;;SY) full access to SYSTEM (LogonUI, SCM)
-    //     (A;;GA;;;BA) full access to Builtin\Administrators
-    //     (A;;GRGW;;;AU) read+write to Authenticated Users (manual test)
+    //     (A;;GA;;;BA) full access to Builtin\Administrators (elevated tools)
+    // Nobody else: the child's processes must neither send ops (start a
+    // session, reset counters) nor - write access includes
+    // FILE_CREATE_PIPE_INSTANCE - add a look-alike server instance that
+    // LogonUI could end up talking to. Authenticated Users had
+    // read+write here until 1.2.8.
     static constexpr wchar_t kSddl[] =
-        L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)";
+        L"D:P(A;;GA;;;SY)(A;;GA;;;BA)";
 
     struct SdHolder
     {
@@ -149,12 +153,16 @@ namespace ExerciseUnlock::Svc
         }
 
         // Overlapped so ConnectNamedPipe can wait on either a client or
-        // the stop event.
+        // the stop event. The first instance must be the first one at
+        // all: if another process already holds the name, refuse to share
+        // it (the tile then shows "service not running" - fail closed).
+        bool firstInstance = true;
         while (!m_stop.load())
         {
             HANDLE pipe = CreateNamedPipeW(
                 kPipeName,
-                PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
+                    (firstInstance ? FILE_FLAG_FIRST_PIPE_INSTANCE : 0),
                 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
                 PIPE_UNLIMITED_INSTANCES,
                 sizeof(Response),
@@ -163,7 +171,11 @@ namespace ExerciseUnlock::Svc
                 &sa);
             if (pipe == INVALID_HANDLE_VALUE)
             {
-                LogF(L"CreateNamedPipe failed: %lu", GetLastError());
+                const DWORD createErr = GetLastError();
+                LogF(firstInstance && createErr == ERROR_ACCESS_DENIED
+                         ? L"CreateNamedPipe failed: %lu - another process holds the pipe name, not serving it"
+                         : L"CreateNamedPipe failed: %lu",
+                     createErr);
                 // Wait on the stop event instead of Sleep so Ctrl+C
                 // (console mode) or SERVICE_CONTROL_STOP can break us
                 // out immediately instead of after another 500 ms of
@@ -174,6 +186,7 @@ namespace ExerciseUnlock::Svc
                 }
                 continue;
             }
+            firstInstance = false;
 
             OVERLAPPED ov{};
             ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -295,8 +308,7 @@ namespace ExerciseUnlock::Svc
 
     void PipeServer::HandleClient(HANDLE pipe)
     {
-        // Read the fixed 8-byte header; leave any tail (op-specific
-        // payload like Op::Grant's u32 minutes) for a follow-up read.
+        // Read the fixed 8-byte header (no op carries a payload).
         Request req{};
         DWORD read = 0;
         if (!ReadFile(pipe, &req, sizeof(req), &read, nullptr) || read != sizeof(req))
@@ -347,28 +359,6 @@ namespace ExerciseUnlock::Svc
             // truncated so the caller isn't confused by a 0-byte file.
             const bool ok = WriteLatestWebcamFrameBmp();
             if (!ok) LogF(L"SaveWebcamFrame: no frame available");
-            SnapshotInto(resp);
-            break;
-        }
-
-        case Op::Grant:
-        {
-            // Read the trailing 4-byte minutes payload. Anything less
-            // is treated as bad request.
-            uint32_t minutes = 0;
-            DWORD rd = 0;
-            if (!ReadFile(pipe, &minutes, sizeof(minutes), &rd, nullptr) ||
-                rd != sizeof(minutes) || minutes == 0 || minutes > 12 * 60)
-            {
-                LogF(L"Grant: bad payload (rd=%lu min=%u)", rd, minutes);
-                SnapshotInto(resp);
-                break;
-            }
-            const uint32_t seconds = minutes * 60u;
-            LogF(L"Grant: parent override — %u minutes", minutes);
-            GetSessionManager().ArmSession(seconds, SessionManager::Kind::Parent);
-            // Do NOT zero counters / bank — override is orthogonal
-            // to earned time; the child keeps whatever they'd built.
             SnapshotInto(resp);
             break;
         }

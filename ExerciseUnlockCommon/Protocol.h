@@ -32,11 +32,9 @@ namespace ExerciseUnlock::Ipc
         // can eyeball what the camera actually saw. See PipeServer for
         // the exact path.
         SaveWebcamFrame = 4,
-        // Parent override — hand the child N minutes of unlocked time
-        // without requiring reps. Payload is 4-byte little-endian
-        // uint32 minutes appended after the 8-byte header. Restricted
-        // to processes that can open the pipe (SYSTEM + Admins).
-        Grant           = 5,
+        // 5 was Grant (parent override: N minutes without reps). Removed
+        // in 1.2.8 - the pipe was open to every user then, so the child
+        // could grant themselves time. Don't reuse the number.
     };
 
     enum class ChallengeState : uint8_t
@@ -232,7 +230,7 @@ namespace ExerciseUnlock::Ipc
 
         // --- v1.3 phone camera ---
         // Appended at the end so readers of the shorter v1.2 response
-        // (tools, admin grant) keep working.
+        // (tools) keep working.
         uint8_t   phoneState;           // PhoneState
         // +1 (wrapping) per rep done outside the schedule window: the
         // detectors recognize it but credit nothing. The tile plays the

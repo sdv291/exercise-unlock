@@ -26,8 +26,7 @@ namespace ExerciseUnlock::Svc
         //            today's [schedule] window (e.g. 20:00).
         //   Grace  — short close-your-apps unlock: allowed past the
         //            window end, never re-opens the grace window.
-        //   Parent — Op::Grant override: only the hard caps apply.
-        enum class Kind { Earned, Grace, Parent };
+        enum class Kind { Earned, Grace };
         void ArmSession(uint32_t seconds, Kind kind = Kind::Earned);
 
         // Called on WTS_SESSION_LOCK. If a session is running, stops

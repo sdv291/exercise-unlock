@@ -227,7 +227,7 @@ namespace ExerciseUnlock::Svc
         const int64_t requested = now + static_cast<int64_t>(seconds);
         // Earned time stops when today's schedule window closes —
         // 60 min earned at 19:30 with active_to=20:00 locks at 20:00.
-        // Grace / parent unlocks only respect end-of-day.
+        // A grace unlock only respects end-of-day.
         const bool    windowCap = (kind == Kind::Earned);
         const int64_t limit     = windowCap ? EndOfActiveWindowUnix()
                                             : EndOfLocalDayUnix();

@@ -8,9 +8,9 @@ namespace ExerciseUnlock
     // these numbers to compare against the server manifest.
     inline constexpr int kVersionMajor = 1;
     inline constexpr int kVersionMinor = 2;
-    inline constexpr int kVersionPatch = 7;
+    inline constexpr int kVersionPatch = 8;
 
-    inline constexpr wchar_t kVersionString[] = L"1.2.7";
+    inline constexpr wchar_t kVersionString[] = L"1.2.8";
 
     // Pack major.minor.patch into one comparable uint32 (M<<16|m<<8|p).
     inline constexpr uint32_t PackVersion(int M, int m, int p)

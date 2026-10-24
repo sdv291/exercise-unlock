@@ -9,8 +9,51 @@ using namespace ExerciseUnlock::Ipc;
 
 namespace ExerciseUnlock::Client
 {
-    HRESULT QueryStatus(Response& out, unsigned timeoutMs)
+    // The pipe name is public. Before believing "enough reps - start the
+    // session", make sure the other end is the service (SYSTEM), or an
+    // elevated developer build - not a look-alike server some other
+    // process put up under the same name.
+    static bool ServerIsTrusted(HANDLE pipe)
     {
+        ULONG pid = 0;
+        if (!GetNamedPipeServerProcessId(pipe, &pid)) return false;
+        bool trusted = false, queried = false;
+        if (HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid))
+        {
+            HANDLE token = nullptr;
+            if (OpenProcessToken(proc, TOKEN_QUERY, &token))
+            {
+                DWORD user[(sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE) / sizeof(DWORD) + 1]{};
+                DWORD len = 0;
+                if (GetTokenInformation(token, TokenUser, user, sizeof(user), &len))
+                {
+                    queried = true;
+                    trusted = IsWellKnownSid(reinterpret_cast<TOKEN_USER*>(user)->User.Sid, WinLocalSystemSid) != FALSE;
+                }
+                TOKEN_ELEVATION elevation{};
+                if (queried && !trusted && GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &len))
+                    trusted = elevation.TokenIsElevated != 0;
+                CloseHandle(token);
+            }
+            CloseHandle(proc);
+        }
+        if (!queried)
+        {
+            // LogonUI runs as SYSTEM and can read the token of any normal
+            // process - the child's included. One it can't read is nothing
+            // the child could start: accept it when it runs in session 0
+            // (services) rather than lock the child out on a fluke.
+            ULONG session = 1;
+            trusted = GetNamedPipeServerSessionId(pipe, &session) && session == 0;
+        }
+        if (!trusted) LogF(L"pipe server (pid %lu) is not the service - ignored", pid);
+        return trusted;
+    }
+
+    // Connects to the service's pipe in message mode, or fails.
+    static HRESULT OpenServicePipe(unsigned timeoutMs, HANDLE& out)
+    {
+        out = INVALID_HANDLE_VALUE;
         // WaitNamedPipe first so we don't hang forever if the service
         // is down. If it's up, CreateFile connects immediately after.
         if (!WaitNamedPipeW(kPipeName, timeoutMs))
@@ -34,9 +77,23 @@ namespace ExerciseUnlock::Client
             LogF(L"CreateFile(pipe) failed: %lu", err);
             return HRESULT_FROM_WIN32(err);
         }
+        if (!ServerIsTrusted(pipe))
+        {
+            CloseHandle(pipe);
+            return E_ACCESSDENIED;
+        }
 
         DWORD mode = PIPE_READMODE_MESSAGE;
         SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr);
+        out = pipe;
+        return S_OK;
+    }
+
+    HRESULT QueryStatus(Response& out, unsigned timeoutMs)
+    {
+        HANDLE pipe = INVALID_HANDLE_VALUE;
+        const HRESULT hrOpen = OpenServicePipe(timeoutMs, pipe);
+        if (FAILED(hrOpen)) return hrOpen;
 
         Request req{};
         req.magic   = kMagic;
@@ -91,19 +148,9 @@ namespace ExerciseUnlock::Client
     // drain the response, close.
     static HRESULT SendOpNoData(Op op, unsigned timeoutMs)
     {
-        if (!WaitNamedPipeW(kPipeName, timeoutMs))
-        {
-            return HRESULT_FROM_WIN32(GetLastError());
-        }
-        HANDLE pipe = CreateFileW(kPipeName,
-                                  GENERIC_READ | GENERIC_WRITE,
-                                  0, nullptr, OPEN_EXISTING, 0, nullptr);
-        if (pipe == INVALID_HANDLE_VALUE)
-        {
-            return HRESULT_FROM_WIN32(GetLastError());
-        }
-        DWORD mode = PIPE_READMODE_MESSAGE;
-        SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr);
+        HANDLE pipe = INVALID_HANDLE_VALUE;
+        const HRESULT hrOpen = OpenServicePipe(timeoutMs, pipe);
+        if (FAILED(hrOpen)) return hrOpen;
 
         Request req{};
         req.magic   = kMagic;
