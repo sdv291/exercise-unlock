@@ -122,6 +122,7 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClInclude Include="WebcamProbe.h" />
     <ClInclude Include="PoseEstimator.h" />
     <ClInclude Include="SquatDetector.h" />
+    <ClInclude Include="RepResult.h" />
     <ClInclude Include="PushUpDetector.h" />
     <ClInclude Include="PostureClassifier.h" />
     <ClInclude Include="AngleFilter.h" />

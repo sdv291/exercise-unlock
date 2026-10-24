@@ -85,6 +85,7 @@ namespace ExerciseUnlock::Svc
         m_repMaxHipY    = -1.0f;
         m_angleFilter.Reset();
         m_hipHistory.clear();
+        m_lastRep = RepResult{};
 
         auto& st = GetState();
         st.squatCount.store(0);
@@ -464,6 +465,13 @@ namespace ExerciseUnlock::Svc
             else if (isStandingNow())
             {
                 // Aborted descent — didn't reach Down. No rep.
+                RepResult r;
+                r.seq         = m_lastRep.seq + 1;
+                r.reachedDown = false;
+                r.deepest     = m_repMinAngle;
+                r.durMs       = m_repStartTickMs ? static_cast<uint32_t>(now - m_repStartTickMs) : 0;
+                m_lastRep     = r;
+                m_repMinAngle = 999.0f;
                 m_phase = SquatPhase::Standing;
                 m_lastStandingTickMs = now;
                 m_repStartTickMs  = 0;
@@ -558,8 +566,22 @@ namespace ExerciseUnlock::Svc
                 // confusion. All knee lifts failed hipDy=<0.03 on
                 // their own, so the asymmetry gate added no
                 // detection power but did add false drops.
-                if (timingOk && qualityOk && hipDriftOk &&
-                    oscillationOk && hipDropOk)
+                const bool counted = timingOk && qualityOk && hipDriftOk &&
+                                     oscillationOk && hipDropOk;
+                RepResult r;
+                r.seq        = m_lastRep.seq + 1;
+                r.counted    = counted;
+                r.deepest    = m_repMinAngle;
+                r.durMs      = static_cast<uint32_t>(dur);
+                r.tooFast    = !timingOk && dur < kMinRepMs;
+                r.tooSlow    = !timingOk && dur > kMaxRepMs;
+                r.shallow    = !qualityOk;
+                r.moved      = !hipDriftOk;
+                r.wobbled    = !oscillationOk;
+                r.hipsStayed = !hipDropOk;
+                r.hipDrop    = hipDrop;
+                m_lastRep    = r;
+                if (counted)
                 {
                     // Add to the shared total rather than storing our own
                     // count: phone reps (PhoneLink) land in the same

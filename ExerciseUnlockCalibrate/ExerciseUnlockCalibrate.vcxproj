@@ -81,10 +81,22 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="CalibLog.cpp" />
     <ClCompile Include="..\ExerciseUnlockService\PoseEstimator.cpp" />
+    <!-- Test screen: the service's own detectors and config reader. -->
+    <ClCompile Include="CalibRuntime.cpp" />
+    <ClCompile Include="..\ExerciseUnlockService\Config.cpp" />
+    <ClCompile Include="..\ExerciseUnlockService\PostureClassifier.cpp" />
+    <ClCompile Include="..\ExerciseUnlockService\SquatDetector.cpp" />
+    <ClCompile Include="..\ExerciseUnlockService\PushUpDetector.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ExerciseUnlockService\PoseEstimator.h" />
     <ClInclude Include="..\ExerciseUnlockCommon\Paths.h" />
+    <ClInclude Include="..\ExerciseUnlockService\Config.h" />
+    <ClInclude Include="..\ExerciseUnlockService\RepResult.h" />
+    <ClInclude Include="CheckJudge.h" />
+    <ClInclude Include="..\ExerciseUnlockService\SquatDetector.h" />
+    <ClInclude Include="..\ExerciseUnlockService\PushUpDetector.h" />
+    <ClInclude Include="..\ExerciseUnlockService\PostureClassifier.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

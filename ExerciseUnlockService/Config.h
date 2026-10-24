@@ -142,7 +142,28 @@ namespace ExerciseUnlock::Svc
         // with the configured HH:MM strings.
         static std::wstring LabelOutsideHours();
 
+        // ExerciseUnlockCalibrate's test screen runs the real detectors
+        // with thresholds that are not saved yet, at any time of day.
+        // The service never calls these.
+        static void SetSquatAngles(float standing, float goingDown, float goingUp, float down)
+        {
+            s_squatStandingAng = standing;
+            s_squatGoingDownAng = goingDown;
+            s_squatGoingUpAng = goingUp;
+            s_squatDownAng = down;
+        }
+        static void SetSquatMinHipDrop(float v) { s_squatMinHipDrop = v; }
+        static void SetPushupAngles(float up, float goingDown, float goingUp, float down)
+        {
+            s_pushupUpAng = up;
+            s_pushupGoingDownAng = goingDown;
+            s_pushupGoingUpAng = goingUp;
+            s_pushupDownAng = down;
+        }
+        static void SetIgnoreSchedule(bool on) { s_ignoreSchedule = on; }
+
     private:
+        static std::atomic<bool> s_ignoreSchedule;
         static std::atomic<int> s_pushupSec;
         static std::atomic<int> s_squatSec;
         static std::atomic<int> s_minUnlockSec;

@@ -1,6 +1,8 @@
 // ExerciseUnlockCalibrate — measures the child's knee / elbow angles from
 // four photos (standing, squat, push-up up, push-up down) and writes the
-// rep-detection thresholds into config.ini.
+// rep-detection thresholds into config.ini. After each exercise's photos
+// the child does 5 test reps, counted by the service's own detectors with
+// the new (not yet saved) thresholds.
 //
 //   ExerciseUnlockCalibrate.exe [/lang en|uk] [/setup]
 //
@@ -15,6 +17,12 @@
 
 #define NOMINMAX
 #include "PoseEstimator.h"
+#include "Config.h"
+#include "State.h"
+#include "SquatDetector.h"
+#include "PushUpDetector.h"
+#include "PostureClassifier.h"
+#include "CheckJudge.h"
 #include "Log.h"
 #include "Paths.h"
 
@@ -55,9 +63,17 @@ namespace Gdiplus { using std::min; using std::max; }
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 using ExerciseUnlock::Svc::BodyPose;
+using ExerciseUnlock::Svc::Config;
 using ExerciseUnlock::Svc::Joint;
 using ExerciseUnlock::Svc::LogF;
 using ExerciseUnlock::Svc::PoseEstimator;
+using ExerciseUnlock::Svc::PostureClassifier;
+using ExerciseUnlock::Svc::PushUpDetector;
+using ExerciseUnlock::Svc::RepResult;
+using ExerciseUnlock::Svc::SquatDetector;
+using ExerciseUnlock::Calib::KeepOrder;
+using ExerciseUnlock::Calib::Swing;
+namespace Ipc = ExerciseUnlock::Ipc;
 
 namespace
 {
@@ -72,6 +88,13 @@ namespace
         tSaved, tRestarted, tRestartFailed, tSaveFailed, tNothingToSave,
         tSumSquat, tSumPush, tSumHip, tSumKept, tSumCamera,
         tExampleSetup, tExampleView, tDistance,
+        tTitleTestSquat, tTextTestSquat, tTitleTestPush, tTextTestPush, tRestart,
+        tTestThrSquat, tTestThrPush, tTestCounted, tTestPassed,
+        tTestNotDeepSquat, tTestNotDeepPush, tTestTooFast, tTestTooSlow, tTestShallow, tTestMoved, tTestWobble, tTestHips,
+        tTestNoSquat, tTestNoPlank, tTestStraight,
+        tSumTestOk, tSumTestWarn, tSumTestSkipped,
+        tRetakePhotos, tTestAdjusted, tAdjDown, tAdjStand, tAdjUp, tAdjHip, tTestPace, tTestForm,
+        tRestartRange, tRestartStill, tRestartHips, tRestartAsk, tSumAdjusted,
         tCount
     };
 
@@ -82,17 +105,18 @@ namespace
         L"Put the camera where the child will exercise and pick it in the list above.\n\n"
         L"The child must be fully visible from the side - from head to feet. For push-ups the camera has to stand on the floor.\n\n"
         L"Next you will take 4 photos: standing, squatting, push-up with straight arms and push-up at the bottom. "
-        L"Exercise Unlock measures the child's angles and tunes the rep counting to them.",
-        L"1. Standing, side view",
+        L"Exercise Unlock measures the child's angles and tunes the rep counting to them; after each exercise "
+        L"the child does 5 test reps to check it.",
+        L"Standing, side view",
         L"The child stands sideways to the camera at full height: legs straight, arms down.\n\n"
         L"Press \"Take photo\" - the photo is taken right away.",
-        L"2. Squat, side view",
+        L"Squat, side view",
         L"The child squats as deep as in a normal rep and holds still, still sideways to the camera.\n\n"
         L"Press \"Take photo\" and keep the squat until the photo appears.",
-        L"3. Push-up, arms straight",
+        L"Push-up, arms straight",
         L"Put the camera on the floor, 2-3 m away. The child takes the plank position sideways to the camera, arms straight.\n\n"
         L"Press \"Take photo\".",
-        L"4. Push-up, bottom",
+        L"Push-up, bottom",
         L"The child lowers down as in a normal push-up - elbows bent - and holds still.\n\n"
         L"Press \"Take photo\".",
         L"Result",
@@ -117,6 +141,46 @@ namespace
         L"Example - where to put the camera:",
         L"Example - what the camera should see:",
         L"2-3 m",
+        L"Squat check",
+        L"The child does 5 squats at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
+        L"The reps are counted with the new settings exactly the way the lock screen will count them. "
+        L"If a rep is not counted, the reason is shown below.",
+        L"Push-up check",
+        L"The child does 5 push-ups at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
+        L"The reps are counted with the new settings exactly the way the lock screen will count them. "
+        L"If a rep is not counted, the reason is shown below.",
+        L"Start over",
+        L"A rep counts when the knee bends to %d\x00B0 or less and straightens back to %d\x00B0 or more.",
+        L"A rep counts when the elbow bends to %d\x00B0 or less and straightens back to %d\x00B0 or more.",
+        L"Counted: %d of %d.",
+        L"Check passed: %d of %d reps counted. Press \"Next\".",
+        L"Last rep not counted: not deep enough - the knee bent to %d\x00B0, it needs %d\x00B0 or less.",
+        L"Last rep not counted: not low enough - the elbow bent to %d\x00B0, it needs %d\x00B0 or less.",
+        L"Last rep not counted: too fast (%.1f s, at least %.1f s needed).",
+        L"Last rep not counted: too slow (%.1f s, at most %.1f s).",
+        L"Last rep not counted: not deep enough.",
+        L"Last rep not counted: the child moved from the spot.",
+        L"Last rep not counted: the movement went down again on the way up - stand up in one go.",
+        L"Last rep not counted: the hips did not go down - squat, don't just lift a knee.",
+        L"No squat position recognized: the child must be fully visible, from head to feet.",
+        L"No push-up position recognized: the whole body must be visible, hands on the floor.",
+        L"Keep the body straight, as in a plank.",
+        L"\x2714 Check passed: %d of %d reps counted",
+        L"\x26A0 Check not finished (%d of %d) - reps may not count. Retake the photos or run the check again.",
+        L"Check skipped",
+        L"Retake",
+        L"The thresholds were adjusted to the child's test reps: %s. Do 5 reps again.",
+        L"down %d\x00B0 \x2192 %d\x00B0",
+        L"standing %d\x00B0 \x2192 %d\x00B0",
+        L"up %d\x00B0 \x2192 %d\x00B0",
+        L"hip drop %.2f \x2192 %.2f",
+        L"The reps were not counted because of the pace: one rep should take %.1f-%.1f s. Do 5 reps again at a steady pace.",
+        L"The reps were not counted because of the movement (see the reason above). Do 5 reps again.",
+        L"The test reps differ too much from the photos (only %d\x00B0 between top and bottom).",
+        L"The check failed several times in a row.",
+        L"The hips hardly move in the picture - the camera probably sees the child from a bad angle.",
+        L"Calibrate this exercise again: press \"Retake\" and take its photos once more.",
+        L"Thresholds adjusted to the test reps",
     };
 
     const wchar_t* const kUk[] = {
@@ -126,17 +190,18 @@ namespace
         L"Поставте камеру там, де дитина виконуватиме вправи, і виберіть її у списку вище.\n\n"
         L"Дитину має бути видно збоку повністю - від голови до ніг. Для віджимань камера має стояти на підлозі.\n\n"
         L"Далі ви зробите 4 фото: стоячи, у присіді, віджимання з прямими руками та віджимання внизу. "
-        L"Exercise Unlock виміряє кути дитини й налаштує під них підрахунок повторів.",
-        L"1. Стоячи, у профіль",
+        L"Exercise Unlock виміряє кути дитини й налаштує під них підрахунок повторів, а після кожної вправи "
+        L"дитина зробить 5 пробних повторів для перевірки.",
+        L"Стоячи, у профіль",
         L"Дитина стоїть боком до камери на повний зріст: ноги прямі, руки опущені.\n\n"
         L"Натисніть «Зробити фото» - знімок буде зроблено одразу.",
-        L"2. Присід, у профіль",
+        L"Присід, у профіль",
         L"Дитина присідає так глибоко, як у звичайному повторенні, і завмирає - так само боком до камери.\n\n"
         L"Натисніть «Зробити фото» й тримайте присід, доки не з'явиться знімок.",
-        L"3. Віджимання, руки прямі",
+        L"Віджимання, руки прямі",
         L"Поставте камеру на підлогу за 2-3 м. Дитина стає в планку боком до камери, руки прямі.\n\n"
         L"Натисніть «Зробити фото».",
-        L"4. Віджимання, внизу",
+        L"Віджимання, внизу",
         L"Дитина опускається, як у звичайному віджиманні, - лікті зігнуті - і завмирає.\n\n"
         L"Натисніть «Зробити фото».",
         L"Результат",
@@ -161,6 +226,46 @@ namespace
         L"Приклад - куди поставити камеру:",
         L"Приклад - так має бачити камера:",
         L"2-3 м",
+        L"Перевірка присідань",
+        L"Дитина робить 5 присідань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
+        L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
+        L"Якщо повтор не зараховано, нижче буде вказано причину.",
+        L"Перевірка віджимань",
+        L"Дитина робить 5 віджимань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
+        L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
+        L"Якщо повтор не зараховано, нижче буде вказано причину.",
+        L"Почати знову",
+        L"Повтор зараховується, коли коліно згинається до %d\x00B0 або менше й випрямляється до %d\x00B0 або більше.",
+        L"Повтор зараховується, коли лікоть згинається до %d\x00B0 або менше й випрямляється до %d\x00B0 або більше.",
+        L"Зараховано: %d з %d.",
+        L"Перевірку пройдено: зараховано %d з %d повторів. Натисніть «Далі».",
+        L"Останній повтор не зараховано: замало глибоко - коліно зігнулося до %d\x00B0, потрібно %d\x00B0 або менше.",
+        L"Останній повтор не зараховано: замало низько - лікоть зігнувся до %d\x00B0, потрібно %d\x00B0 або менше.",
+        L"Останній повтор не зараховано: занадто швидко (%.1f с, потрібно щонайменше %.1f с).",
+        L"Останній повтор не зараховано: занадто повільно (%.1f с, максимум %.1f с).",
+        L"Останній повтор не зараховано: замало глибоко.",
+        L"Останній повтор не зараховано: дитина зрушила з місця.",
+        L"Останній повтор не зараховано: на підйомі рух знову пішов униз - вставайте за один рух.",
+        L"Останній повтор не зараховано: стегна не опустилися - треба присідати, а не піднімати коліно.",
+        L"Присід не розпізнано: дитину має бути видно повністю, від голови до ніг.",
+        L"Віджимання не розпізнано: має бути видно все тіло, руки - на підлозі.",
+        L"Тримайте тіло рівно, як у планці.",
+        L"\x2714 Перевірку пройдено: зараховано %d з %d",
+        L"\x26A0 Перевірку не завершено (%d з %d) - повтори можуть не зараховуватися. Перезніміть фото або повторіть перевірку.",
+        L"Перевірку пропущено",
+        L"Перезняти",
+        L"Пороги скориговано за пробними повторами дитини: %s. Зробіть 5 повторів ще раз.",
+        L"низ %d\x00B0 \x2192 %d\x00B0",
+        L"стійка %d\x00B0 \x2192 %d\x00B0",
+        L"угорі %d\x00B0 \x2192 %d\x00B0",
+        L"опускання стегон %.2f \x2192 %.2f",
+        L"Повтори не зараховано через темп: один повтор має тривати %.1f-%.1f с. Зробіть 5 повторів ще раз у рівному темпі.",
+        L"Повтори не зараховано через рух (причину вказано вище). Зробіть 5 повторів ще раз.",
+        L"Пробні повтори надто відрізняються від фото (між верхом і низом лише %d\x00B0).",
+        L"Перевірка кілька разів поспіль не вдалася.",
+        L"Стегна майже не рухаються в кадрі - мабуть, камера бачить дитину під невдалим кутом.",
+        L"Відкалібруйте цю вправу заново: натисніть «Перезняти» й зробіть її фото ще раз.",
+        L"Пороги скориговано за пробними повторами",
     };
 
     static_assert(std::size(kEn) == tCount && std::size(kUk) == tCount, "string tables out of sync");
@@ -279,7 +384,30 @@ namespace
     // child holds the pose, so there is no countdown.
     enum class Phase { Live, Collecting };
 
-    constexpr int kSteps = 6;          // 0 camera, 1..4 photos, 5 summary
+    // Each exercise: its photos, then a test with the new thresholds. A new
+    // exercise adds its rows here (plus its Plan fields and detector).
+    enum class StepKind { Camera, Photo, Test, Summary };
+    enum Exercise { kSquat = 0, kPushUp = 1, kExerciseCount };
+    struct StepDef
+    {
+        StepKind kind;
+        int      exercise;   // Photo / Test: kSquat / kPushUp, else -1
+        int      shot;       // Photo: index into g_shots (1..4), else 0
+        int      example;    // example picture: 0 camera scene, 1..4 a figure, -1 none
+        Txt      title, text;
+    };
+    constexpr StepDef kStepDefs[] = {
+        { StepKind::Camera,  -1,      0,  0, tTitle0,         tText0 },
+        { StepKind::Photo,   kSquat,  1,  1, tTitle1,         tText1 },
+        { StepKind::Photo,   kSquat,  2,  2, tTitle2,         tText2 },
+        { StepKind::Test,    kSquat,  0, -1, tTitleTestSquat, tTextTestSquat },
+        { StepKind::Photo,   kPushUp, 3,  3, tTitle3,         tText3 },
+        { StepKind::Photo,   kPushUp, 4,  4, tTitle4,         tText4 },
+        { StepKind::Test,    kPushUp, 0, -1, tTitleTestPush,  tTextTestPush },
+        { StepKind::Summary, -1,      0, -1, tTitle5,         tText5 },
+    };
+    constexpr int kSteps = static_cast<int>(std::size(kStepDefs));
+    constexpr int kTestReps = 5;
     constexpr UINT WM_APP_FRAME  = WM_APP + 1;
     constexpr UINT WM_APP_CAMERR = WM_APP + 2;
     constexpr UINT_PTR kTimerId  = 1;
@@ -290,7 +418,7 @@ namespace
 
     HINSTANCE g_inst = nullptr;
     HWND g_wnd = nullptr, g_cam = nullptr, g_back = nullptr, g_take = nullptr, g_skip = nullptr, g_next = nullptr;
-    HFONT g_fontUi = nullptr, g_fontTitle = nullptr;
+    HFONT g_fontUi = nullptr, g_fontTitle = nullptr, g_fontBig = nullptr;
     UINT g_dpi = 96;
     bool g_setupMode = false;
     std::wstring g_snapshotPath;      // developer option: render one step to a .bmp and exit
@@ -333,6 +461,122 @@ namespace
     std::wstring g_status;            // error / info line under the instructions
     bool g_statusIsError = false;
     bool g_saved = false;
+
+    const StepDef& Cur() { return kStepDefs[g_step]; }
+
+    // ------------------------------------------------------------ test reps
+    // While a test step is open the camera thread runs the service's
+    // detectors on every frame (TestFrame) and publishes what they saw;
+    // the UI thread only reads that.
+
+    struct TestFeed
+    {
+        uint32_t  gen = 0;
+        uint32_t  count[kExerciseCount]{};
+        float     angle[kExerciseCount]{};
+        uint8_t   posture = 0;
+        uint8_t   pushPhase = 0;
+        RepResult last[kExerciseCount]{};
+        std::vector<float> peaks[kExerciseCount], valleys[kExerciseCount];
+    };
+    std::atomic<int>      g_testExercise{ -1 };   // detectors run for this one; -1 = off
+    std::atomic<uint32_t> g_testGen{ 0 };         // bumped = detectors start from zero
+    std::mutex            g_testMx;
+    TestFeed              g_testFeed;             // under g_testMx
+
+    struct TestRun
+    {
+        bool      passed = false, skipped = false;
+        int       counted = 0;
+        uint32_t  lastSeq = 0;
+        RepResult last{};                  // seq 0 = no finished attempt yet
+        std::vector<RepResult> attempts;   // every finished attempt of this run
+        std::vector<float> peaks, valleys; // Swing turning points of this run
+        ULONGLONG lastValleyMs = 0;
+        float     angle = 0.0f;
+        bool      notInPlank = false;
+        ULONGLONG postureOkMs = 0;         // last frame the exercise's pose was recognized
+    };
+    TestRun g_tests[kExerciseCount];
+    float g_cfgMinHipDrop = 0.0f;          // config.ini's, for plans without a hip drop
+
+    // What a failed check changed: thresholds loosened to fit the test
+    // reps (ComputePlan uses them instead of the photo-based ones), or a
+    // request for new photos. Lasts until the exercise's photos change.
+    struct Fix
+    {
+        bool  on = false;
+        int   st = 0, gd = 0, gu = 0, dn = 0;
+        bool  hip = false;
+        float hipDrop = 0.0f;
+        int   rounds = 0;                  // adjustments made so far
+        bool  restart = false;             // new photos needed
+        std::wstring note;                 // why / what changed, shown on the test step
+    };
+    Fix g_fix[kExerciseCount];
+
+    // The exercise's photos changed (or are about to): earlier checks and
+    // adjustments no longer apply.
+    void ResetExercise(int ex)
+    {
+        g_tests[ex] = TestRun{};
+        g_fix[ex] = Fix{};
+    }
+
+    // The camera thread's own detectors; same frame order as the
+    // service's StreamPose.
+    struct TestDetectors
+    {
+        SquatDetector     squats;
+        PushUpDetector    pushups;
+        PostureClassifier posture;
+        Swing             swing[kExerciseCount];
+        uint32_t          gen = 0;
+        bool              started = false;
+    };
+
+    void TestFrame(TestDetectors& d, const BodyPose& pose)
+    {
+        if (g_testExercise.load() < 0) return;
+        const uint32_t gen = g_testGen.load();
+        if (!d.started || d.gen != gen)
+        {
+            d.squats.Reset();
+            d.pushups.Reset();
+            d.posture.Reset();
+            for (Swing& s : d.swing) s.Reset();
+            d.swing[kPushUp].hyst = 8.0f;   // MoveNet reads push-up elbows with a small span
+            d.gen = gen;
+            d.started = true;
+        }
+        d.squats.Update(pose);
+        d.pushups.Update(pose);
+        d.posture.Update(pose);
+
+        auto& st = ExerciseUnlock::Svc::GetState();
+        // The detector's angle only moves while its posture is latched.
+        const uint8_t posture = st.postureKind.load();
+        if (posture == static_cast<uint8_t>(Ipc::PostureKind::Squat))
+            d.swing[kSquat].Push(st.squatKneeAngle.load());
+        else if (posture == static_cast<uint8_t>(Ipc::PostureKind::PushUp))
+            d.swing[kPushUp].Push(st.pushUpElbowAngle.load());
+
+        std::lock_guard<std::mutex> lk(g_testMx);
+        for (int ex = 0; ex < kExerciseCount; ++ex)
+        {
+            g_testFeed.peaks[ex] = d.swing[ex].peaks;
+            g_testFeed.valleys[ex] = d.swing[ex].valleys;
+        }
+        g_testFeed.gen = gen;
+        g_testFeed.count[kSquat] = st.squatCount.load();
+        g_testFeed.count[kPushUp] = st.pushUpCount.load();
+        g_testFeed.angle[kSquat] = st.squatKneeAngle.load();
+        g_testFeed.angle[kPushUp] = st.pushUpElbowAngle.load();
+        g_testFeed.posture = posture;
+        g_testFeed.pushPhase = st.pushUpPhase.load();
+        g_testFeed.last[kSquat] = d.squats.LastRep();
+        g_testFeed.last[kPushUp] = d.pushups.LastRep();
+    }
 
     int Px(int v) { return MulDiv(v, static_cast<int>(g_dpi), 96); }
 
@@ -422,6 +666,7 @@ namespace
             PostMessageW(g_wnd, WM_APP_CAMERR, 0, 0);
 
         std::vector<uint8_t> buf;
+        TestDetectors test;
         unsigned frames = 0, empty = 0, shown = 0, wrongSize = 0;
         ULONGLONG lastStatMs = GetTickCount64();
         while (SUCCEEDED(hr) && w && h && !s->stop.load())
@@ -488,11 +733,14 @@ namespace
                         buf.assign(data, data + need);
                         BodyPose pose{};
                         const ULONGLONG poseStart = GetTickCount64();
-                        if (!g_poseOk || FAILED(g_pose.Predict(buf.data(), w, h, pose)))
+                        const bool predicted = g_poseOk && SUCCEEDED(g_pose.Predict(buf.data(), w, h, pose));
+                        if (!predicted)
                             pose = BodyPose{};
                         const ULONGLONG poseMs = GetTickCount64() - poseStart;
                         if (shown == 0 || poseMs > 2000)
                             LogF(L"calibrate: pose took %llu ms", poseMs);
+                        if (predicted && !s->stop.load())
+                            TestFrame(test, pose);
                         if (!s->stop.load())
                         {
                             if (++shown == 1)
@@ -578,15 +826,8 @@ namespace
     // above the photo (45-60% of the range), the "standing" ones just
     // below it (15-25%). First field test: standing 175 / squat 76 gave
     // down=96, and no rep ever got that deep; the hand-tuned config that
-    // worked for that child was 158/150/135/125.
-    void KeepOrder(int& hi, int& lo, int gap)
-    {
-        if (hi - lo >= gap) return;
-        const int mid = (hi + lo) / 2;
-        hi = mid + (gap + 1) / 2;
-        lo = hi - gap;
-    }
-
+    // worked for that child was 158/150/135/125. The check after the
+    // photos corrects what this guess still gets wrong (CheckJudge.h).
     Plan ComputePlan()
     {
         Plan p;
@@ -637,7 +878,258 @@ namespace
             else
                 p.pushWhy = Fmt(T(tSmallPush), static_cast<int>(std::lround(range)));
         }
+
+        // Thresholds a failed check loosened to fit the test reps.
+        if (const Fix& f = g_fix[kSquat]; p.squat && f.on)
+        {
+            p.st = f.st; p.gd = f.gd; p.gu = f.gu; p.dn = f.dn;
+            if (f.hip) { p.hip = true; p.hipDrop = f.hipDrop; }
+        }
+        if (const Fix& f = g_fix[kPushUp]; p.push && f.on)
+        {
+            p.pu = f.st; p.pgd = f.gd; p.pgu = f.gu; p.pdn = f.dn;
+        }
         return p;
+    }
+
+    bool PlanReady(const Plan& p, int ex) { return ex == kSquat ? p.squat : p.push; }
+
+    // A test needs all of its exercise's photos.
+    bool PhotosDone(int ex)
+    {
+        for (const StepDef& s : kStepDefs)
+            if (s.kind == StepKind::Photo && s.exercise == ex && !g_shots[s.shot].done) return false;
+        return true;
+    }
+
+    const wchar_t* ExerciseName(int ex) { return ex == kSquat ? L"squat" : L"pushup"; }
+
+    void StopTest() { g_testExercise = -1; }
+
+    // Counts from zero with this exercise's new (unsaved) thresholds.
+    void StartTest(int ex)
+    {
+        const Plan p = ComputePlan();
+        g_tests[ex] = TestRun{};
+        if (!PlanReady(p, ex) || g_fix[ex].restart)
+        {
+            StopTest();
+            return;
+        }
+        if (ex == kSquat)
+        {
+            Config::SetSquatAngles(static_cast<float>(p.st), static_cast<float>(p.gd),
+                                   static_cast<float>(p.gu), static_cast<float>(p.dn));
+            Config::SetSquatMinHipDrop(p.hip ? p.hipDrop : g_cfgMinHipDrop);
+        }
+        else
+            Config::SetPushupAngles(static_cast<float>(p.pu), static_cast<float>(p.pgd),
+                                    static_cast<float>(p.pgu), static_cast<float>(p.pdn));
+        g_tests[ex].postureOkMs = GetTickCount64();
+        ++g_testGen;
+        g_testExercise = ex;
+        LogF(L"calibrate: %s test started", ExerciseName(ex));
+    }
+
+    void UpdateControls();
+
+    // ------------------------------------------------------------ check verdict
+    // Three reps that did not count end a round of the check; then
+    // Calib::Judge decides from the reps themselves: thresholds loosened to
+    // what they really reach, a word about the pace or the movement, or new
+    // photos when no thresholds would fit.
+    constexpr int kFailuresPerRound = 3;
+    constexpr ULONGLONG kSettleMs   = 2500;   // after the last bottom: that rep has finished by now
+
+    void AskRestart(int ex, const std::wstring& why)
+    {
+        g_fix[ex].restart = true;
+        g_fix[ex].note = why;
+        StopTest();
+        LogF(L"calibrate: %s check: new photos needed - %s", ExerciseName(ex), why.c_str());
+        UpdateControls();
+    }
+
+    void JudgeTest(int ex)
+    {
+        using ExerciseUnlock::Calib::Verdict;
+        const TestRun& run = g_tests[ex];
+        Fix& fix = g_fix[ex];
+        const Plan p = ComputePlan();
+        const bool squat = ex == kSquat;
+        ExerciseUnlock::Calib::Thresholds cur;
+        if (squat)
+            cur = { p.st, p.gd, p.gu, p.dn, p.hip ? p.hipDrop : g_cfgMinHipDrop };
+        else
+            cur = { p.pu, p.pgd, p.pgu, p.pdn, 0.0f };
+        const auto j = ExerciseUnlock::Calib::Judge(run.attempts, run.peaks, run.valleys, cur, squat, fix.rounds);
+        LogF(L"calibrate: %s check round %d: valleys=%zu peaks=%zu attempts=%zu reps reach %d..%d -> verdict %d",
+             ExerciseName(ex), fix.rounds, run.valleys.size(), run.peaks.size(), run.attempts.size(),
+             j.bottom, j.top, static_cast<int>(j.verdict));
+
+        switch (j.verdict)
+        {
+        case Verdict::NewPhotosRange:    return AskRestart(ex, Fmt(T(tRestartRange), j.range));
+        case Verdict::NewPhotosHips:     return AskRestart(ex, T(tRestartHips));
+        case Verdict::NewPhotosRepeated: return AskRestart(ex, T(tRestartStill));
+        case Verdict::Pace:
+        {
+            const int minMs = squat ? Config::SquatMinRepMs() : Config::PushupMinRepMs();
+            const int maxMs = squat ? Config::SquatMaxRepMs() : Config::PushupMaxRepMs();
+            fix.note = Fmt(T(tTestPace), minMs / 1000.0, maxMs / 1000.0);
+            break;
+        }
+        case Verdict::Form:
+            fix.note = T(tTestForm);
+            break;
+        case Verdict::Retry:
+            ++fix.rounds;
+            fix.note = T(tTestForm);
+            break;
+        case Verdict::Adjust:
+        {
+            std::wstring what;
+            auto add = [&](const std::wstring& s) { what += (what.empty() ? L"" : L", ") + s; };
+            if (j.t.down != cur.down) add(Fmt(T(tAdjDown), cur.down, j.t.down));
+            if (j.t.top != cur.top) add(Fmt(T(squat ? tAdjStand : tAdjUp), cur.top, j.t.top));
+            if (j.t.hipDrop < cur.hipDrop) add(Fmt(T(tAdjHip), cur.hipDrop, j.t.hipDrop));
+            fix.on = true;
+            fix.st = j.t.top; fix.gd = j.t.goingDown; fix.gu = j.t.goingUp; fix.dn = j.t.down;
+            if (j.t.hipDrop < cur.hipDrop) { fix.hip = true; fix.hipDrop = j.t.hipDrop; }
+            ++fix.rounds;
+            fix.note = Fmt(T(tTestAdjusted), what.c_str());
+            LogF(L"calibrate: %s thresholds adjusted: %d/%d/%d/%d hip %.2f",
+                 ExerciseName(ex), fix.st, fix.gd, fix.gu, fix.dn, j.t.hipDrop);
+            break;
+        }
+        }
+        StartTest(ex);
+        UpdateControls();
+    }
+
+    // UI thread, per frame: take over what the detectors published.
+    void PollTest()
+    {
+        const int ex = Cur().exercise;
+        if (Cur().kind != StepKind::Test || g_testExercise.load() != ex) return;
+        TestFeed f;
+        {
+            std::lock_guard<std::mutex> lk(g_testMx);
+            f = g_testFeed;
+        }
+        if (f.gen != g_testGen.load()) return;   // the previous run's numbers
+        TestRun& run = g_tests[ex];
+        run.counted = std::min(static_cast<int>(f.count[ex]), kTestReps);
+        run.angle = f.angle[ex];
+        const auto want = ex == kSquat ? Ipc::PostureKind::Squat : Ipc::PostureKind::PushUp;
+        if (f.posture == static_cast<uint8_t>(want)) run.postureOkMs = GetTickCount64();
+        run.notInPlank = ex == kPushUp && f.pushPhase == static_cast<uint8_t>(Ipc::PushUpPhase::NotInPlank);
+        const RepResult& r = f.last[ex];
+        if (r.seq != 0 && r.seq != run.lastSeq)
+        {
+            run.lastSeq = r.seq;
+            run.last = r;
+            run.attempts.push_back(r);
+            LogF(L"calibrate: %s test attempt %u counted=%d down=%d deepest=%.1f dur=%u ms "
+                 L"fast=%d slow=%d shallow=%d moved=%d wobbled=%d hips=%d hipDrop=%.2f",
+                 ExerciseName(ex), r.seq, r.counted ? 1 : 0, r.reachedDown ? 1 : 0, r.deepest, r.durMs,
+                 r.tooFast ? 1 : 0, r.tooSlow ? 1 : 0, r.shallow ? 1 : 0, r.moved ? 1 : 0,
+                 r.wobbled ? 1 : 0, r.hipsStayed ? 1 : 0, r.hipDrop);
+        }
+        if (f.valleys[ex].size() > run.valleys.size()) run.lastValleyMs = GetTickCount64();
+        run.peaks = f.peaks[ex];
+        run.valleys = f.valleys[ex];
+        if (run.counted >= kTestReps && !run.passed)
+        {
+            run.passed = true;
+            StopTest();
+            LogF(L"calibrate: %s test passed", ExerciseName(ex));
+            UpdateControls();
+            return;
+        }
+        // Every bottom is a rep the child tried; the ones not counted add up.
+        const int failures = static_cast<int>(run.valleys.size()) - run.counted;
+        if (failures >= kFailuresPerRound && GetTickCount64() - run.lastValleyMs >= kSettleMs)
+            JudgeTest(ex);
+    }
+
+    // Why the last attempt did not count, in the parent's words.
+    std::wstring WhyNotCounted(int ex, const RepResult& r, const Plan& p)
+    {
+        if (!r.reachedDown && r.deepest < 360.0f)
+            return ex == kSquat ? Fmt(T(tTestNotDeepSquat), static_cast<int>(std::lround(r.deepest)), p.dn)
+                                : Fmt(T(tTestNotDeepPush), static_cast<int>(std::lround(r.deepest)), p.pdn);
+        const double sec = r.durMs / 1000.0;
+        if (r.tooFast)
+            return Fmt(T(tTestTooFast), sec, (ex == kSquat ? Config::SquatMinRepMs() : Config::PushupMinRepMs()) / 1000.0);
+        if (r.tooSlow)
+            return Fmt(T(tTestTooSlow), sec, (ex == kSquat ? Config::SquatMaxRepMs() : Config::PushupMaxRepMs()) / 1000.0);
+        if (r.hipsStayed) return T(tTestHips);
+        if (r.moved) return T(tTestMoved);
+        if (r.wobbled) return T(tTestWobble);
+        return T(tTestShallow);
+    }
+
+    struct Para { std::wstring text; COLORREF color; };
+    constexpr COLORREF kInfoInk = RGB(90, 96, 130), kOkInk = RGB(20, 150, 110), kErrInk = RGB(200, 40, 60),
+                       kWarnInk = RGB(200, 110, 20), kTextInk = RGB(31, 37, 71);
+
+    // Test step panel: thresholds, progress, what went wrong.
+    std::vector<Para> TestParas(int ex)
+    {
+        std::vector<Para> out;
+        const Plan p = ComputePlan();
+        const Fix& fix = g_fix[ex];
+        if (!PlanReady(p, ex) || fix.restart)
+        {
+            out.push_back({ fix.restart ? fix.note : (ex == kSquat ? p.squatWhy : p.pushWhy), kErrInk });
+            out.push_back({ T(tRestartAsk), kErrInk });
+            return out;
+        }
+        out.push_back({ ex == kSquat ? Fmt(T(tTestThrSquat), p.dn, p.st) : Fmt(T(tTestThrPush), p.pdn, p.pu), kInfoInk });
+        const TestRun& run = g_tests[ex];
+        if (run.passed)
+        {
+            out.push_back({ Fmt(T(tTestPassed), run.counted, kTestReps), kOkInk });
+            return out;
+        }
+        if (!fix.note.empty()) out.push_back({ fix.note, kWarnInk });
+        out.push_back({ Fmt(T(tTestCounted), run.counted, kTestReps), kTextInk });
+        if (run.last.seq != 0 && !run.last.counted)
+            out.push_back({ WhyNotCounted(ex, run.last, p), kErrInk });
+        if (g_testExercise.load() == ex && GetTickCount64() - run.postureOkMs > 2500)
+            out.push_back({ T(ex == kSquat ? tTestNoSquat : tTestNoPlank), kWarnInk });
+        else if (run.notInPlank)
+            out.push_back({ T(tTestStraight), kWarnInk });
+        return out;
+    }
+
+    std::wstring TestSummary(int ex)
+    {
+        const TestRun& t = g_tests[ex];
+        std::wstring s = t.passed ? Fmt(T(tSumTestOk), t.counted, kTestReps)
+                       : t.skipped ? std::wstring(T(tSumTestSkipped))
+                                   : Fmt(T(tSumTestWarn), t.counted, kTestReps);
+        if (g_fix[ex].on) s += L"\n" + std::wstring(T(tSumAdjusted));
+        return s;
+    }
+
+    // "Retake photos" on a check that cannot pass: back to the exercise's
+    // first photo, everything about it forgotten.
+    void GoToStep(int step);
+    void RetakeExercise(int ex)
+    {
+        ResetExercise(ex);
+        int first = -1;
+        for (int i = 0; i < kSteps; ++i)
+        {
+            const StepDef& s = kStepDefs[i];
+            if (s.kind != StepKind::Photo || s.exercise != ex) continue;
+            g_shots[s.shot] = Shot{};
+            if (first < 0) first = i;
+        }
+        LogF(L"calibrate: %s - retaking photos", ExerciseName(ex));
+        if (first >= 0) GoToStep(first);
     }
 
     std::wstring OldVal(const wchar_t* sec, const wchar_t* key)
@@ -658,11 +1150,13 @@ namespace
             s += p.squatWhy.empty() ? Fmt(T(tSumKept), g_uk ? L"Присідання" : L"Squats") : p.squatWhy;
         if (p.hip)
             s += L"\n" + Fmt(T(tSumHip), OldVal(L"squat", L"min_hip_drop").c_str(), p.hipDrop);
+        if (p.squat) s += L"\n" + TestSummary(kSquat);
         s += L"\n\n";
         if (p.push)
             s += Fmt(T(tSumPush),
                      OldVal(L"pushup", L"up_angle").c_str(), p.pu, OldVal(L"pushup", L"going_down_angle").c_str(), p.pgd,
-                     OldVal(L"pushup", L"going_up_angle").c_str(), p.pgu, OldVal(L"pushup", L"down_angle").c_str(), p.pdn);
+                     OldVal(L"pushup", L"going_up_angle").c_str(), p.pgu, OldVal(L"pushup", L"down_angle").c_str(), p.pdn)
+                 + L"\n" + TestSummary(kPushUp);
         else
             s += p.pushWhy.empty() ? Fmt(T(tSumKept), g_uk ? L"Віджимання" : L"Push-ups") : p.pushWhy;
         const int cam = static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0));
@@ -763,14 +1257,15 @@ namespace
     // ------------------------------------------------------------ capture
     void FinishCapture()
     {
-        Shot& shot = g_shots[g_step];
+        Shot& shot = g_shots[Cur().shot];
         g_phase = Phase::Live;
         if (g_samples.size() < kSamples / 2)
         {
-            g_status = T(g_step <= 2 ? tLegsNotSeen : tPushNotSeen);
+            g_status = T(Cur().exercise == kSquat ? tLegsNotSeen : tPushNotSeen);
             g_statusIsError = true;
             return;
         }
+        ResetExercise(Cur().exercise);   // new photo, new thresholds: check again
         shot.done = true;
         shot.skipped = false;
         shot.angle = Median(g_samples);
@@ -779,11 +1274,9 @@ namespace
             std::lock_guard<std::mutex> lk(g_frameMx);
             shot.photo = g_latest;
         }
-        LogF(L"calibrate: step %d angle=%.1f hipY=%.3f samples=%zu", g_step, shot.angle, shot.hipY, g_samples.size());
+        LogF(L"calibrate: photo %d angle=%.1f hipY=%.3f samples=%zu", Cur().shot, shot.angle, shot.hipY, g_samples.size());
         g_status.clear();
     }
-
-    void UpdateControls();
 
     void EndCapture()
     {
@@ -802,41 +1295,57 @@ namespace
                 std::lock_guard<std::mutex> lk(g_frameMx);
                 pose = g_latest.pose;
             }
-            const float v = (g_step <= 2) ? KneeAngle(pose) : PushUpElbow(pose);
+            const bool squat = Cur().exercise == kSquat;
+            const float v = squat ? KneeAngle(pose) : PushUpElbow(pose);
             if (v > 0.0f)
             {
                 g_samples.push_back(v);
                 const float hy = HipY(pose);
-                if (g_step <= 2 && hy > 0.0f) g_hipSamples.push_back(hy);
+                if (squat && hy > 0.0f) g_hipSamples.push_back(hy);
             }
             if (g_samples.size() >= kSamples) EndCapture();
         }
+        PollTest();
         InvalidateRect(g_wnd, nullptr, FALSE);
     }
 
     // ------------------------------------------------------------ UI
     void UpdateControls()
     {
-        const bool photoStep = g_step >= 1 && g_step <= 4;
+        const StepDef& s = Cur();
+        const bool photoStep = s.kind == StepKind::Photo;
+        const bool testStep = s.kind == StepKind::Test;
+        const bool summary = s.kind == StepKind::Summary;
+        const bool passed = testStep && g_tests[s.exercise].passed;
+        // A check that cannot pass offers new photos instead of a new start.
+        const bool retake = testStep && (g_fix[s.exercise].restart || !PlanReady(ComputePlan(), s.exercise));
         const bool busy = g_phase != Phase::Live;
-        EnableWindow(g_back, g_step > 0 && !busy && !(g_step == kSteps - 1 && g_saved));
-        ShowWindow(g_take, photoStep ? SW_SHOW : SW_HIDE);
-        ShowWindow(g_skip, photoStep ? SW_SHOW : SW_HIDE);
-        EnableWindow(g_take, photoStep && !busy && !g_cameras.empty());
-        EnableWindow(g_skip, !busy);
+        EnableWindow(g_back, g_step > 0 && !busy && !(summary && g_saved));
+        ShowWindow(g_take, photoStep || testStep ? SW_SHOW : SW_HIDE);
+        ShowWindow(g_skip, photoStep || testStep ? SW_SHOW : SW_HIDE);
+        EnableWindow(g_take, !busy && (retake || ((photoStep || testStep) && !g_cameras.empty())));
+        EnableWindow(g_skip, !busy && !passed);
         EnableWindow(g_cam, !busy);
-        if (photoStep) SetWindowTextW(g_take, T(g_shots[g_step].done ? tRetake : tTake));
-        if (g_step == kSteps - 1) SetWindowTextW(g_next, T(g_saved ? tClose : tSave));
-        else SetWindowTextW(g_next, T(tNext));
-        EnableWindow(g_next, !busy && (!photoStep || g_shots[g_step].done));
+        if (photoStep) SetWindowTextW(g_take, T(g_shots[s.shot].done ? tRetake : tTake));
+        if (testStep) SetWindowTextW(g_take, T(retake ? tRetakePhotos : tRestart));
+        SetWindowTextW(g_next, T(summary ? (g_saved ? tClose : tSave) : tNext));
+        EnableWindow(g_next, !busy && (photoStep ? g_shots[s.shot].done : !testStep || passed));
         InvalidateRect(g_wnd, nullptr, FALSE);
     }
 
     void GoToStep(int step)
     {
-        g_step = std::clamp(step, 0, kSteps - 1);
+        const int dir = step < g_step ? -1 : 1;
+        step = std::clamp(step, 0, kSteps - 1);
+        // Skipped photos skip their test too (the camera and summary steps
+        // at both ends are never tests, so this stays in range).
+        while (kStepDefs[step].kind == StepKind::Test && !PhotosDone(kStepDefs[step].exercise))
+            step += dir;
+        StopTest();
+        g_step = step;
         g_phase = Phase::Live;
         g_status.clear();
+        if (Cur().kind == StepKind::Test && !g_tests[Cur().exercise].passed) StartTest(Cur().exercise);
         UpdateControls();
     }
 
@@ -868,7 +1377,7 @@ namespace
 
     void MakeFonts()
     {
-        for (HFONT f : { g_fontUi, g_fontTitle }) if (f) DeleteObject(f);
+        for (HFONT f : { g_fontUi, g_fontTitle, g_fontBig }) if (f) DeleteObject(f);
         auto mk = [](int pt, int weight) {
             return CreateFontW(-MulDiv(pt, static_cast<int>(g_dpi), 72), 0, 0, 0, weight, FALSE, FALSE, FALSE,
                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -876,6 +1385,7 @@ namespace
         };
         g_fontUi = mk(10, FW_NORMAL);
         g_fontTitle = mk(15, FW_SEMIBOLD);
+        g_fontBig = mk(40, FW_BOLD);      // test rep counter over the video
         for (HWND h : { g_cam, g_back, g_take, g_skip, g_next })
             SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontUi), TRUE);
     }
@@ -931,9 +1441,10 @@ namespace
         DeleteObject(bg);
 
         // Photo steps show the taken photo until "Retake"; otherwise live.
+        const StepDef& s = Cur();
         Frame f;
-        const bool showPhoto = g_step >= 1 && g_step <= 4 && g_shots[g_step].done && g_phase == Phase::Live;
-        if (showPhoto) f = g_shots[g_step].photo;
+        const bool showPhoto = s.kind == StepKind::Photo && g_shots[s.shot].done && g_phase == Phase::Live;
+        if (showPhoto) f = g_shots[s.shot].photo;
         else { std::lock_guard<std::mutex> lk(g_frameMx); f = g_latest; }
 
         SelectObject(dc, g_fontUi);
@@ -961,20 +1472,40 @@ namespace
         DrawSkeleton(dc, v, f.pose);
 
         // Live measurement badge for the current step.
-        if (g_step >= 1 && g_step <= 4)
+        const bool squat = s.exercise == kSquat;
+        if (s.kind == StepKind::Photo)
         {
-            const float a = (g_step <= 2) ? KneeAngle(f.pose) : PushUpElbow(f.pose);
-            std::wstring label = (a > 0) ? Fmt(T(g_step <= 2 ? tKnee : tElbow), static_cast<int>(std::lround(a))) : std::wstring(L"?");
-            if (showPhoto) label = Fmt(T(g_step <= 2 ? tKnee : tElbow), static_cast<int>(std::lround(g_shots[g_step].angle)));
+            const float a = squat ? KneeAngle(f.pose) : PushUpElbow(f.pose);
+            std::wstring label = (a > 0) ? Fmt(T(squat ? tKnee : tElbow), static_cast<int>(std::lround(a))) : std::wstring(L"?");
+            if (showPhoto) label = Fmt(T(squat ? tKnee : tElbow), static_cast<int>(std::lround(g_shots[s.shot].angle)));
             RECT lr{ v.left + Px(12), v.top + Px(8), v.right, v.top + Px(40) };
             SelectObject(dc, g_fontTitle);
             DrawShadowText(dc, label, lr, DT_LEFT | DT_SINGLELINE, RGB(255, 230, 90));
         }
+        else if (s.kind == StepKind::Test && PlanReady(ComputePlan(), s.exercise) && !g_fix[s.exercise].restart)
+        {
+            // Rep counter, and the angle the detector sees right now.
+            const TestRun& run = g_tests[s.exercise];
+            std::wstring big = Fmt(L"%d / %d", run.counted, kTestReps);
+            if (run.passed) big += L"  \x2714";
+            RECT br{ v.left + Px(16), v.top + Px(4), v.right, v.top + Px(70) };
+            SelectObject(dc, g_fontBig);
+            DrawShadowText(dc, big, br, DT_LEFT | DT_SINGLELINE, run.passed ? RGB(90, 230, 140) : RGB(255, 230, 90));
+            const bool seen = GetTickCount64() - run.postureOkMs < 1000;
+            if (!run.passed && seen && run.angle > 0)
+            {
+                RECT lr{ v.left + Px(18), v.top + Px(72), v.right, v.top + Px(104) };
+                SelectObject(dc, g_fontTitle);
+                DrawShadowText(dc, Fmt(T(squat ? tKnee : tElbow), static_cast<int>(std::lround(run.angle))), lr,
+                               DT_LEFT | DT_SINGLELINE, RGB(255, 255, 255));
+            }
+        }
     }
 
     // ------------------------------------------------------------ example pictures
-    // A side-view figure per step: step 0 shows where the camera goes,
-    // steps 1-4 what the camera should see. Figure units: y grows down,
+    // A side-view figure per example (StepDef::example): 0 shows where the
+    // camera goes, 1-4 what the camera should see for that photo. Figure
+    // units: y grows down,
     // the floor is at y = 100, the figure faces right.
     struct FigPt { float x, y; };
     struct Figure
@@ -998,10 +1529,10 @@ namespace
 
     // Scene extent in figure units (figure, plus camera and distance label on step 0).
     struct Bounds { float x0, x1, y0, y1; };
-    Bounds ExampleBounds(int step)
+    Bounds ExampleBounds(int example)
     {
-        const bool scene = step == 0;
-        const Figure& f = kFigures[scene ? 0 : step - 1];
+        const bool scene = example == 0;
+        const Figure& f = kFigures[scene ? 0 : example - 1];
         const float dx = scene ? 62.0f : 0.0f;
         Bounds b{ 1e9f, -1e9f, 1e9f, 0 };
         auto grow = [&](FigPt pt, float r) {
@@ -1013,16 +1544,16 @@ namespace
         grow(f.head, f.headR);
         if (scene) b.x0 = 2.0f;   // camera on its tripod
         // Both push-up pictures at the same scale, so they compare at a glance.
-        if (step >= 3) b.y0 = std::min(b.y0, kFigures[2].head.y - kFigures[2].headR);
+        if (example >= 3) b.y0 = std::min(b.y0, kFigures[2].head.y - kFigures[2].headR);
         b.y1 = scene ? 118.0f : 104.0f;
         return b;
     }
     constexpr float kExamplePad = 9.0f;
 
     // Card height that fits the scene at full card width.
-    int ExampleHeight(int step, int width)
+    int ExampleHeight(int example, int width)
     {
-        const Bounds b = ExampleBounds(step);
+        const Bounds b = ExampleBounds(example);
         const float inset = static_cast<float>(Px(8));
         const float sceneW = b.x1 - b.x0 + 2 * kExamplePad, sceneH = b.y1 - (b.y0 - kExamplePad);
         return static_cast<int>((static_cast<float>(width) - 2 * inset) * sceneH / sceneW + 2 * inset);
@@ -1037,7 +1568,7 @@ namespace
         path.CloseFigure();
     }
 
-    void DrawExample(HDC dc, const RECT& card, int step)
+    void DrawExample(HDC dc, const RECT& card, int example)
     {
         Gdiplus::Graphics g(dc);
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
@@ -1049,12 +1580,12 @@ namespace
         Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 241, 244, 251));
         g.FillPath(&bgBrush, &bgPath);
 
-        const bool scene = step == 0;
-        const Figure& f = kFigures[scene ? 0 : step - 1];
-        const float figDx = scene ? 62.0f : 0.0f;   // step 0: the child stands right of the camera
+        const bool scene = example == 0;
+        const Figure& f = kFigures[scene ? 0 : example - 1];
+        const float figDx = scene ? 62.0f : 0.0f;   // scene: the child stands right of the camera
 
         // Fit the scene into the card.
-        const Bounds b = ExampleBounds(step);
+        const Bounds b = ExampleBounds(example);
         const float x0 = b.x0, x1 = b.x1, y0 = b.y0;
         const float sx0 = x0 - kExamplePad, sx1 = x1 + kExamplePad, sy0 = y0 - kExamplePad, sy1 = b.y1;
         const float inset = static_cast<float>(Px(8));
@@ -1124,7 +1655,7 @@ namespace
             for (FigPt pt : pts) v.push_back(F(pt, dx, dy));
             g.DrawLines(&pen, v.data(), static_cast<INT>(v.size()));
         };
-        const bool lying = !scene && step >= 3;
+        const bool lying = !scene && example >= 3;
         const float fdx = lying ? -4.0f : -3.0f, fdy = lying ? 0.0f : -1.5f;
         // Soft highlight behind the joint whose angle this photo measures.
         const float ringR = 7.5f * u;
@@ -1174,55 +1705,77 @@ namespace
         DrawTextW(dc, Fmt(T(tStepOf), g_step + 1, kSteps).c_str(), -1, &r, DT_LEFT | DT_SINGLELINE);
         y += Px(22);
 
+        const StepDef& step = Cur();
         SelectObject(dc, g_fontTitle);
-        SetTextColor(dc, RGB(31, 37, 71));
+        SetTextColor(dc, kTextInk);
         r = RECT{ p.left, y, p.right, y + Px(40) };
-        DrawTextW(dc, T(static_cast<Txt>(tTitle0 + 2 * g_step)), -1, &r, DT_LEFT | DT_WORDBREAK);
+        DrawTextW(dc, T(step.title), -1, &r, DT_LEFT | DT_WORDBREAK);
         y += Px(40);
 
-        SelectObject(dc, g_fontUi);
-        std::wstring body = T(static_cast<Txt>(tText0 + 2 * g_step));
-        if (g_step == kSteps - 1) body += L"\n\n" + SummaryText();
-        r = RECT{ p.left, y, p.right, p.bottom - Px(150) };
-        RECT measure = r;
-        DrawTextW(dc, body.c_str(), -1, &measure, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
-        DrawTextW(dc, body.c_str(), -1, &r, DT_LEFT | DT_WORDBREAK);
-        y = std::min(measure.bottom, r.bottom) + Px(12);
+        // Checklist above the buttons: one row per photo and per test.
+        int rows = 0;
+        for (const StepDef& s : kStepDefs)
+            if (s.kind == StepKind::Photo || s.kind == StepKind::Test) ++rows;
+        const int listTop = p.bottom - Px(44) - rows * Px(22);
+        const int textBottom = listTop - Px(10);
 
-        if (!g_status.empty())
-        {
-            SetTextColor(dc, g_statusIsError ? RGB(200, 40, 60) : RGB(20, 150, 110));
-            r = RECT{ p.left, y, p.right, p.bottom - Px(150) };
-            measure = r;
-            DrawTextW(dc, g_status.c_str(), -1, &measure, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
-            DrawTextW(dc, g_status.c_str(), -1, &r, DT_LEFT | DT_WORDBREAK);
-            y = std::min(measure.bottom, r.bottom) + Px(12);
-        }
+        // Word-wrapped paragraph at y, clipped above the checklist.
+        auto para = [&](const std::wstring& text, COLORREF color) {
+            SetTextColor(dc, color);
+            RECT pr{ p.left, y, p.right, textBottom };
+            RECT measure = pr;
+            DrawTextW(dc, text.c_str(), -1, &measure, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
+            DrawTextW(dc, text.c_str(), -1, &pr, DT_LEFT | DT_WORDBREAK);
+            y = std::min(measure.bottom, pr.bottom) + Px(12);
+        };
+
+        SelectObject(dc, g_fontUi);
+        std::wstring body = T(step.text);
+        if (step.kind == StepKind::Summary) body += L"\n\n" + SummaryText();
+        para(body, kTextInk);
+        if (!g_status.empty()) para(g_status, g_statusIsError ? kErrInk : kOkInk);
+        if (step.kind == StepKind::Test)
+            for (const Para& t : TestParas(step.exercise)) para(t.text, t.color);
 
         // Example picture in whatever room is left above the checklist.
-        const int exampleBottom = p.bottom - Px(150);
-        if (g_step <= 4 && exampleBottom - y >= Px(120))
+        if (step.example >= 0 && textBottom - y >= Px(120))
         {
-            SetTextColor(dc, RGB(90, 96, 130));
+            SetTextColor(dc, kInfoInk);
             r = RECT{ p.left, y, p.right, y + Px(20) };
-            DrawTextW(dc, T(g_step == 0 ? tExampleSetup : tExampleView), -1, &r, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
-            const int want = std::min(ExampleHeight(g_step, p.right - p.left), Px(240));
-            const RECT card{ p.left, y + Px(24), p.right, std::min(exampleBottom, y + Px(24) + want) };
-            DrawExample(dc, card, g_step);
+            DrawTextW(dc, T(step.example == 0 ? tExampleSetup : tExampleView), -1, &r, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+            const int want = std::min(ExampleHeight(step.example, p.right - p.left), Px(240));
+            const RECT card{ p.left, y + Px(24), p.right, std::min(textBottom, y + Px(24) + want) };
+            DrawExample(dc, card, step.example);
         }
 
-        // Photo checklist above the buttons.
-        SetTextColor(dc, RGB(31, 37, 71));
-        y = p.bottom - Px(140);
-        for (int i = 1; i <= 4; ++i)
+        SetTextColor(dc, kTextInk);
+        y = listTop;
+        for (const StepDef& s : kStepDefs)
         {
-            const Shot& s = g_shots[i];
-            std::wstring v = s.done ? Fmt(T(i <= 2 ? tKnee : tElbow), static_cast<int>(std::lround(s.angle)))
-                                    : (s.skipped ? T(tSkipped) : T(tNotYet));
-            std::wstring line = std::wstring(s.done ? L"\x2714  " : L"\x2022  ") + T(static_cast<Txt>(tRow1 + i - 1)) + L": " + v;
-            r = RECT{ p.left, y, p.right, y + Px(24) };
+            bool done = false;
+            std::wstring label, v;
+            if (s.kind == StepKind::Photo)
+            {
+                const Shot& shot = g_shots[s.shot];
+                done = shot.done;
+                label = T(static_cast<Txt>(tRow1 + s.shot - 1));
+                v = shot.done ? Fmt(T(s.exercise == kSquat ? tKnee : tElbow), static_cast<int>(std::lround(shot.angle)))
+                              : (shot.skipped ? T(tSkipped) : T(tNotYet));
+            }
+            else if (s.kind == StepKind::Test)
+            {
+                const TestRun& t = g_tests[s.exercise];
+                done = t.passed;
+                label = T(s.title);
+                v = t.passed || t.counted > 0 ? Fmt(L"%d/%d", t.counted, kTestReps)
+                                              : (t.skipped ? T(tSkipped) : T(tNotYet));
+            }
+            else
+                continue;
+            const std::wstring line = std::wstring(done ? L"\x2714  " : L"\x2022  ") + label + L": " + v;
+            r = RECT{ p.left, y, p.right, y + Px(22) };
             DrawTextW(dc, line.c_str(), -1, &r, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
-            y += Px(24);
+            y += Px(22);
         }
     }
 
@@ -1256,6 +1809,8 @@ namespace
             {
                 g_status.clear();
                 StartCamera(static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0)));
+                // Another camera sees the child differently: count from zero.
+                if (Cur().kind == StepKind::Test && !g_tests[Cur().exercise].passed) StartTest(Cur().exercise);
                 InvalidateRect(g_wnd, nullptr, FALSE);
             }
             break;
@@ -1264,16 +1819,35 @@ namespace
             break;
         case idTake:
             g_status.clear();
+            if (Cur().kind == StepKind::Test)
+            {
+                const int ex = Cur().exercise;
+                if (g_fix[ex].restart || !PlanReady(ComputePlan(), ex))
+                    RetakeExercise(ex);      // "Retake photos"
+                else
+                {
+                    StartTest(ex);           // "Start over"
+                    UpdateControls();
+                }
+                break;
+            }
             g_samples.clear();
             g_hipSamples.clear();
-            g_shots[g_step].done = false;
+            g_shots[Cur().shot].done = false;
+            ResetExercise(Cur().exercise);
             g_phase = Phase::Collecting;   // the next ~12 frames give the angle (median)
             g_phaseStart = GetTickCount64();
             UpdateControls();
             break;
         case idSkip:
-            g_shots[g_step].done = false;
-            g_shots[g_step].skipped = true;
+            if (Cur().kind == StepKind::Test)
+                g_tests[Cur().exercise].skipped = true;
+            else
+            {
+                g_shots[Cur().shot].done = false;
+                g_shots[Cur().shot].skipped = true;
+                ResetExercise(Cur().exercise);
+            }
             GoToStep(g_step + 1);
             break;
         case idNext:
@@ -1341,15 +1915,52 @@ namespace
             Layout();
             if (!g_snapshotPath.empty())
             {
-                // Layout check without a camera: sample measurements.
+                // Layout check without a camera: sample measurements for the
+                // photos before this step, the squat check passed and a
+                // push-up check under way (3 of 5, last rep too shallow).
+                g_snapshotStep = std::clamp(g_snapshotStep, 0, kSteps - 1);
                 const float sample[5] = { 0.0f, 171.0f, 96.0f, 164.0f, 108.0f };
-                for (int i = 1; i <= 4 && i < g_snapshotStep + (g_snapshotStep == kSteps - 1 ? 1 : 0); ++i)
+                for (int i = 0; i < kSteps; ++i)
                 {
-                    g_shots[i].done = true;
-                    g_shots[i].angle = sample[i];
-                    g_shots[i].hipY = (i == 1) ? 0.50f : 0.62f;
+                    const StepDef& s = kStepDefs[i];
+                    if (s.kind != StepKind::Photo || i >= g_snapshotStep) continue;
+                    g_shots[s.shot].done = true;
+                    g_shots[s.shot].angle = sample[s.shot];
+                    g_shots[s.shot].hipY = (s.shot == 1) ? 0.50f : 0.62f;
                 }
                 GoToStep(g_snapshotStep);
+                RepResult shallow;
+                shallow.seq = 1;
+                shallow.reachedDown = false;
+                shallow.deepest = 142.0f;
+                const int current = Cur().kind == StepKind::Test ? Cur().exercise : kPushUp;
+                for (int ex = 0; ex < kExerciseCount; ++ex)
+                {
+                    if (!PhotosDone(ex)) continue;
+                    TestRun& t = g_tests[ex];
+                    t.counted = ex == current ? 3 : kTestReps;
+                    t.passed = ex != current;
+                    t.last = ex == current ? shallow : RepResult{};
+                    t.postureOkMs = GetTickCount64();   // no "not recognized" hint in the shot
+                }
+                // And the two check verdicts: squats adjusted, push-ups need new photos.
+                if (Cur().kind == StepKind::Test)
+                {
+                    Fix& fx = g_fix[current];
+                    if (current == kSquat)
+                    {
+                        fx.on = true;
+                        fx.st = 158; fx.gd = 150; fx.gu = 147; fx.dn = 138;
+                        fx.rounds = 1;
+                        fx.note = Fmt(T(tTestAdjusted), (Fmt(T(tAdjDown), 130, 138) + L", " + Fmt(T(tAdjStand), 160, 158)).c_str());
+                    }
+                    else
+                    {
+                        fx.restart = true;
+                        fx.note = Fmt(T(tRestartRange), 7);
+                    }
+                }
+                UpdateControls();
                 SetTimer(hwnd, kSnapshotTimerId, 1500, nullptr);   // let DWM compose the window first
             }
             else
@@ -1475,6 +2086,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     PathRemoveFileSpecW(exe);
     g_exeDir = exe;
     g_configPath = g_exeDir + L"\\config.ini";
+    // The test steps run the service's detectors: the same config.ini (the
+    // service reads the one next to its exe, which is this folder), any
+    // time of day.
+    Config::Load();
+    Config::SetIgnoreSchedule(true);
+    g_cfgMinHipDrop = Config::SquatMinHipDrop();
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);

@@ -3,6 +3,7 @@
 #include "Protocol.h"
 #include "PoseEstimator.h"
 #include "AngleFilter.h"
+#include "RepResult.h"
 
 #include <deque>
 
@@ -27,7 +28,11 @@ namespace ExerciseUnlock::Svc
         // challenge starts (v0.7+).
         void Reset();
 
+        // The last finished attempt (counted or dropped, and why).
+        const RepResult& LastRep() const { return m_lastRep; }
+
     private:
+        RepResult       m_lastRep{};
         Ipc::SquatPhase m_phase{ Ipc::SquatPhase::Unknown };
         uint32_t        m_count{ 0 };
         uint64_t        m_lastDownTickMs{ 0 };

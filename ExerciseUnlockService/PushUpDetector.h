@@ -3,6 +3,7 @@
 #include "Protocol.h"
 #include "PoseEstimator.h"
 #include "AngleFilter.h"
+#include "RepResult.h"
 
 namespace ExerciseUnlock::Svc
 {
@@ -19,7 +20,11 @@ namespace ExerciseUnlock::Svc
         void Update(const BodyPose& pose);
         void Reset();
 
+        // The last finished attempt (counted or dropped, and why).
+        const RepResult& LastRep() const { return m_lastRep; }
+
     private:
+        RepResult        m_lastRep{};
         Ipc::PushUpPhase m_phase{ Ipc::PushUpPhase::Unknown };
         uint32_t         m_count{ 0 };
         uint64_t         m_lastDownTickMs{ 0 };

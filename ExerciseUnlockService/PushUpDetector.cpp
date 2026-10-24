@@ -77,6 +77,7 @@ namespace ExerciseUnlock::Svc
         m_missStreak     = 0;
         m_repMinElbow    = 999.0f;
         m_elbowFilter.Reset();
+        m_lastRep        = RepResult{};
 
         auto& st = GetState();
         st.pushUpCount.store(0);
@@ -360,6 +361,13 @@ namespace ExerciseUnlock::Svc
             else if (elbow >= kUp)
             {
                 // Aborted descent — didn't reach Down. No rep.
+                RepResult r;
+                r.seq         = m_lastRep.seq + 1;
+                r.reachedDown = false;
+                r.deepest     = m_repMinElbow;
+                r.durMs       = m_repStartTickMs ? static_cast<uint32_t>(now - m_repStartTickMs) : 0;
+                m_lastRep     = r;
+                m_repMinElbow = 999.0f;
                 m_phase = PushUpPhase::Up;
                 m_lastUpTickMs = now;
                 m_repStartTickMs = 0;
@@ -389,7 +397,16 @@ namespace ExerciseUnlock::Svc
                 const float qMin = Config::PushupQualityMin();
                 const bool timingOk = (dur >= kMinRepMs && dur <= kMaxRepMs);
                 const bool qualityOk = (qMin <= 0.0f) || (quality >= qMin);
-                if (timingOk && qualityOk)
+                RepResult r;
+                r.seq     = m_lastRep.seq + 1;
+                r.counted = timingOk && qualityOk;
+                r.deepest = m_repMinElbow;
+                r.durMs   = static_cast<uint32_t>(dur);
+                r.tooFast = !timingOk && dur < kMinRepMs;
+                r.tooSlow = !timingOk && dur > kMaxRepMs;
+                r.shallow = !qualityOk;
+                m_lastRep = r;
+                if (r.counted)
                 {
                     // Shared total (phone reps land here too) — see
                     // SquatDetector.

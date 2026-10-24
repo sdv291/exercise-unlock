@@ -88,6 +88,8 @@ namespace ExerciseUnlock::Svc
 
     std::atomic<bool>  Config::s_soundOnRep         { true };
 
+    std::atomic<bool>  Config::s_ignoreSchedule     { false };
+
     // Camera only on the lock / sign-in screen by default.
     std::atomic<bool>  Config::s_cameraLockScreenOnly{ true };
 
@@ -176,6 +178,7 @@ namespace ExerciseUnlock::Svc
 
     bool Config::IsWithinActiveWindowNow()
     {
+        if (s_ignoreSchedule.load()) return true;
         SYSTEMTIME lt{};
         GetLocalTime(&lt);
         const int nowMin = lt.wHour * 60 + lt.wMinute;
