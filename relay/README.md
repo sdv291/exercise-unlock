@@ -61,6 +61,45 @@
 `cd /opt/exercise-unlock/relay && sudo docker compose up -d --build`.
 nginx и certbot трогать не нужно.
 
+## Лендинг (/landing)
+
+Страница с формой «получить ссылку на установщик» — `landing/index.php`
+из репозитория. Отдаёт её nginx через php-fpm, Node-сервер в этом не
+участвует.
+
+1. PHP: `sudo apt install php-fpm` (если ещё нет); имя сокета —
+   `ls /run/php/` (например `php8.1-fpm.sock`).
+2. Файлы — с компьютера, из папки репозитория:
+   `scp landing/index.php landing/landing-config.example.php user@VPS_IP:/tmp/`,
+   затем на VPS:
+   ```bash
+   sudo mkdir -p /var/www/exercise-unlock/landing /var/www/exercise-unlock/download
+   sudo cp /tmp/index.php /var/www/exercise-unlock/landing/
+   sudo cp /tmp/landing-config.example.php /var/www/exercise-unlock/landing-config.php
+   sudo touch /var/www/exercise-unlock/landing-requests.log
+   sudo chown www-data /var/www/exercise-unlock/landing-requests.log
+   sudo chown root:www-data /var/www/exercise-unlock/landing-config.php
+   sudo chmod 640 /var/www/exercise-unlock/landing-config.php
+   ```
+   `landing-config.php` лежит **рядом** с папкой `landing`, а не в ней:
+   его никто не скачает, и обновление страницы его не затрёт.
+3. В `landing-config.php` впишите ссылку на установщик и почту. Удобнее
+   всего SMTP (например Gmail с паролем приложения): обычный `mail()`
+   требует почтового сервера на VPS, и письма часто попадают в спам.
+   Пока ссылка — заглушка `example.com`, форма ничего не отправляет.
+4. Установщик, если раздавать его с этого же сервера:
+   `/var/www/exercise-unlock/download/ExerciseUnlock-Setup.exe` →
+   `https://exercise-unlock.sdv291.com/download/ExerciseUnlock-Setup.exe`.
+5. nginx: блоки `location = /landing`, `location ^~ /landing/` и
+   `location ^~ /download/` из `nginx-exercise-unlock.conf` добавьте в
+   **существующий** `server { }` этого сайта в
+   `/etc/nginx/conf.d/exercise-unlock.conf` — в тот, где `listen 443`
+   (его дописал certbot), поставив перед `location /`. Сокет в
+   `fastcgi_pass` поменяйте на свой. Затем
+   `sudo nginx -t && sudo systemctl reload nginx`.
+
+Обновить страницу — снова скопировать `index.php`, больше ничего.
+
 ## Журнал
 
 ```bash
