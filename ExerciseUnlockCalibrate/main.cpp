@@ -732,6 +732,18 @@ namespace
         // single camera a pinned name would just make the service wait
         // if it ever gets renamed / replaced.
         if (setCamera) put(L"camera", L"preferred", g_cameras[static_cast<size_t>(cam)].name);
+        // The angles are measured on x / width, y / height of this camera's
+        // frame, so they depend on its aspect ratio. The phone camera page
+        // rescales its poses to it (service PhoneLink sends it along).
+        for (int i = 1; i <= 4; ++i)
+        {
+            const Frame& f = g_shots[i].photo;
+            if (g_shots[i].done && f.w > 0 && f.h > 0)
+            {
+                put(L"calibration", L"aspect", Fmt(L"%.4f", static_cast<double>(f.w) / f.h));
+                break;
+            }
+        }
         WritePrivateProfileStringW(nullptr, nullptr, nullptr, g_configPath.c_str());   // flush
 
         if (!ok)

@@ -166,6 +166,28 @@ namespace ExerciseUnlock::Svc
         return on;
     }
 
+    bool CameraWantedNow()
+    {
+        ConsoleView    v;
+        const wchar_t* why = L"";
+        return ComputeCameraWanted(v, why);
+    }
+
+    // The webcam itself: as above, but it also steps aside while a phone
+    // is paired (PhoneLink) - the phone counts then, and both seeing the
+    // same squat must not credit it twice. Back within a second once the
+    // phone disconnects. PhoneLink keeps using CameraWantedNow.
+    static bool WebcamWanted(ConsoleView& v, const wchar_t*& why)
+    {
+        if (!ComputeCameraWanted(v, why)) return false;
+        if (GetState().phoneState.load() == static_cast<uint8_t>(Ipc::PhoneState::Connected))
+        {
+            why = L"phone camera in use";
+            return false;
+        }
+        return true;
+    }
+
     // Same answer, logging every change so service.log shows when / why
     // the LED went on and off. Webcam thread only (s_lastOn isn't
     // synchronized).
@@ -175,7 +197,7 @@ namespace ExerciseUnlock::Svc
 
         ConsoleView    v;
         const wchar_t* why = L"";
-        const bool     on  = ComputeCameraWanted(v, why);
+        const bool     on  = WebcamWanted(v, why);
         if ((on ? 1 : 0) != s_lastOn)
         {
             s_lastOn = on ? 1 : 0;
@@ -459,7 +481,7 @@ namespace ExerciseUnlock::Svc
         {
             ConsoleView    v;
             const wchar_t* why = L"";
-            const bool     wanted = ComputeCameraWanted(v, why);
+            const bool     wanted = WebcamWanted(v, why);
             const uint64_t now = GetTickCount64();
 
             std::lock_guard<std::mutex> lk(g_srcMx);

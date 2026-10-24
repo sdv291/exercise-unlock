@@ -179,6 +179,7 @@ namespace ExerciseUnlock
         // same mutex so DeleteTimerQueueTimer(INVALID_HANDLE_VALUE)
         // will safely drain any in-flight callback first.
         StopPolling();
+        m_qr.Destroy();
         std::lock_guard<std::mutex> lk(m_mx);
         if (m_events)
         {
@@ -201,6 +202,15 @@ namespace ExerciseUnlock
         // background poll until the tile is deselected again.
         RefreshStatus();
         StartPolling();
+
+        // Phone QR window, owned by LogonUI's window. We're on LogonUI's
+        // UI thread here, which then also runs the window's messages.
+        HWND owner = nullptr;
+        {
+            std::lock_guard<std::mutex> lk(m_mx);
+            if (m_events) m_events->OnCreatingWindow(&owner);
+        }
+        m_qr.Create(owner);
         return S_OK;
     }
 
@@ -208,6 +218,7 @@ namespace ExerciseUnlock
     {
         LogF(L"Credential::SetDeselected");
         StopPolling();
+        m_qr.Destroy();
         return S_OK;
     }
 
@@ -245,6 +256,9 @@ namespace ExerciseUnlock
         const bool ok = SUCCEEDED(Client::QueryStatus(resp));
         if (ok) text = Client::FormatStatus(resp);
         else    text = Client::FormatUnreachable();
+
+        resp.phoneUrl[std::size(resp.phoneUrl) - 1] = L'\0';
+        m_qr.SetContent(ok ? resp.phoneState : 0, ok ? std::wstring(resp.phoneUrl) : std::wstring());
 
         // Audible feedback — two distinct cues:
         //

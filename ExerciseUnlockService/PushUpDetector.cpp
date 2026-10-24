@@ -391,10 +391,12 @@ namespace ExerciseUnlock::Svc
                 const bool qualityOk = (qMin <= 0.0f) || (quality >= qMin);
                 if (timingOk && qualityOk)
                 {
+                    // Shared total (phone reps land here too) — see
+                    // SquatDetector.
                     ++m_count;
-                    st.pushUpCount.store(m_count);
+                    const uint32_t total = st.pushUpCount.fetch_add(1) + 1;
                     LogF(L"pushup +1  total=%u  elbow=%.1f  plank=%.1f  dur=%llums  q=%.2f",
-                         m_count, elbow, plankAvg, dur, quality);
+                         total, elbow, plankAvg, dur, quality);
                     PersistentState::Save();
                 }
                 else

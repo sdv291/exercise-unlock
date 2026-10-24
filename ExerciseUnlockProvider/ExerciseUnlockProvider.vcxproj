@@ -93,6 +93,8 @@
     <ClCompile Include="PipeClient.cpp" />
     <ClCompile Include="SoundConfig.cpp" />
     <ClCompile Include="..\ExerciseUnlockCommon\Vault.cpp" />
+    <ClCompile Include="..\ExerciseUnlockCommon\QrCode.cpp" />
+    <ClCompile Include="QrWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="guids.h" />
@@ -103,6 +105,8 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="PipeClient.h" />
     <ClInclude Include="SoundConfig.h" />
+    <ClInclude Include="QrWindow.h" />
+    <ClInclude Include="..\ExerciseUnlockCommon\QrCode.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ExerciseUnlockProvider.rc" />

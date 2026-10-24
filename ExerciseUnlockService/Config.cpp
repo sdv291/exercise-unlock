@@ -91,6 +91,13 @@ namespace ExerciseUnlock::Svc
     // Camera only on the lock / sign-in screen by default.
     std::atomic<bool>  Config::s_cameraLockScreenOnly{ true };
 
+    // On by default with the project's relay, so an update that keeps an
+    // older config.ini (no [phone] section) gets the phone too.
+    constexpr wchar_t  kDefaultRelayUrl[] = L"https://exercise-unlock.sdv291.com";
+    std::atomic<bool>  Config::s_phoneEnabled       { true };
+    std::wstring       Config::s_phoneRelayUrl      { kDefaultRelayUrl };
+    std::atomic<float> Config::s_calibrationAspect  { 0.0f };
+
     std::atomic<bool>  Config::s_updateEnabled      { false };
     std::atomic<int>   Config::s_updateIntervalH    { 24 };
     std::wstring       Config::s_updateUrl          { L"" };
@@ -189,6 +196,12 @@ namespace ExerciseUnlock::Svc
     {
         std::lock_guard<std::mutex> lk(s_stringsMx);
         return s_updateUrl;
+    }
+
+    std::wstring Config::PhoneRelayUrl()
+    {
+        std::lock_guard<std::mutex> lk(s_stringsMx);
+        return s_phoneRelayUrl;
     }
 
     static std::wstring FindConfigPath()
@@ -383,10 +396,17 @@ namespace ExerciseUnlock::Svc
             L"update", L"check_interval_hours", s_updateIntervalH.load(), path.c_str()));
         const std::wstring updUrl = readStr(L"update", L"manifest_url", L"");
 
+        // Phone camera [phone] + calibration geometry [calibration].
+        s_phoneEnabled.store(GetPrivateProfileIntW(
+            L"phone", L"enabled", s_phoneEnabled.load() ? 1 : 0, path.c_str()) != 0);
+        const std::wstring relayUrl = readStr(L"phone", L"relay", kDefaultRelayUrl);
+        s_calibrationAspect.store(readFloat(L"calibration", L"aspect", s_calibrationAspect.load()));
+
         {
             std::lock_guard<std::mutex> lk(s_stringsMx);
             s_vcamBlocklist = vcam;
             s_updateUrl     = updUrl;
+            s_phoneRelayUrl = relayUrl;
         }
 
         s_cameraLockScreenOnly.store(GetPrivateProfileIntW(

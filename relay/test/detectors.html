@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Open in a browser to run the detector checks without Node. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Detector checks</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; background: #fff; color: #111; }
+    .pass { color: #0a7a3c; } .fail { color: #b00020; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1 id="summary">running…</h1>
+  <ul id="results"></ul>
+  <script src="../public/exercises.js"></script>
+  <script src="../public/synth.js"></script>
+  <script src="detectors.spec.js"></script>
+  <script>
+    let failed = 0;
+    for (const [name, fn] of DetectorSpec.cases(EU, EUSynth)) {
+      const li = document.createElement('li');
+      try {
+        fn((actual, expected, msg) => {
+          if (actual !== expected) throw new Error(`${msg || ''} expected ${expected}, got ${actual}`);
+        });
+        li.className = 'pass';
+        li.textContent = 'PASS ' + name;
+      } catch (err) {
+        failed++;
+        li.className = 'fail';
+        li.textContent = 'FAIL ' + name + ': ' + err.message;
+      }
+      document.getElementById('results').append(li);
+    }
+    document.getElementById('summary').textContent = failed ? failed + ' failed' : 'all passed';
+  </script>
+</body>
+</html>

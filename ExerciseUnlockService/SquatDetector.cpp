@@ -561,11 +561,15 @@ namespace ExerciseUnlock::Svc
                 if (timingOk && qualityOk && hipDriftOk &&
                     oscillationOk && hipDropOk)
                 {
+                    // Add to the shared total rather than storing our own
+                    // count: phone reps (PhoneLink) land in the same
+                    // counter, and this detector restarts with every
+                    // camera stream.
                     ++m_count;
-                    st.squatCount.store(m_count);
+                    const uint32_t total = st.squatCount.fetch_add(1) + 1;
                     LogF(L"squat +1  total=%u  angle=%.1f  dur=%llums  q=%.2f  "
                          L"hipDx=%.2f osc=%d asym=%.1f hipDy=%.2f",
-                         m_count, angle, dur, quality,
+                         total, angle, dur, quality,
                          hipDrift, m_repOscillations, m_repMaxAsymmetry,
                          hipDrop);
                     PersistentState::Save();

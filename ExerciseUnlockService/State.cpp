@@ -260,5 +260,15 @@ namespace ExerciseUnlock::Svc
         const size_t n = text.size() < maxChars ? text.size() : maxChars;
         std::memcpy(out.statusText, text.data(), n * sizeof(wchar_t));
         out.statusText[n] = L'\0';
+
+        out.phoneState = g_state.phoneState.load();
+        out.reserved10[0] = out.reserved10[1] = out.reserved10[2] = 0;
+        {
+            std::lock_guard<std::mutex> lk(g_state.phoneMx);
+            const size_t maxUrl = std::size(out.phoneUrl) - 1;
+            const size_t u = g_state.phoneUrl.size() < maxUrl ? g_state.phoneUrl.size() : maxUrl;
+            std::memcpy(out.phoneUrl, g_state.phoneUrl.data(), u * sizeof(wchar_t));
+            out.phoneUrl[u] = L'\0';
+        }
     }
 }

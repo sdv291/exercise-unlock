@@ -124,6 +124,13 @@ namespace ExerciseUnlock::Svc
         std::wstring         updateLastToasted;
         std::atomic<int64_t> updateLastCheckUnix{ 0 };
 
+        // v1.3 phone camera link — written by PhoneLink, read on pipe
+        // accept. phoneUrl is what the lock-screen QR code shows.
+        std::atomic<uint8_t> phoneState{
+            static_cast<uint8_t>(Ipc::PhoneState::Off) };
+        std::mutex           phoneMx;
+        std::wstring         phoneUrl;
+
         // Latest RGB32 frame the webcam thread captured. Kept in memory
         // so Op::SaveWebcamFrame can dump it to disk on demand (used by
         // tools/test-pipe.ps1 to see what the camera is looking at).

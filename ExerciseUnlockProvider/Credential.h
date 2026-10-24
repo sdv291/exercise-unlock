@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SoundConfig.h"
+#include "QrWindow.h"
 
 #include <windows.h>
 #include <credentialprovider.h>
@@ -103,5 +104,7 @@ namespace ExerciseUnlock
         // <DataDir>\sounds.ini take effect
         // without a sign-out.
         SoundConfig m_sounds;
+        // Phone pairing QR code beside the tile while it is selected.
+        QrWindow m_qr;
     };
 }

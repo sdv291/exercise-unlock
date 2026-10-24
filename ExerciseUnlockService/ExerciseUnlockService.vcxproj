@@ -112,6 +112,7 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClCompile Include="PersistentState.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="UpdateChecker.cpp" />
+    <ClCompile Include="PhoneLink.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ServiceMain.h" />
@@ -129,6 +130,8 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClInclude Include="ActivityLog.h" />
     <ClInclude Include="PersistentState.h" />
     <ClInclude Include="UpdateChecker.h" />
+    <ClInclude Include="PhoneLink.h" />
+    <ClInclude Include="MiniJson.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

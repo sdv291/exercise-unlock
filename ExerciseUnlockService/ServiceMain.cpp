@@ -1,6 +1,7 @@
 #include "ServiceMain.h"
 #include "PipeServer.h"
 #include "WebcamProbe.h"
+#include "PhoneLink.h"
 #include "PoseEstimator.h"
 #include "SessionManager.h"
 #include "ActivityLog.h"
@@ -32,6 +33,7 @@ namespace ExerciseUnlock::Svc
     static HANDLE                g_stopEvent    = nullptr;
     static PipeServer            g_server;
     static WebcamProbe           g_webcam;
+    static PhoneLink             g_phone;   // phone camera via the relay + lock-screen QR
     static PoseEstimator         g_pose;
     static SessionManager        g_session;
     static UpdateChecker         g_updater;
@@ -250,6 +252,7 @@ namespace ExerciseUnlock::Svc
             // flip whether the camera should run (lock screen only) —
             // let the webcam thread re-check now, not at its next poll.
             g_webcam.Wake();
+            g_phone.Wake();
             return NO_ERROR;
 
         case SERVICE_CONTROL_INTERROGATE:
@@ -297,10 +300,13 @@ namespace ExerciseUnlock::Svc
         g_session.Start(stopEvent); // countdown + warnings + auto-lock
         LogF(L"RunUntilStopped: -> UpdateChecker::Start");
         g_updater.Start(stopEvent);
+        LogF(L"RunUntilStopped: -> PhoneLink::Start");
+        g_phone.Start(stopEvent);
         LogF(L"RunUntilStopped: -> PipeServer::Run");
         g_server.Run(stopEvent);    // blocks until stopEvent fires
         LogF(L"RunUntilStopped: <- PipeServer::Run");
         g_updater.Join();
+        g_phone.Join();
         g_session.Join();
         g_webcam.Join();
         PersistentState::Save();    // flush counters one last time before exit

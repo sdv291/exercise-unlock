@@ -114,6 +114,17 @@ namespace ExerciseUnlock::Ipc
         PushUp = 2,   // horizontal body, head-to-feet span wide
     };
 
+    // Phone camera link (service PhoneLink), as the lock-screen QR window
+    // needs it.
+    enum class PhoneState : uint8_t
+    {
+        Off        = 0,   // disabled, no relay configured, or not on the lock screen
+        Connecting = 1,   // reaching the relay, no QR code yet
+        Waiting    = 2,   // QR code valid, no phone yet
+        Connected  = 3,   // a phone is paired and counting
+        Error      = 4,   // relay unreachable, retrying
+    };
+
     #pragma pack(push, 1)
 
     struct Request
@@ -218,11 +229,21 @@ namespace ExerciseUnlock::Ipc
         // newlines between visible lines. 128 wchar_t = 256 bytes is
         // plenty for 3-4 lines.
         wchar_t   statusText[128];
+
+        // --- v1.3 phone camera ---
+        // Appended at the end so readers of the shorter v1.2 response
+        // (tools, admin grant) keep working.
+        uint8_t   phoneState;           // PhoneState
+        uint8_t   reserved10[3];
+        // What the lock-screen QR code encodes: an upper-case URL, so the
+        // QR can use the compact alphanumeric mode. Empty unless Waiting /
+        // Connected.
+        wchar_t   phoneUrl[80];
     };
 
     #pragma pack(pop)
 
     static_assert(sizeof(Request)  == 8,   "wire format changed");
-    static_assert(sizeof(Response) == 340 + 128 * sizeof(wchar_t),
-                  "wire format changed");   // = 596
+    static_assert(sizeof(Response) == 340 + 128 * sizeof(wchar_t) + 4 + 80 * sizeof(wchar_t),
+                  "wire format changed");   // = 760
 }

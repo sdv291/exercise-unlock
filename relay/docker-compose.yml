@@ -1,0 +1,10 @@
+# The relay only, listening on localhost: nginx in front of it terminates
+# HTTPS (certbot) and proxies exercise-unlock.sdv291.com here - see
+# nginx-exercise-unlock.conf. Start with:  docker compose up -d --build
+# Another local port: RELAY_PORT=8091 docker compose up -d --build
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${RELAY_PORT:-8090}:8080"

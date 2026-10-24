@@ -41,3 +41,6 @@ promo/out/
 # Installer build output
 installer/build/
 installer/out/
+
+# Relay server dependencies (npm install / Docker build)
+relay/node_modules/

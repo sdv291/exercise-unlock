@@ -123,6 +123,15 @@ namespace ExerciseUnlock::Svc
         // during an unlock session) — handy for skeleton-viewer
         // calibration from the parent's desktop.
         static bool CameraLockScreenOnly() { return s_cameraLockScreenOnly.load(); }
+
+        // Phone camera via QR code on the lock screen ([phone]). Off when
+        // the relay URL is empty.
+        static bool         PhoneEnabled() { return s_phoneEnabled.load(); }
+        static std::wstring PhoneRelayUrl();
+        // Width / height of the camera the angles were calibrated with
+        // ([calibration] aspect, written by ExerciseUnlockCalibrate). The
+        // phone rescales its poses to it. 0 = unknown.
+        static float CalibrationAspect() { return s_calibrationAspect.load(); }
         static std::wstring LockInMessage();
         static std::wstring LabelSquats();
         static std::wstring LabelPushups();
@@ -185,6 +194,10 @@ namespace ExerciseUnlock::Svc
         static std::atomic<bool>  s_soundOnRep;
 
         static std::atomic<bool>  s_cameraLockScreenOnly;
+
+        static std::atomic<bool>  s_phoneEnabled;
+        static std::wstring       s_phoneRelayUrl;
+        static std::atomic<float> s_calibrationAspect;
 
         static std::atomic<bool>  s_updateEnabled;
         static std::atomic<int>   s_updateIntervalH;

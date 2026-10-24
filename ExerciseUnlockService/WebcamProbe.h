@@ -7,6 +7,12 @@ namespace ExerciseUnlock::Svc
 {
     class PoseEstimator;
 
+    // True when exercises may be captured right now: no unlock session
+    // and (with [camera] lock_screen_only=1) the console shows the lock /
+    // sign-in screen. Any thread, no logging. The phone link (PhoneLink)
+    // follows the same rule as the webcam.
+    bool CameraWantedNow();
+
     // Background thread that owns the webcam. Whenever the camera is
     // wanted it does two phases back to back:
     //   1. Probe: open, decode a few frames, publish WebcamState so we

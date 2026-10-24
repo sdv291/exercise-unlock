@@ -1,0 +1,21 @@
+{
+  "name": "exercise-unlock-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pairs an Exercise Unlock PC with a phone camera (QR code on the lock screen) and forwards small JSON messages between them.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@tensorflow/tfjs-backend-webgl": "4.22.0",
+    "@tensorflow/tfjs-converter": "4.22.0",
+    "@tensorflow/tfjs-core": "4.22.0",
+    "ws": "8.18.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
