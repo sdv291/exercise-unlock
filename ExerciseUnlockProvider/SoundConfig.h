@@ -21,6 +21,8 @@ namespace ExerciseUnlock
     //   pushup_ready   = ready_pu.wav
     //   squat_counted  = ding1.wav, ding2.wav, ding3.wav
     //   pushup_counted = ding_pu.wav
+    //   situp_ready    = ready_su.wav      (empty: the push-up sound)
+    //   situp_counted  = ding_su.wav       (empty: the push-up sound)
     //   error          = oops.wav
     //
     // Each list is comma-separated; whitespace around entries is
@@ -42,6 +44,8 @@ namespace ExerciseUnlock
             SlotSquatCounted = 2,
             SlotPushupCounted = 3,
             SlotError        = 4,
+            SlotSitupReady   = 5,   // empty -> the push-up sound
+            SlotSitupCounted = 6,   // empty -> the push-up sound
             SlotCount
         };
 

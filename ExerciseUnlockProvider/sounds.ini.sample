@@ -55,6 +55,12 @@ squat_counted  = ding1.wav, ding2.wav, ding3.wav
 ; Fired every time the push-up counter increments.
 pushup_counted = ding_pu.wav
 
-; Fired on tile errors: service unreachable, vault missing, or
+; Sit-up stance latched / sit-up counted. Left empty (or missing in an
+; older sounds.ini), the push-up sounds above are used.
+situp_ready    = ready_su.wav
+situp_counted  = ding_su.wav
+
+; Fired on tile errors: service unreachable, vault missing, a rep
+; outside the allowed hours or with the session limit reached, or
 ; tapping Submit before the earned-time threshold is reached.
 error          = oops.wav

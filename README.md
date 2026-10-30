@@ -10,7 +10,7 @@ Windows приложение: экран блокировки требует о�
 
 1. Ребёнок нажимает `Win+L` (или система заблокирована после auto-lock).
 2. На стандартном Windows sign-in screen рядом с PIN/Password появляется плитка **Exercise Unlock**.
-3. Клик — плитка показывает `Squats: N`, `Push-ups: N`, `Earned: 0:00 / 10:00`.
+3. Клик — плитка показывает `Squats: N`, `Push-ups: N`, `Sit-ups: N`, `Earned: 0:00 / 10:00`.
 4. Ребёнок делает упражнения перед камерой — счётчики растут.
 5. Когда `Earned` достигает `min_unlock_seconds` — «— ready to unlock». Ребёнок нажимает Submit.
 6. Provider читает пароль из зашифрованного vault (DPAPI), формирует `KERB_INTERACTIVE_UNLOCK_LOGON`, отдаёт LSA. Windows разблокируется.
@@ -103,6 +103,8 @@ Vault на шаге 3 должен содержать пароль **именн�
 [reward]
 pushup_seconds     = 120   ; 1 отжимание = 2 мин
 squat_seconds      = 30    ; 1 присед    = 30 сек
+situp_seconds      = 300   ; 1 подъём корпуса (пресс) = 5 мин
+; эти три значения можно менять и в калибраторе: кнопка «Лише час»
 min_unlock_seconds = 600   ; минимум 10 минут для unlock
 
 [squat]
@@ -135,6 +137,7 @@ lock_in_message = Computer will lock in {min} minutes
 [labels]
 squats        = Squats
 pushups       = Push-ups
+situps        = Sit-ups
 earned        = Earned
 ready         = — ready to unlock
 outside_hours = Outside allowed hours ({from}-{to})

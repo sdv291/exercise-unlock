@@ -69,6 +69,16 @@ namespace ExerciseUnlock::Svc
     // "standing in front of camera" from being classified as pushup.
     static constexpr float kPushupMaxBodyDy    = 0.20f;
 
+    // --- sit-up (on the back, knees up) thresholds, in thigh lengths ---
+    //   In profile, lying on the back with the knees bent puts the hips
+    //   and the feet on the floor and the knees clearly above both - and
+    //   that still holds while the torso comes up, so the latch lasts the
+    //   whole rep. A plank has its knees on the hip-ankle line (straight
+    //   legs); a deep squat has its feet well below the hips.
+    static constexpr float kSitupKneeAbove   = 0.30f;   // knees above hips and feet
+    static constexpr float kSitupFeetLevel   = 0.45f;   // |ankleY - hipY| at most
+    static constexpr float kSitupFeetForward = 0.50f;   // |ankleX - hipX| at least
+
     static inline bool Confident(const Joint& j)
     {
         return j.confidence >= kConfMin;
@@ -126,7 +136,28 @@ namespace ExerciseUnlock::Svc
 
         Ipc::PostureKind raw = Ipc::PostureKind::None;
 
-        // --- push-up (horizontal) — CHECKED FIRST ---
+        // --- sit-up — checked before everything else ---
+        //   Lying on the back looks like a plank to the push-up test and
+        //   sitting up like a deep squat to the squat test; the legs (knees
+        //   up, hips and feet on the floor) tell a sit-up apart from both.
+        float thigh = 0.0f, kneeAbove = 0.0f, feetLevel = 0.0f, feetForward = 0.0f;
+        bool  situpShape = false;
+        if (haveShoulders && haveHips && haveKnees && haveAnkles)
+        {
+            thigh = std::hypot(hpX - knX, hpY - knY);
+            if (thigh > 0.03f)
+            {
+                kneeAbove   = std::min(hpY, akY) - knY;   // > 0: knees higher than hips and feet
+                feetLevel   = std::fabs(akY - hpY);
+                feetForward = std::fabs(akX - hpX);
+                situpShape  = kneeAbove   >= kSitupKneeAbove * thigh &&
+                              feetLevel   <= kSitupFeetLevel * thigh &&
+                              feetForward >= kSitupFeetForward * thigh;
+                if (situpShape) raw = Ipc::PostureKind::SitUp;
+            }
+        }
+
+        // --- push-up (horizontal) ---
         //   The whole body is laid out across the frame. Head and
         //   ankles should be far apart in X and roughly at the same
         //   Y as the shoulder/hip line.
@@ -141,7 +172,8 @@ namespace ExerciseUnlock::Svc
         //   and skip the Squat check entirely.
         float dxHead = 0.0f, dyHead = 0.0f, bodyDyPushup = 0.0f;
         bool  pushupShape = false;
-        if (haveNose && haveShoulders && haveHips && haveAnkles)
+        if (raw == Ipc::PostureKind::None &&
+            haveNose && haveShoulders && haveHips && haveAnkles)
         {
             dxHead = std::fabs(pose.joints[kNose].x - akX);
             dyHead = std::fabs(pose.joints[kNose].y - akY);
@@ -204,11 +236,14 @@ namespace ExerciseUnlock::Svc
             m_lastDebugLogMs = now;
             const wchar_t* rawName =
                 (raw == Ipc::PostureKind::Squat)  ? L"Squat"  :
-                (raw == Ipc::PostureKind::PushUp) ? L"PushUp" : L"None";
-            LogF(L"posture DBG raw=%s | pushup: dxHead=%.2f dyHead=%.2f bodyDy=%.2f shape=%d "
+                (raw == Ipc::PostureKind::PushUp) ? L"PushUp" :
+                (raw == Ipc::PostureKind::SitUp)  ? L"SitUp"  : L"None";
+            LogF(L"posture DBG raw=%s | situp: kneeUp=%.2f feetLevel=%.2f feetFwd=%.2f thigh=%.2f shape=%d "
+                 L"| pushup: dxHead=%.2f dyHead=%.2f bodyDy=%.2f shape=%d "
                  L"| squat: dy=%.2f bodyDx=%.2f stacked=%d shape=%d "
                  L"| noseY=%.2f shY=%.2f hpY=%.2f knY=%.2f akY=%.2f",
                  rawName,
+                 kneeAbove, feetLevel, feetForward, thigh, situpShape ? 1 : 0,
                  dxHead, dyHead, bodyDyPushup, pushupShape ? 1 : 0,
                  dySquat, bodyDxSquat, stacked ? 1 : 0, squatShape ? 1 : 0,
                  haveNose ? pose.joints[kNose].y : -1.0f,
@@ -233,8 +268,13 @@ namespace ExerciseUnlock::Svc
 
         if (m_pending != m_latched)
         {
+            // Straight from one exercise to another takes longer still:
+            // the top of a sit-up can look like a squat, the bottom of a
+            // deep squat like a sit-up, for a moment - a real change of
+            // exercise (lie down, get up) takes more than a second.
             const bool goingToNone = (m_pending == Ipc::PostureKind::None);
-            const int  need = goingToNone ? kUnlatchFrames : kStableFrames;
+            const bool switching   = !goingToNone && m_latched != Ipc::PostureKind::None;
+            const int  need = goingToNone ? kUnlatchFrames : switching ? kSwitchFrames : kStableFrames;
             if (m_pendingStreak >= need)
             {
                 const Ipc::PostureKind prev = m_latched;
@@ -242,6 +282,7 @@ namespace ExerciseUnlock::Svc
                 GetState().postureKind.store(static_cast<uint8_t>(m_latched));
                 const wchar_t* name = (m_latched == Ipc::PostureKind::Squat)  ? L"Squat"
                                     : (m_latched == Ipc::PostureKind::PushUp) ? L"PushUp"
+                                    : (m_latched == Ipc::PostureKind::SitUp)  ? L"SitUp"
                                     : L"None";
                 LogF(L"posture: latched %s (was %u)", name, static_cast<unsigned>(prev));
             }

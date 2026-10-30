@@ -58,6 +58,12 @@ namespace ExerciseUnlock::Svc
         std::atomic<uint8_t>  pushUpPhase{
             static_cast<uint8_t>(Ipc::PushUpPhase::Unknown) };
 
+        // v1.4 sit-up detector — same thread.
+        std::atomic<uint32_t> sitUpCount{ 0 };
+        std::atomic<float>    sitUpHipAngle{ 0.0f };
+        std::atomic<uint8_t>  sitUpPhase{
+            static_cast<uint8_t>(Ipc::SitUpPhase::Unknown) };
+
         // Reps (webcam or phone) done outside the schedule window: real
         // reps, not credited. Wraps; the tile plays the error sound on
         // every change.

@@ -25,6 +25,8 @@ namespace ExerciseUnlock
         case SoundConfig::SlotSquatCounted:  return L"squat_counted";
         case SoundConfig::SlotPushupCounted: return L"pushup_counted";
         case SoundConfig::SlotError:         return L"error";
+        case SoundConfig::SlotSitupReady:    return L"situp_ready";
+        case SoundConfig::SlotSitupCounted:  return L"situp_counted";
         default:                             return L"";
         }
     }
@@ -157,7 +159,13 @@ namespace ExerciseUnlock
     {
         if (slot < 0 || slot >= SlotCount) return L"";
         const auto& v = m_slots[slot];
-        if (v.empty()) return L"";
+        if (v.empty())
+        {
+            // A sounds.ini from before sit-ups: use the push-up sounds.
+            if (slot == SlotSitupReady)   return PickOne(SlotPushupReady);
+            if (slot == SlotSitupCounted) return PickOne(SlotPushupCounted);
+            return L"";
+        }
         if (v.size() == 1) return v[0];
         return v[static_cast<size_t>(std::rand()) % v.size()];
     }

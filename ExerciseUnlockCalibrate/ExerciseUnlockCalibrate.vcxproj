@@ -87,6 +87,7 @@
     <ClCompile Include="..\ExerciseUnlockService\PostureClassifier.cpp" />
     <ClCompile Include="..\ExerciseUnlockService\SquatDetector.cpp" />
     <ClCompile Include="..\ExerciseUnlockService\PushUpDetector.cpp" />
+    <ClCompile Include="..\ExerciseUnlockService\SitUpDetector.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ExerciseUnlockService\PoseEstimator.h" />
@@ -96,6 +97,7 @@
     <ClInclude Include="CheckJudge.h" />
     <ClInclude Include="..\ExerciseUnlockService\SquatDetector.h" />
     <ClInclude Include="..\ExerciseUnlockService\PushUpDetector.h" />
+    <ClInclude Include="..\ExerciseUnlockService\SitUpDetector.h" />
     <ClInclude Include="..\ExerciseUnlockService\PostureClassifier.h" />
   </ItemGroup>
   <ItemGroup>

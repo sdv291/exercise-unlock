@@ -66,7 +66,7 @@ namespace ExerciseUnlock::Calib
     }
 
     // One exercise's thresholds: top = standing (squat) / arms straight
-    // (push-up). hipDrop 0 = that gate is off.
+    // (push-up) / lying (sit-up). hipDrop 0 = that gate is off.
     struct Thresholds
     {
         int   top = 0, goingDown = 0, goingUp = 0, down = 0;
@@ -94,12 +94,25 @@ namespace ExerciseUnlock::Calib
 
     constexpr int kMaxRounds = 2;          // adjustments / unexplained rounds before new photos
 
+    // What differs between exercises: the smallest movement that is still
+    // a rep, the room kept between neighbouring thresholds, and whether
+    // the detector has a hip-drop gate (squats).
+    struct Rules
+    {
+        int  minRange;
+        int  gap;
+        bool hipGate;
+    };
+    constexpr Rules kSquatRules  { 20, 4, true };
+    constexpr Rules kPushupRules { 10, 2, false };   // MoveNet reads elbows with a small span
+    constexpr Rules kSitupRules  { 20, 4, false };
+
     // attempts: the detector's finished attempts; peaks / valleys: the
     // Swing of the same reps; rounds: Adjust / Retry verdicts so far.
     inline Judgement Judge(const std::vector<RepResult>& attempts, const std::vector<float>& peaks,
-                           const std::vector<float>& valleys, const Thresholds& cur, bool squat, int rounds)
+                           const std::vector<float>& valleys, const Thresholds& cur, const Rules& rules, int rounds)
     {
-        const int minRange = squat ? 20 : 10, gap = squat ? 4 : 2;
+        const int minRange = rules.minRange, gap = rules.gap;
         Judgement j;
         j.t = cur;
 
@@ -135,7 +148,7 @@ namespace ExerciseUnlock::Calib
         const bool notUp = st < cur.top;                     // some reps stop below "standing"
         const bool lateTimer = fast > 0 && gd > cur.goingDown + 2;
         float hip = cur.hipDrop;
-        if (squat && hips >= 2 && cur.hipDrop > 0.0f)
+        if (rules.hipGate && hips >= 2 && cur.hipDrop > 0.0f)
         {
             if (drops.empty() || *(std::max_element)(drops.begin(), drops.end()) < 0.02f)
             {

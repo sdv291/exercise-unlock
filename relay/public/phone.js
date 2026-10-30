@@ -6,7 +6,7 @@
 // detectors as the PC (exercises.js) and reports each rep. The PC credits
 // it and answers with the running totals.
 //
-// /demo?demo=squat or /demo?demo=pushup feeds synthetic poses instead of
+// /demo?demo=squat, =pushup or =situp feeds synthetic poses instead of
 // the camera - only without a PC, for trying the page out.
 
 (function () {
@@ -36,6 +36,7 @@
       seeNone: 'Стань так, щоб тебе було видно повністю',
       seeVertical: 'Бачу тебе — присідай!',
       seeHorizontal: 'Упор лежачи — віджимайся!',
+      seeSitUp: 'Лежиш на спині — качай прес!',
       inactiveHours: 'Зараз поза дозволеним часом — вправи не зараховуються',
       inactiveSession: 'Комп\'ютер уже розблоковано',
       inactive: 'Вправи зараз не зараховуються',
@@ -54,6 +55,7 @@
       rejected: 'Комп\'ютер не зарахував: {0}',
       ex_squat: 'Присідання',
       ex_pushup: 'Віджимання',
+      ex_situp: 'Прес',
       demo: 'Демо без камери',
     },
     en: {
@@ -71,6 +73,7 @@
       seeNone: 'Stand where the camera sees all of you',
       seeVertical: 'I can see you - squat!',
       seeHorizontal: 'Plank position - push up!',
+      seeSitUp: 'On your back - sit up!',
       inactiveHours: 'Outside the allowed hours - exercises don\'t count now',
       inactiveSession: 'The computer is already unlocked',
       inactive: 'Exercises don\'t count right now',
@@ -89,6 +92,7 @@
       rejected: 'The computer didn\'t count it: {0}',
       ex_squat: 'Squats',
       ex_pushup: 'Push-ups',
+      ex_situp: 'Sit-ups',
       demo: 'Demo without camera',
     },
   };
@@ -378,9 +382,9 @@
     try {
       let frame;
       if (demo) {
-        const pose = demo === 'pushup'
-          ? EUSynth.pushupPose(EUSynth.cycleAngle(now, 1800, 172, 95))
-          : EUSynth.squatPose(EUSynth.cycleAngle(now, 2000, 175, 88));
+        const pose = demo === 'pushup' ? EUSynth.pushupPose(EUSynth.cycleAngle(now, 1800, 172, 95))
+                   : demo === 'situp' ? EUSynth.situpPose(EUSynth.cycleAngle(now, 2000, 135, 45))
+                   : EUSynth.squatPose(EUSynth.cycleAngle(now, 2000, 175, 88));
         frame = { pose, pcPose: pose, W: 1, H: 1 };
       } else {
         const r = await infer();
@@ -429,7 +433,8 @@
     // While the connection is down keep its warning up.
     if (!ws || ws.readyState === WebSocket.OPEN) {
       banner(r.posture === EU.Posture.Vertical ? T('seeVertical')
-           : r.posture === EU.Posture.Horizontal ? T('seeHorizontal') : T('seeNone'),
+           : r.posture === EU.Posture.Horizontal ? T('seeHorizontal')
+           : r.posture === EU.Posture.SitUp ? T('seeSitUp') : T('seeNone'),
              r.posture === EU.Posture.None ? '' : 'go');
     }
     for (const rep of r.reps) {
@@ -529,6 +534,9 @@
         const g = d.gate || {};
         lines.push(`pushup: ${PHASES[d.phase] || d.phase} · elbow ${Math.round(d.angle)}° ${it.id === (r && r.active) ? span : ''} · plank ${Math.round(d.plank)}° (>=${p.plankMin})`);
         lines.push(`  arms ${g.arms ?? 0} · body ${g.plank ? 'ok' : 'no'} · hands down ${g.handsDown ? 'yes' : 'no'} · up >=${p.up} · bottom <=${p.down}`);
+      } else if (it.id === 'situp') {
+        lines.push(`situp: ${PHASES[d.phase] || d.phase} · hip ${Math.round(d.angle)}° ${it.id === (r && r.active) ? span : ''} · sides ${d.sides ?? 0}/2`);
+        lines.push(`  lying >=${p.lying} · start <${p.rising} · top <=${p.sitting} · down >${p.lowering}`);
       }
     }
     lines.push(`L hip ${conf(J.lHip)} knee ${conf(J.lKnee)} ankle ${conf(J.lAnkle)} · ` +
@@ -634,7 +642,7 @@
   show(ui.start);
   if (demo) {
     // Offline demo: no PC, default thresholds.
-    config = { exercises: [{ id: 'squat' }, { id: 'pushup' }], aspect: 16 / 9 };
+    config = { exercises: [{ id: 'squat' }, { id: 'pushup' }, { id: 'situp' }], aspect: 16 / 9 };
     buildCounters();
     coach = new EU.Coach(config.exercises);
     ui.startMsg.textContent = T('demo');

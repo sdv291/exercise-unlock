@@ -100,12 +100,13 @@ namespace ExerciseUnlock::Svc
 
     void ActivityLog::UnlockGranted(uint32_t pushups,
                                     uint32_t squats,
+                                    uint32_t situps,
                                     uint32_t earnedSeconds)
     {
         wchar_t line[128]{};
         _snwprintf_s(line, _TRUNCATE,
-                     L"unlock granted: pushups=%u squats=%u earned=%us (%u:%02u)",
-                     pushups, squats, earnedSeconds,
+                     L"unlock granted: pushups=%u squats=%u situps=%u earned=%us (%u:%02u)",
+                     pushups, squats, situps, earnedSeconds,
                      earnedSeconds / 60, earnedSeconds % 60);
         Append(line);
     }

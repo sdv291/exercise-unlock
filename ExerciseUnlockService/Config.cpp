@@ -17,6 +17,9 @@ namespace ExerciseUnlock::Svc
     // config.ini still gives a reasonable experience.
     std::atomic<int> Config::s_pushupSec   { 30 };
     std::atomic<int> Config::s_squatSec    { 10 };
+    // Sit-ups came later (1.3): this default also applies to an update
+    // that keeps an older config.ini without situp_seconds.
+    std::atomic<int> Config::s_situpSec    { 300 };
     std::atomic<int> Config::s_minUnlockSec{ 600 };
     // Hard cap on a single unlock (seconds). 3600 = 1 hour.
     std::atomic<int> Config::s_maxSessionSec{ 3600 };
@@ -47,6 +50,19 @@ namespace ExerciseUnlock::Svc
     std::atomic<float> Config::s_pushupPlankMinAng  { 140.0f };
     std::atomic<int>   Config::s_pushupMinRepMs     { 1000 };
     std::atomic<int>   Config::s_pushupMaxRepMs     { 2000 };
+
+    // Sit-up defaults (uncalibrated): lying on the back with knees bent
+    // the hip angle is ~130-140 deg, sitting up ~50-70 - but measured on
+    // x / width, y / height of a 16:9 frame lying reads ~120 and up ~35.
+    // Forgiving values until the calibration measures the child. Slower
+    // reps than squats, so a wider timing window.
+    std::atomic<float> Config::s_situpLyingAng      { 105.0f };
+    std::atomic<float> Config::s_situpRisingAng     {  95.0f };
+    std::atomic<float> Config::s_situpLoweringAng   {  75.0f };
+    std::atomic<float> Config::s_situpSittingAng    {  60.0f };
+    std::atomic<int>   Config::s_situpMinRepMs      { 800 };
+    std::atomic<int>   Config::s_situpMaxRepMs      { 6000 };
+    std::atomic<float> Config::s_situpQualityMin    { 0.0f };
 
     // Default active window: 07:00..20:00 local time.
     std::atomic<int>   Config::s_activeFromMin      { 7 * 60 };
@@ -109,6 +125,7 @@ namespace ExerciseUnlock::Svc
     std::wstring     Config::s_lockInMessage{ L"Computer will lock in {min} minutes" };
     std::wstring     Config::s_labelSquats  { L"Squats" };
     std::wstring     Config::s_labelPushups { L"Push-ups" };
+    std::wstring     Config::s_labelSitups  { L"Sit-ups" };
     std::wstring     Config::s_labelEarned  { L"Earned" };
     std::wstring     Config::s_labelReady   { L"— ready to unlock" };
     std::wstring     Config::s_labelOutsideHours{ L"Outside allowed hours ({from}-{to})" };
@@ -132,6 +149,11 @@ namespace ExerciseUnlock::Svc
     {
         std::lock_guard<std::mutex> lk(s_stringsMx);
         return s_labelPushups;
+    }
+    std::wstring Config::LabelSitups()
+    {
+        std::lock_guard<std::mutex> lk(s_stringsMx);
+        return s_labelSitups;
     }
     std::wstring Config::LabelEarned()
     {
@@ -235,6 +257,9 @@ namespace ExerciseUnlock::Svc
         const int sq  = GetPrivateProfileIntW(
             L"reward", L"squat_seconds",
             s_squatSec.load(), path.c_str());
+        const int su  = GetPrivateProfileIntW(
+            L"reward", L"situp_seconds",
+            s_situpSec.load(), path.c_str());
         const int min = GetPrivateProfileIntW(
             L"reward", L"min_unlock_seconds",
             s_minUnlockSec.load(), path.c_str());
@@ -252,6 +277,7 @@ namespace ExerciseUnlock::Svc
         // formula. Fall back to the compiled defaults on garbage input.
         s_pushupSec.store   (pu  > 0 ? pu  : 30);
         s_squatSec.store    (sq  > 0 ? sq  : 10);
+        s_situpSec.store    (su  > 0 ? su  : 300);
         s_minUnlockSec.store(min > 0 ? min : 600);
 
         auto readStr = [&](const wchar_t* section, const wchar_t* key,
@@ -331,6 +357,18 @@ namespace ExerciseUnlock::Svc
         s_pushupMinRepMs.store    (puMinMs > 0 ? puMinMs : 1000);
         s_pushupMaxRepMs.store    (puMaxMs > puMinMs ? puMaxMs : (puMinMs > 0 ? puMinMs * 2 : 2000));
 
+        // --- sit-up thresholds + timing ---
+        s_situpLyingAng.store   (readFloat(L"situp", L"lying_angle",    s_situpLyingAng.load()));
+        s_situpRisingAng.store  (readFloat(L"situp", L"rising_angle",   s_situpRisingAng.load()));
+        s_situpLoweringAng.store(readFloat(L"situp", L"lowering_angle", s_situpLoweringAng.load()));
+        s_situpSittingAng.store (readFloat(L"situp", L"sitting_angle",  s_situpSittingAng.load()));
+        const int   suMinMs   = GetPrivateProfileIntW(L"situp", L"min_rep_ms",
+                                                      s_situpMinRepMs.load(), path.c_str());
+        const int   suMaxMs   = GetPrivateProfileIntW(L"situp", L"max_rep_ms",
+                                                      s_situpMaxRepMs.load(), path.c_str());
+        s_situpMinRepMs.store(suMinMs > 0 ? suMinMs : 800);
+        s_situpMaxRepMs.store(suMaxMs > suMinMs ? suMaxMs : (suMinMs > 0 ? suMinMs * 2 : 6000));
+
         // --- schedule (HH:MM strings) ---
         auto parseHHMM = [](const std::wstring& s, int dflt) -> int
         {
@@ -376,6 +414,7 @@ namespace ExerciseUnlock::Svc
         // Quality gates.
         s_squatQualityMin.store (readFloat(L"squat",  L"quality_min", s_squatQualityMin.load()));
         s_pushupQualityMin.store(readFloat(L"pushup", L"quality_min", s_pushupQualityMin.load()));
+        s_situpQualityMin.store (readFloat(L"situp",  L"quality_min", s_situpQualityMin.load()));
         s_squatMaxHipDrift.store(readFloat(L"squat",  L"max_hip_drift",
                                            s_squatMaxHipDrift.load()));
         s_squatMinHipDrop.store (readFloat(L"squat",  L"min_hip_drop",
@@ -421,6 +460,7 @@ namespace ExerciseUnlock::Svc
                                        L"Computer will lock in {min} minutes");
         std::wstring lSq  = readStr(L"labels", L"squats",  L"Squats");
         std::wstring lPu  = readStr(L"labels", L"pushups", L"Push-ups");
+        std::wstring lSu  = readStr(L"labels", L"situps",  L"Sit-ups");
         std::wstring lErn = readStr(L"labels", L"earned",  L"Earned");
         std::wstring lRdy = readStr(L"labels", L"ready",   L"— ready to unlock");
         std::wstring lOut = readStr(L"labels", L"outside_hours",
@@ -431,15 +471,16 @@ namespace ExerciseUnlock::Svc
             s_lockInMessage     = lockMsg;
             s_labelSquats       = lSq;
             s_labelPushups      = lPu;
+            s_labelSitups       = lSu;
             s_labelEarned       = lErn;
             s_labelReady        = lRdy;
             s_labelOutsideHours = lOut;
         }
 
-        LogF(L"config: loaded from %s -> pushup=%d s, squat=%d s, "
+        LogF(L"config: loaded from %s -> pushup=%d s, squat=%d s, situp=%d s, "
              L"min_unlock=%d s, camera='%s' lock_screen_only=%d",
              path.c_str(),
-             s_pushupSec.load(), s_squatSec.load(), s_minUnlockSec.load(),
+             s_pushupSec.load(), s_squatSec.load(), s_situpSec.load(), s_minUnlockSec.load(),
              cam.c_str(), s_cameraLockScreenOnly.load() ? 1 : 0);
         LogF(L"config: squat stand=%.1f down=%.1f gd=%.1f gu=%.1f "
              L"rep_ms=[%d..%d]",
@@ -452,6 +493,10 @@ namespace ExerciseUnlock::Svc
              s_pushupGoingDownAng.load(), s_pushupGoingUpAng.load(),
              s_pushupPlankMinAng.load(),
              s_pushupMinRepMs.load(), s_pushupMaxRepMs.load());
+        LogF(L"config: situp lying=%.1f rising=%.1f lowering=%.1f sitting=%.1f rep_ms=[%d..%d]",
+             s_situpLyingAng.load(), s_situpRisingAng.load(),
+             s_situpLoweringAng.load(), s_situpSittingAng.load(),
+             s_situpMinRepMs.load(), s_situpMaxRepMs.load());
         LogF(L"config: schedule active %02d:%02d..%02d:%02d local",
              s_activeFromMin.load() / 60, s_activeFromMin.load() % 60,
              s_activeToMin.load()   / 60, s_activeToMin.load()   % 60);

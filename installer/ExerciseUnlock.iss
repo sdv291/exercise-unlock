@@ -19,7 +19,7 @@
 ;   * registers the credential provider, installs + hardens the service
 ;   * optionally disables PIN / Windows Hello sign-in (tools\lock-user.ps1)
 ;   * optionally runs the angle calibration (ExerciseUnlockCalibrate.exe):
-;     live camera + 4 photos -> thresholds written to config.ini
+;     live camera + 6 photos and test reps -> thresholds written to config.ini
 ; All runtime data (vault, state, logs, users.allow, sounds) lives in
 ; {app}\data, locked to SYSTEM + Administrators; components find it via
 ; HKLM\SOFTWARE\ExerciseUnlock\InstallDir (ExerciseUnlockCommon\Paths.h).

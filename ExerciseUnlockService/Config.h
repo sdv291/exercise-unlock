@@ -18,6 +18,7 @@ namespace ExerciseUnlock::Svc
 
         static int PushupSeconds()    { return s_pushupSec.load(); }
         static int SquatSeconds()     { return s_squatSec.load(); }
+        static int SitupSeconds()     { return s_situpSec.load(); }
         static int MinUnlockSeconds() { return s_minUnlockSec.load(); }
         // Hard cap on a single unlock session (seconds). 0 = disabled.
         static int MaxSessionSeconds() { return s_maxSessionSec.load(); }
@@ -59,6 +60,18 @@ namespace ExerciseUnlock::Svc
         static float PushupPlankMinAngle()  { return s_pushupPlankMinAng.load(); }
         static int   PushupMinRepMs()       { return s_pushupMinRepMs.load(); }
         static int   PushupMaxRepMs()       { return s_pushupMaxRepMs.load(); }
+
+        // Sit-up (crunch) detector, camera in profile: the hip angle
+        // (shoulder-hip-knee) is large lying on the back and small when
+        // sitting up. A rep: lying -> below rising -> at/below sitting ->
+        // above lowering -> back at/above lying.
+        static float SitupLyingAngle()    { return s_situpLyingAng.load(); }
+        static float SitupRisingAngle()   { return s_situpRisingAng.load(); }
+        static float SitupLoweringAngle() { return s_situpLoweringAng.load(); }
+        static float SitupSittingAngle()  { return s_situpSittingAng.load(); }
+        static int   SitupMinRepMs()      { return s_situpMinRepMs.load(); }
+        static int   SitupMaxRepMs()      { return s_situpMaxRepMs.load(); }
+        static float SitupQualityMin()    { return s_situpQualityMin.load(); }
 
         // Daily active window (minutes since local midnight). Outside
         // it, exercises don't count and StartSession is refused.
@@ -135,6 +148,7 @@ namespace ExerciseUnlock::Svc
         static std::wstring LockInMessage();
         static std::wstring LabelSquats();
         static std::wstring LabelPushups();
+        static std::wstring LabelSitups();
         static std::wstring LabelEarned();
         static std::wstring LabelReady();
         // Rendered on the tile when the current local time is outside
@@ -160,12 +174,28 @@ namespace ExerciseUnlock::Svc
             s_pushupGoingUpAng = goingUp;
             s_pushupDownAng = down;
         }
+        static void SetSitupAngles(float lying, float rising, float lowering, float sitting)
+        {
+            s_situpLyingAng = lying;
+            s_situpRisingAng = rising;
+            s_situpLoweringAng = lowering;
+            s_situpSittingAng = sitting;
+        }
         static void SetIgnoreSchedule(bool on) { s_ignoreSchedule = on; }
 
     private:
         static std::atomic<bool> s_ignoreSchedule;
         static std::atomic<int> s_pushupSec;
         static std::atomic<int> s_squatSec;
+        static std::atomic<int> s_situpSec;
+
+        static std::atomic<float> s_situpLyingAng;
+        static std::atomic<float> s_situpRisingAng;
+        static std::atomic<float> s_situpLoweringAng;
+        static std::atomic<float> s_situpSittingAng;
+        static std::atomic<int>   s_situpMinRepMs;
+        static std::atomic<int>   s_situpMaxRepMs;
+        static std::atomic<float> s_situpQualityMin;
         static std::atomic<int> s_minUnlockSec;
         static std::atomic<int> s_maxSessionSec;
         static std::atomic<int> s_graceWindowSec;
@@ -230,6 +260,7 @@ namespace ExerciseUnlock::Svc
         static std::wstring     s_lockInMessage;
         static std::wstring     s_labelSquats;
         static std::wstring     s_labelPushups;
+        static std::wstring     s_labelSitups;
         static std::wstring     s_labelEarned;
         static std::wstring     s_labelReady;
     };

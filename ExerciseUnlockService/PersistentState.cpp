@@ -19,6 +19,7 @@ namespace ExerciseUnlock::Svc
     //   v2 (20B): + earnedBankSeconds
     //   v3 (36B): + sessionExpiresAtUnix, installStartUnix
     //   v4 (40B): + dayKey (YYYYMMDD the counters belong to)
+    //   v5 (44B): + situpCount
     #pragma pack(push, 1)
     struct FileLayout
     {
@@ -31,16 +32,18 @@ namespace ExerciseUnlock::Svc
         int64_t  sessionExpiresAtUnix; // v3+
         int64_t  installStartUnix;   // v3+
         int32_t  dayKey;             // v4+
+        uint32_t situpCount;         // v5+
     };
     #pragma pack(pop)
-    static_assert(sizeof(FileLayout) == 40, "unexpected layout");
+    static_assert(sizeof(FileLayout) == 44, "unexpected layout");
 
     static constexpr uint32_t kMagic     = 0x54535545;  // 'EUST' little-endian
-    static constexpr uint16_t kVersion   = 4;
+    static constexpr uint16_t kVersion   = 5;
     static constexpr size_t   kSizeV1    = 16;
     static constexpr size_t   kSizeV2    = 20;
     static constexpr size_t   kSizeV3    = 36;
     static constexpr size_t   kSizeV4    = 40;
+    static constexpr size_t   kSizeV5    = 44;
 
     static std::mutex g_ioMx;
 
@@ -92,7 +95,7 @@ namespace ExerciseUnlock::Svc
         DWORD read = 0;
         BOOL ok = ReadFile(f, &data, sizeof(data), &read, nullptr);
         CloseHandle(f);
-        if (!ok || (read != kSizeV1 && read != kSizeV2 && read != kSizeV3 && read != kSizeV4))
+        if (!ok || (read != kSizeV1 && read != kSizeV2 && read != kSizeV3 && read != kSizeV4 && read != kSizeV5))
         {
             LogF(L"persistent: short read (%lu) — ignoring", read);
             return;
@@ -125,9 +128,13 @@ namespace ExerciseUnlock::Svc
         {
             st.dayKey.store(data.dayKey);
         }
-        LogF(L"persistent: loaded pushups=%u squats=%u bank=%us paused=%us "
+        if (read >= kSizeV5)
+        {
+            st.sitUpCount.store(data.situpCount);
+        }
+        LogF(L"persistent: loaded pushups=%u squats=%u situps=%u bank=%us paused=%us "
              L"session=%lld install=%lld",
-             data.pushupCount, data.squatCount,
+             data.pushupCount, data.squatCount, st.sitUpCount.load(),
              st.earnedBankSeconds.load(), st.pausedSessionSeconds.load(),
              (long long)st.sessionExpiresAtUnix.load(),
              (long long)st.installStartUnix.load());
@@ -177,6 +184,7 @@ namespace ExerciseUnlock::Svc
         data.sessionExpiresAtUnix = st.sessionExpiresAtUnix.load();
         data.installStartUnix     = st.installStartUnix.load();
         data.dayKey               = st.dayKey.load();
+        data.situpCount           = st.sitUpCount.load();
 
         HANDLE f = CreateFileW(StatePath().c_str(),
                                GENERIC_WRITE, 0, sd ? &sa : nullptr,

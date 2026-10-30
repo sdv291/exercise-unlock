@@ -288,7 +288,7 @@ namespace ExerciseUnlock::Svc
             std::set<std::string> phones;      // relay sids
             std::string           token;
             uint64_t              tokenAtMs = 0;
-            uint64_t              lastSquatMs = 0, lastPushupMs = 0;
+            uint64_t              lastSquatMs = 0, lastPushupMs = 0, lastSitupMs = 0;
             double                diagBudget = 10.0;
             uint64_t              diagRefillMs = 0;
             std::string           lastStatus;
@@ -344,7 +344,7 @@ namespace ExerciseUnlock::Svc
         }
 
         // Exercises + the thresholds the webcam detectors use (config.ini
-        // [squat] / [pushup], tuned by the calibration).
+        // [squat] / [pushup] / [situp], tuned by the calibration).
         std::string ConfigJson()
         {
             Json::Writer w;
@@ -382,6 +382,17 @@ namespace ExerciseUnlock::Svc
                 .Key("qualityMin").Number(Config::PushupQualityMin())
              .EndObject().EndObject();
 
+            w.BeginObject().Key("id").String("situp").Key("seconds").Int(Config::SitupSeconds())
+             .Key("params").BeginObject()
+                .Key("lying").Number(Config::SitupLyingAngle())
+                .Key("rising").Number(Config::SitupRisingAngle())
+                .Key("lowering").Number(Config::SitupLoweringAngle())
+                .Key("sitting").Number(Config::SitupSittingAngle())
+                .Key("minRepMs").Int(Config::SitupMinRepMs())
+                .Key("maxRepMs").Int(Config::SitupMaxRepMs())
+                .Key("qualityMin").Number(Config::SitupQualityMin())
+             .EndObject().EndObject();
+
             w.EndArray().EndObject();
             return w.Str();
         }
@@ -397,6 +408,7 @@ namespace ExerciseUnlock::Svc
              .Key("counts").BeginObject()
                 .Key("squat").Int(r.squatCount)
                 .Key("pushup").Int(r.pushUpCount)
+                .Key("situp").Int(r.sitUpCount)
              .EndObject()
              .Key("earned").Int(r.rewardEarnedSeconds)
              .Key("min").Int(r.rewardMinUnlockSeconds)
@@ -447,6 +459,11 @@ namespace ExerciseUnlock::Svc
             {
                 if (!paced(s.lastPushupMs, Config::PushupMinRepMs())) { why = "too_fast"; return false; }
                 counter = &st.pushUpCount;
+            }
+            else if (ex == "situp")
+            {
+                if (!paced(s.lastSitupMs, Config::SitupMinRepMs())) { why = "too_fast"; return false; }
+                counter = &st.sitUpCount;
             }
             else
             {

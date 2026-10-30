@@ -1,6 +1,6 @@
 // Exercise detection on the phone - a straight port of the service's C++
 // detectors (ExerciseUnlockService/PostureClassifier.cpp, SquatDetector.cpp,
-// PushUpDetector.cpp, AngleFilter.h), so a phone rep means the same thing
+// PushUpDetector.cpp, SitUpDetector.cpp, AngleFilter.h), so a phone rep means the same thing
 // as a webcam rep. The thresholds come from the PC (config.ini, set by the
 // calibration) in the "config" message.
 //
@@ -9,7 +9,7 @@
 // normalized to the frame, with the PC camera's aspect ratio. That is what
 // the calibrated angles were measured in.
 //
-// Adding an exercise (sit-ups, ...): write a detector class with
+// Adding an exercise: write a detector class with
 // update(pose, nowMs) -> {counted, quality, durMs} | null, add it to
 // EXERCISES with the posture it needs, and teach the service to accept its
 // id in PhoneLink.cpp.
@@ -54,15 +54,17 @@
 
   // ------------------------------------------------------------ posture
 
-  const Posture = { None: 'none', Vertical: 'vertical', Horizontal: 'horizontal' };
+  const Posture = { None: 'none', Vertical: 'vertical', Horizontal: 'horizontal', SitUp: 'situp' };
 
-  // PostureClassifier: "standing upright" (squats) vs "laid out across the
-  // frame" (push-ups), latched with asymmetric hysteresis.
+  // PostureClassifier: "standing upright" (squats), "laid out across the
+  // frame" (push-ups) or "on the back with the knees up" (sit-ups), latched
+  // with asymmetric hysteresis.
   class PostureClassifier {
     constructor() {
       this.confMin = 0.20;
       this.stableFrames = 6;
       this.unlatchFrames = 20;
+      this.switchFrames = 15;   // straight from one exercise to another
       this.reset();
     }
     reset() { this.latched = Posture.None; this.pending = Posture.None; this.streak = 0; }
@@ -79,7 +81,19 @@
       const nose = ok(pose[J.nose]) ? pose[J.nose] : null;
 
       let raw = Posture.None;
-      if (nose && sh && hp && ak) {
+      // Sit-up first: knees above hips and feet, feet level with the hips
+      // and out in front (thigh lengths). Lying on the back would pass the
+      // plank test below, sitting up the squat test.
+      if (sh && hp && kn && ak) {
+        const thigh = Math.hypot(hp.x - kn.x, hp.y - kn.y);
+        if (thigh > 0.03 &&
+            Math.min(hp.y, ak.y) - kn.y >= 0.30 * thigh &&
+            Math.abs(ak.y - hp.y) <= 0.45 * thigh &&
+            Math.abs(ak.x - hp.x) >= 0.50 * thigh) {
+          raw = Posture.SitUp;
+        }
+      }
+      if (raw === Posture.None && nose && sh && hp && ak) {
         const dxHead = Math.abs(nose.x - ak.x), dyHead = Math.abs(nose.y - ak.y);
         const bodyDy = Math.max(sh.y, hp.y, ak.y) - Math.min(sh.y, hp.y, ak.y);
         if (dxHead >= 0.15 && (dyHead <= 1e-3 || dxHead >= dyHead * 1.8) && bodyDy <= 0.20) {
@@ -99,7 +113,10 @@
       if (raw === this.pending) this.streak++;
       else { this.pending = raw; this.streak = 1; }
       if (this.pending !== this.latched) {
-        const need = this.pending === Posture.None ? this.unlatchFrames : this.stableFrames;
+        // The top of a sit-up can look like a squat, the bottom of a deep
+        // squat like a sit-up, for a moment: switching takes longer.
+        const need = this.pending === Posture.None ? this.unlatchFrames
+                   : this.latched !== Posture.None ? this.switchFrames : this.stableFrames;
         if (this.streak >= need) this.latched = this.pending;
       }
       return this.latched;
@@ -346,6 +363,82 @@
     }
   }
 
+  // ------------------------------------------------------------ sit-up
+
+  // SitUpDetector (hip angle shoulder-hip-knee, averaged over the confident
+  // sides): large lying on the back, small sitting up. Params mirror
+  // config.ini [situp]: lying, rising, lowering, sitting, minRepMs,
+  // maxRepMs, qualityMin. Phase.Top = lying, Phase.Down = sat up.
+  class SitUpDetector {
+    constructor(p) {
+      this.p = Object.assign({
+        lying: 105, rising: 95, lowering: 75, sitting: 60,
+        minRepMs: 800, maxRepMs: 6000, qualityMin: 0,
+      }, p || {});
+      this.confMin = 0.20;
+      this.alpha = 0.70;
+      this.reset();
+    }
+    reset() {
+      this.phase = Phase.Unknown;
+      this.angle = 0;
+      this.smoothInit = false; this.miss = 0;
+      this.filter = new AngleMedianFilter();
+      this.repStart = 0; this.repMin = 999;
+    }
+
+    update(pose, now) {
+      const p = this.p, c = this.confMin;
+      const ok3 = (a, b, d) => pose[a].c >= c && pose[b].c >= c && pose[d].c >= c;
+      let sum = 0, n = 0;
+      if (ok3(J.lShoulder, J.lHip, J.lKnee)) { sum += angleAt(pose[J.lShoulder], pose[J.lHip], pose[J.lKnee]); n++; }
+      if (ok3(J.rShoulder, J.rHip, J.rKnee)) { sum += angleAt(pose[J.rShoulder], pose[J.rHip], pose[J.rKnee]); n++; }
+      this.sides = n;                                // diagnostics only
+      if (n === 0) {
+        if (++this.miss >= 20) { this.phase = Phase.Unknown; this.smoothInit = false; this.repStart = 0; }
+        return null;
+      }
+      this.miss = 0;
+      const raw = this.filter.push(sum / n);
+      this.angle = this.smoothInit ? this.alpha * raw + (1 - this.alpha) * this.angle : raw;
+      this.smoothInit = true;
+      const hip = this.angle;
+      if (this.phase >= Phase.GoingDown && this.phase <= Phase.GoingUp && hip < this.repMin) this.repMin = hip;
+
+      if (this.phase === Phase.Unknown) {
+        if (hip >= p.lowering) this.phase = Phase.Top;
+        else { this.phase = Phase.Down; this.repStart = now; }
+        return null;
+      }
+
+      switch (this.phase) {
+        case Phase.Top:
+          if (hip < p.rising) { this.phase = Phase.GoingDown; this.repStart = now; }
+          break;
+        case Phase.GoingDown:
+          if (hip <= p.sitting) this.phase = Phase.Down;
+          else if (hip >= p.lying) { this.phase = Phase.Top; this.repStart = 0; this.repMin = 999; }
+          break;
+        case Phase.Down:
+          if (hip > p.lowering) this.phase = Phase.GoingUp;
+          break;
+        case Phase.GoingUp: {
+          if (hip <= p.sitting) { this.phase = Phase.Down; break; }
+          if (hip < p.lying) break;
+          const dur = this.repStart ? now - this.repStart : 0;
+          const span = p.lying - p.sitting;
+          const quality = Math.max(0, Math.min(1, span > 1 ? (p.lying - this.repMin) / span : 1));
+          const timingOk = dur >= p.minRepMs && dur <= p.maxRepMs;
+          const qualityOk = p.qualityMin <= 0 || quality >= p.qualityMin;
+          const counted = timingOk && qualityOk;
+          this.phase = Phase.Top; this.repStart = 0; this.repMin = 999;
+          return { counted, quality, durMs: dur, why: counted ? '' : !timingOk ? 'timing' : 'depth' };
+        }
+      }
+      return null;
+    }
+  }
+
   // ------------------------------------------------------------ registry
 
   // id -> how to detect it. `posture` gates the detector exactly like the
@@ -353,6 +446,7 @@
   const EXERCISES = {
     squat: { posture: Posture.Vertical, create: (params) => new SquatDetector(params) },
     pushup: { posture: Posture.Horizontal, create: (params) => new PushUpDetector(params) },
+    situp: { posture: Posture.SitUp, create: (params) => new SitUpDetector(params) },
   };
 
   // Runs the posture classifier and every enabled exercise on one pose.
@@ -382,7 +476,7 @@
     }
   }
 
-  const api = { J, angleAt, AngleMedianFilter, Posture, PostureClassifier, Phase, SquatDetector, PushUpDetector, EXERCISES, Coach };
+  const api = { J, angleAt, AngleMedianFilter, Posture, PostureClassifier, Phase, SquatDetector, PushUpDetector, SitUpDetector, EXERCISES, Coach };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.EU = api;
 })(typeof self !== 'undefined' ? self : this);

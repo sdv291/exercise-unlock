@@ -319,14 +319,17 @@ namespace ExerciseUnlock
             // consolidation only matters for the lock screen.
             if (wasNone && kind != kNone)
             {
+                // Sit-ups share the push-up beep (both on the floor).
                 const bool isPushup =
                     (kind == static_cast<uint8_t>(Ipc::PostureKind::PushUp));
-                const SoundConfig::Slot slot = isPushup
-                    ? SoundConfig::SlotPushupReady
-                    : SoundConfig::SlotSquatReady;
+                const bool isSitup =
+                    (kind == static_cast<uint8_t>(Ipc::PostureKind::SitUp));
+                const SoundConfig::Slot slot = isPushup ? SoundConfig::SlotPushupReady
+                                             : isSitup  ? SoundConfig::SlotSitupReady
+                                                        : SoundConfig::SlotSquatReady;
                 PlayWavOrFallback(
                     m_sounds.PickOne(slot),
-                    isPushup ? MB_ICONEXCLAMATION : MB_ICONASTERISK);
+                    (isPushup || isSitup) ? MB_ICONEXCLAMATION : MB_ICONASTERISK);
                 LogF(L"posture beep: kind=%u", static_cast<unsigned>(kind));
             }
             m_lastPostureKind = kind;
@@ -337,18 +340,20 @@ namespace ExerciseUnlock
             // select.
             const uint32_t sq = resp.squatCount;
             const uint32_t pu = resp.pushUpCount;
+            const uint32_t su = resp.sitUpCount;
             const uint32_t earned = resp.rewardEarnedSeconds;
             const bool squatUp  = m_lastSquat  != UINT32_MAX && sq > m_lastSquat;
             const bool pushupUp = m_lastPushup != UINT32_MAX && pu > m_lastPushup;
+            const bool situpUp  = m_lastSitup  != UINT32_MAX && su > m_lastSitup;
             // A rep that added no time: max_session_seconds is already
             // banked. The error sound tells the child to stop.
-            const bool capped = (squatUp || pushupUp) &&
+            const bool capped = (squatUp || pushupUp || situpUp) &&
                                 m_lastEarned != UINT32_MAX && earned <= m_lastEarned;
             if (capped)
             {
                 PlayWavOrFallback(m_sounds.PickOne(SoundConfig::SlotError), MB_ICONHAND);
-                LogF(L"rep beep: squat %u -> %u, pushup %u -> %u, earned stays %u s (cap) - error",
-                     m_lastSquat, sq, m_lastPushup, pu, earned);
+                LogF(L"rep beep: squat %u -> %u, pushup %u -> %u, situp %u -> %u, earned stays %u s (cap) - error",
+                     m_lastSquat, sq, m_lastPushup, pu, m_lastSitup, su, earned);
             }
             else
             {
@@ -366,6 +371,13 @@ namespace ExerciseUnlock
                         MB_ICONHAND);
                     LogF(L"rep beep: pushup %u -> %u", m_lastPushup, pu);
                 }
+                if (situpUp)
+                {
+                    PlayWavOrFallback(
+                        m_sounds.PickOne(SoundConfig::SlotSitupCounted),
+                        MB_ICONHAND);
+                    LogF(L"rep beep: situp %u -> %u", m_lastSitup, su);
+                }
             }
             // Reps outside the schedule window: recognized, not credited.
             if (m_lastOffHours >= 0 && resp.offHoursReps != m_lastOffHours)
@@ -376,6 +388,7 @@ namespace ExerciseUnlock
             }
             m_lastSquat    = sq;
             m_lastPushup   = pu;
+            m_lastSitup    = su;
             m_lastEarned   = earned;
             m_lastOffHours = resp.offHoursReps;
         }

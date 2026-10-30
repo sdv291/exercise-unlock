@@ -211,6 +211,7 @@ namespace ExerciseUnlock::Svc
         auto& st = GetState();
         const uint32_t pu = st.pushUpCount.load();
         const uint32_t sq = st.squatCount.load();
+        const uint32_t su = st.sitUpCount.load();
 
         // Hard cap: never grant more than Config::MaxSessionSeconds
         // in one unlock. Prevents a hoarded 20-pushup/50-squat
@@ -253,7 +254,7 @@ namespace ExerciseUnlock::Svc
         // Persist so a crash / reboot doesn't grant untimed unlock.
         PersistentState::Save();
         LogF(L"session: armed for %u seconds", effective);
-        ActivityLog::UnlockGranted(pu, sq, effective);
+        ActivityLog::UnlockGranted(pu, sq, su, effective);
         if (m_wakeEvent) SetEvent(m_wakeEvent);
     }
 
@@ -334,6 +335,7 @@ namespace ExerciseUnlock::Svc
                     st.lastSessionEndedUnix.store(NowUnix());
                 st.squatCount.store(0);
                 st.pushUpCount.store(0);
+                st.sitUpCount.store(0);
                 PersistentState::Save();   // clears persisted session
                 ActivityLog::SessionExpired(0);
                 LockConsoleSession();

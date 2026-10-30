@@ -100,6 +100,18 @@ namespace ExerciseUnlock::Ipc
         NotInPlank  = 5,
     };
 
+    // Sit-up (crunch) phases, camera in profile. Lying on the back is the
+    // rest position, Up the top of the rep (sitting up). Lying -> Rising
+    // -> Up -> Lowering -> Lying is one rep.
+    enum class SitUpPhase : uint8_t
+    {
+        Unknown  = 0,
+        Lying    = 1,
+        Rising   = 2,
+        Up       = 3,
+        Lowering = 4,
+    };
+
     // Posture classifier output — tells the provider which exercise
     // the child has set themselves up for, so it can beep once at the
     // moment the detector locks on. "Ready" means several consecutive
@@ -110,6 +122,7 @@ namespace ExerciseUnlock::Ipc
         None   = 0,   // not standing in a recognizable pose yet
         Squat  = 1,   // vertical body, points stacked top-to-bottom
         PushUp = 2,   // horizontal body, head-to-feet span wide
+        SitUp  = 3,   // on the back, knees up, hips and feet on the floor
     };
 
     // Phone camera link (service PhoneLink), as the lock-screen QR window
@@ -201,7 +214,7 @@ namespace ExerciseUnlock::Ipc
         uint8_t   reserved6[3];
 
         // --- v0.7 reward / unlock ---
-        uint32_t  rewardEarnedSeconds;  // pushups*pu_s + squats*sq_s (current session)
+        uint32_t  rewardEarnedSeconds;  // pushups*pu_s + squats*sq_s + situps*su_s (current session)
         uint32_t  rewardMinUnlockSeconds; // threshold from config
         uint8_t   rewardEnough;         // earned >= min
         uint8_t   reserved7[3];
@@ -241,11 +254,17 @@ namespace ExerciseUnlock::Ipc
         // QR can use the compact alphanumeric mode. Empty unless Waiting /
         // Connected.
         wchar_t   phoneUrl[80];
+
+        // --- v1.4 sit-up detector (appended) ---
+        uint32_t  sitUpCount;           // reps since the last reset / unlock
+        float     sitUpHipAngle;        // smoothed shoulder-hip-knee angle (deg)
+        uint8_t   sitUpPhase;           // SitUpPhase
+        uint8_t   reserved11[3];
     };
 
     #pragma pack(pop)
 
     static_assert(sizeof(Request)  == 8,   "wire format changed");
-    static_assert(sizeof(Response) == 340 + 128 * sizeof(wchar_t) + 4 + 80 * sizeof(wchar_t),
-                  "wire format changed");   // = 760
+    static_assert(sizeof(Response) == 340 + 128 * sizeof(wchar_t) + 4 + 80 * sizeof(wchar_t) + 12,
+                  "wire format changed");   // = 772
 }

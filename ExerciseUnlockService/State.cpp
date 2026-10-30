@@ -40,12 +40,13 @@ namespace ExerciseUnlock::Svc
 
         if (prev != 0)
         {
-            LogF(L"day rollover %d -> %d: reset squats=%u pushups=%u bank=%us paused=%us",
+            LogF(L"day rollover %d -> %d: reset squats=%u pushups=%u situps=%u bank=%us paused=%us",
                  prev, today,
-                 g_state.squatCount.load(), g_state.pushUpCount.load(),
+                 g_state.squatCount.load(), g_state.pushUpCount.load(), g_state.sitUpCount.load(),
                  g_state.earnedBankSeconds.load(), g_state.pausedSessionSeconds.load());
             g_state.squatCount.store(0);
             g_state.pushUpCount.store(0);
+            g_state.sitUpCount.store(0);
             g_state.earnedBankSeconds.store(0);
             g_state.pausedSessionSeconds.store(0);
         }
@@ -106,6 +107,11 @@ namespace ExerciseUnlock::Svc
         out.postureKind       = g_state.postureKind.load();
         out.reserved9[0] = out.reserved9[1] = out.reserved9[2] = 0;
 
+        out.sitUpCount        = g_state.sitUpCount.load();
+        out.sitUpHipAngle     = g_state.sitUpHipAngle.load();
+        out.sitUpPhase        = g_state.sitUpPhase.load();
+        out.reserved11[0] = out.reserved11[1] = out.reserved11[2] = 0;
+
         // v1.1 progression: after `progression_after_days` from
         // install, scale per-rep reward down by
         //   1 / (1 + weeks_elapsed * factor)
@@ -130,12 +136,14 @@ namespace ExerciseUnlock::Svc
         const float scale = progressionScale();
         const uint32_t puSec = static_cast<uint32_t>(Config::PushupSeconds() * scale);
         const uint32_t sqSec = static_cast<uint32_t>(Config::SquatSeconds()  * scale);
+        const uint32_t suSec = static_cast<uint32_t>(Config::SitupSeconds()  * scale);
         const uint32_t paused = g_state.pausedSessionSeconds.load();
         uint32_t earned =
             g_state.earnedBankSeconds.load() +
             paused +
             out.pushUpCount * puSec +
-            out.squatCount  * sqSec;
+            out.squatCount  * sqSec +
+            out.sitUpCount  * suSec;
         // Hard cap: never hold more than max_session_seconds of
         // earned time. Reps above the cap still count on the tile
         // but add nothing.
@@ -191,9 +199,11 @@ namespace ExerciseUnlock::Svc
         // (LogonUI) doesn't need to know the label strings.
         //   <squats>: N
         //   <pushups>: N
+        //   <situps>: N
         //   <earned>: M:SS / M:SS [<ready>]
         const std::wstring lSq  = Config::LabelSquats();
         const std::wstring lPu  = Config::LabelPushups();
+        const std::wstring lSu  = Config::LabelSitups();
         const std::wstring lErn = Config::LabelEarned();
         const std::wstring lRdy = Config::LabelReady();
         auto ms = [](uint32_t s) -> std::wstring
@@ -207,6 +217,8 @@ namespace ExerciseUnlock::Svc
         text += lSq;  text += L": "; text += std::to_wstring(out.squatCount);
         text += L"\r\n";
         text += lPu;  text += L": "; text += std::to_wstring(out.pushUpCount);
+        text += L"\r\n";
+        text += lSu;  text += L": "; text += std::to_wstring(out.sitUpCount);
         text += L"\r\n";
         text += lErn; text += L": "; text += ms(out.rewardEarnedSeconds);
         text += L" / "; text += ms(out.rewardMinUnlockSeconds);

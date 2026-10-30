@@ -11,12 +11,13 @@
                   minRepMs: 800, maxRepMs: 5000, qualityMin: 0, maxHipDrift: 0.12, minHipDrop: 0.05, mode: 0 };
   const PUSHUP = { up: 160, down: 110, goingDown: 150, goingUp: 125, plankMin: 150,
                    minRepMs: 800, maxRepMs: 5000, qualityMin: 0 };
+  const SITUP = { lying: 105, rising: 95, lowering: 75, sitting: 60, minRepMs: 800, maxRepMs: 5000, qualityMin: 0 };
   const FRAME_MS = 85;
 
   // Feed `ms` of synthetic frames through a Coach and tally what it says.
   function simulate(EU, poseAt, ms, exercises) {
-    const coach = new EU.Coach(exercises || [{ id: 'squat', params: SQUAT }, { id: 'pushup', params: PUSHUP }]);
-    const tally = { squat: 0, pushup: 0, drops: [], postures: new Set() };
+    const coach = new EU.Coach(exercises || [{ id: 'squat', params: SQUAT }, { id: 'pushup', params: PUSHUP }, { id: 'situp', params: SITUP }]);
+    const tally = { squat: 0, pushup: 0, situp: 0, drops: [], postures: new Set() };
     for (let t = 0; t <= ms; t += FRAME_MS) {
       const r = coach.update(poseAt(t), t);
       tally.postures.add(r.posture);
@@ -29,6 +30,7 @@
   function cases(EU, S) {
     const squats = (period, top, bottom) => (t) => S.squatPose(S.cycleAngle(t, period, top, bottom));
     const pushups = (period, top, bottom) => (t) => S.pushupPose(S.cycleAngle(t, period, top, bottom));
+    const situps = (period, top, bottom) => (t) => S.situpPose(S.cycleAngle(t, period, top, bottom));
     // 5 full cycles + a bit (each cycle = period + 600 ms rest).
     const five = (period) => 5 * (period + 600) + 300;
 
@@ -45,11 +47,28 @@
         const t = simulate(EU, squats(2000, 175, 88), five(2000));
         eq(t.squat, 5, 'squats ' + t.drops.join(','));
         eq(t.pushup, 0);
+        eq(t.situp, 0);
       }],
       ['five push-ups count five', (eq) => {
         const t = simulate(EU, pushups(1800, 172, 95), five(1800));
         eq(t.pushup, 5, 'push-ups ' + t.drops.join(','));
         eq(t.squat, 0);
+        eq(t.situp, 0);
+      }],
+      ['five sit-ups count five', (eq) => {
+        const t = simulate(EU, situps(2000, 135, 45), five(2000));
+        eq(t.situp, 5, 'sit-ups ' + t.drops.join(','));
+        eq(t.squat, 0);
+        eq(t.pushup, 0);
+        eq(t.postures.has(EU.Posture.SitUp), true, 'posture latched sit-up');
+      }],
+      ['half crunches do not count as sit-ups', (eq) => {
+        const t = simulate(EU, situps(2000, 135, 110), five(2000));
+        eq(t.situp, 0);
+      }],
+      ['lying still on the back never counts', (eq) => {
+        const t = simulate(EU, () => S.situpPose(135), 8000);
+        eq(t.squat + t.pushup + t.situp, 0);
       }],
       ['shallow squats do not count', (eq) => {
         const t = simulate(EU, squats(2000, 175, 140), five(2000));
@@ -81,7 +100,7 @@
         eq(t.drops.some((d) => d === 'squat:drift'), true, 'drift drop reported');
       }],
       ['unknown exercise ids are ignored', (eq) => {
-        const coach = new EU.Coach([{ id: 'situp', params: {} }, { id: 'squat', params: SQUAT }]);
+        const coach = new EU.Coach([{ id: 'jumping_jacks', params: {} }, { id: 'squat', params: SQUAT }]);
         eq(coach.items.length, 1);
       }],
     ];

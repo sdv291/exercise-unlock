@@ -12,7 +12,7 @@ Media Foundation, ONNX Runtime + MoveNet).
    expires).
 2. On the regular Windows sign-in screen, an **Exercise Unlock** tile
    appears next to Password / PIN.
-3. Click it — the tile shows `Squats: N`, `Push-ups: N`,
+3. Click it — the tile shows `Squats: N`, `Push-ups: N`, `Sit-ups: N`,
    `Earned: 0:00 / 10:00`.
 4. Child does exercises in front of the camera — counters go up.
 5. When `Earned` reaches `min_unlock_seconds`, the tile shows
@@ -129,6 +129,8 @@ The vault from step 3 must hold this child's password — not yours.
 [reward]
 pushup_seconds     = 120   ; 1 push-up = 2 min
 squat_seconds      = 30    ; 1 squat   = 30 s
+situp_seconds      = 300   ; 1 sit-up  = 5 min
+; these three can also be changed in the calibrator: the "Time only" button
 min_unlock_seconds = 600   ; minimum 10 min for an unlock
 
 ; v1.1 progression: after `progression_after_days` from first install,
@@ -196,6 +198,7 @@ lock_in_message = Computer will lock in {min} minutes
 [labels]
 squats        = Squats
 pushups       = Push-ups
+situps        = Sit-ups
 earned        = Earned
 ready         = — ready to unlock
 outside_hours = Outside allowed hours ({from}-{to})

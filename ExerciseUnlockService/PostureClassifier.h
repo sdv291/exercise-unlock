@@ -44,6 +44,9 @@ namespace ExerciseUnlock::Svc
         // its state every time, losing every rep (observed
         // 2026-10-01 lock-screen test: 5 squats, 0 counted).
         static constexpr int kUnlatchFrames = 20;
+        // Frames to switch straight from one exercise to another (e.g.
+        // SitUp -> Squat) without passing through None.
+        static constexpr int kSwitchFrames = 15;
 
         Ipc::PostureKind m_latched{ Ipc::PostureKind::None };
         Ipc::PostureKind m_pending{ Ipc::PostureKind::None };

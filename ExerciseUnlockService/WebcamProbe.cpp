@@ -2,6 +2,7 @@
 #include "PoseEstimator.h"
 #include "SquatDetector.h"
 #include "PushUpDetector.h"
+#include "SitUpDetector.h"
 #include "PostureClassifier.h"
 #include "Config.h"
 #include "PersistentState.h"
@@ -621,6 +622,7 @@ namespace ExerciseUnlock::Svc
         BodyPose          pose_out{};
         SquatDetector     squats;
         PushUpDetector    pushups;
+        SitUpDetector     situps;
         PostureClassifier posture;
         uint32_t       frameNo = 0;
         HRESULT        hr = S_OK;
@@ -849,6 +851,7 @@ namespace ExerciseUnlock::Svc
                             {
                                 squats.Update(pose_out);
                                 pushups.Update(pose_out);
+                                situps.Update(pose_out);
                                 posture.Update(pose_out);
                             }
                         }

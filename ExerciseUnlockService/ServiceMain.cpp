@@ -203,7 +203,8 @@ namespace ExerciseUnlock::Svc
         auto& st = GetState();
         const uint32_t pu = st.pushUpCount.load();
         const uint32_t sq = st.squatCount.load();
-        if (pu == 0 && sq == 0) return;
+        const uint32_t su = st.sitUpCount.load();
+        if (pu == 0 && sq == 0 && su == 0) return;
         // Reuse SnapshotInto's math to keep the two paths consistent.
         Ipc::Response snap{};
         SnapshotInto(snap);
@@ -216,9 +217,10 @@ namespace ExerciseUnlock::Svc
         st.earnedBankSeconds.fetch_add(add);
         st.pushUpCount.store(0);
         st.squatCount.store(0);
+        st.sitUpCount.store(0);
         PersistentState::Save();
-        LogF(L"bank: +%us (from %u pushups + %u squats) -> total %us",
-             add, pu, sq, st.earnedBankSeconds.load());
+        LogF(L"bank: +%us (from %u pushups + %u squats + %u situps) -> total %us",
+             add, pu, sq, su, st.earnedBankSeconds.load());
     }
 
     static DWORD WINAPI ServiceCtrlHandler(DWORD ctrl, DWORD eventType, LPVOID eventData, LPVOID)

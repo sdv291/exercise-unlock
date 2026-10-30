@@ -105,6 +105,7 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClCompile Include="PoseEstimator.cpp" />
     <ClCompile Include="SquatDetector.cpp" />
     <ClCompile Include="PushUpDetector.cpp" />
+    <ClCompile Include="SitUpDetector.cpp" />
     <ClCompile Include="PostureClassifier.cpp" />
     <ClCompile Include="Config.cpp" />
     <ClCompile Include="SessionManager.cpp" />
@@ -124,6 +125,7 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClInclude Include="SquatDetector.h" />
     <ClInclude Include="RepResult.h" />
     <ClInclude Include="PushUpDetector.h" />
+    <ClInclude Include="SitUpDetector.h" />
     <ClInclude Include="PostureClassifier.h" />
     <ClInclude Include="AngleFilter.h" />
     <ClInclude Include="Config.h" />

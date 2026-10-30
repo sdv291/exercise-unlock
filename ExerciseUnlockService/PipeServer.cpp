@@ -342,6 +342,7 @@ namespace ExerciseUnlock::Svc
             auto& st = GetState();
             st.squatCount.store(0);
             st.pushUpCount.store(0);
+            st.sitUpCount.store(0);
             st.earnedBankSeconds.store(0);
             PersistentState::Save();
             LogF(L"counters + bank reset via pipe");
@@ -427,6 +428,7 @@ namespace ExerciseUnlock::Svc
             {
                 st.squatCount.store(0);
                 st.pushUpCount.store(0);
+                st.sitUpCount.store(0);
                 st.earnedBankSeconds.store(0);
                 st.pausedSessionSeconds.store(0);   // resumed into this session
             }

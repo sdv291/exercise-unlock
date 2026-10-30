@@ -1,6 +1,6 @@
 // Synthetic side-view skeletons for a given knee / elbow angle, in the same
 // coordinate convention the detectors use. Drives the page's demo mode
-// (?demo=squat / ?demo=pushup, no camera needed) and the unit tests.
+// (?demo=squat / pushup / situp, no camera needed) and the unit tests.
 
 (function (root) {
   'use strict';
@@ -77,7 +77,31 @@
     return bottom + (top - bottom) * (0.5 + 0.5 * Math.cos(phase * 2 * Math.PI));
   }
 
-  const api = { squatPose, pushupPose, cycleAngle };
+  // On the back, knees bent (thigh 45 deg up, feet flat), head left.
+  // hipDeg is the real torso-thigh angle: ~135 lying, ~45 sitting up.
+  function situpPose(hipDeg) {
+    const floorY = 0.85, T = 0.18, S = 0.18, Tor = 0.25, th = 45 * DEG;
+    const X = (x) => 0.2 + x / ASPECT;               // lengths in frame heights
+    const hip = { x: 0.30, y: floorY };
+    const knee = { x: hip.x + T * Math.cos(th), y: hip.y - T * Math.sin(th) };
+    const drop = floorY - knee.y;
+    const ankle = { x: knee.x + Math.sqrt(S * S - drop * drop), y: floorY };
+    const dir = th + hipDeg * DEG;                    // torso direction, counter-clockwise
+    const sh = { x: hip.x + Tor * Math.cos(dir), y: hip.y - Tor * Math.sin(dir) };
+    const nose = { x: hip.x + (Tor + 0.08) * Math.cos(dir), y: hip.y - (Tor + 0.08) * Math.sin(dir) };
+    const pose = blank();
+    pose[0] = { x: X(nose.x), y: nose.y, c: 0.9 };
+    for (const k of [1, 2, 3, 4]) pose[k] = { x: X(nose.x), y: nose.y - 0.01, c: 0.9 };
+    both(pose, 5, 6, X(sh.x), sh.y);
+    both(pose, 7, 8, X((sh.x + hip.x) / 2 + 0.03), (sh.y + hip.y) / 2 - 0.02);   // arms crossed on the chest
+    both(pose, 9, 10, X(sh.x + 0.02), sh.y + 0.01);
+    both(pose, 11, 12, X(hip.x), hip.y);
+    both(pose, 13, 14, X(knee.x), knee.y);
+    both(pose, 15, 16, X(ankle.x), ankle.y);
+    return pose;
+  }
+
+  const api = { squatPose, pushupPose, situpPose, cycleAngle };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.EUSynth = api;
 })(typeof self !== 'undefined' ? self : this);

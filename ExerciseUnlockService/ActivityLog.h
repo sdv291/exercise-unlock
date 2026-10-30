@@ -21,6 +21,7 @@ namespace ExerciseUnlock::Svc
         // is armed.
         static void UnlockGranted(uint32_t pushups,
                                   uint32_t squats,
+                                  uint32_t situps,
                                   uint32_t earnedSeconds);
 
         // Fires when the countdown expires and the workstation is
