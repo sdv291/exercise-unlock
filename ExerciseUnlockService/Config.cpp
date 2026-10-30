@@ -116,9 +116,10 @@ namespace ExerciseUnlock::Svc
     std::wstring       Config::s_phoneRelayUrl      { kDefaultRelayUrl };
     std::atomic<float> Config::s_calibrationAspect  { 0.0f };
 
-    std::atomic<bool>  Config::s_updateEnabled      { false };
+    constexpr wchar_t  kDefaultManifestUrl[] = L"https://exercise-unlock.sdv291.com/download/version.txt";
+    std::atomic<bool>  Config::s_updateEnabled      { true };
     std::atomic<int>   Config::s_updateIntervalH    { 24 };
-    std::wstring       Config::s_updateUrl          { L"" };
+    std::wstring       Config::s_updateUrl          { kDefaultManifestUrl };
 
     std::mutex       Config::s_stringsMx;
     std::wstring     Config::s_cameraPref;
@@ -436,7 +437,7 @@ namespace ExerciseUnlock::Svc
             L"update", L"enabled", s_updateEnabled.load() ? 1 : 0, path.c_str()) != 0);
         s_updateIntervalH.store(GetPrivateProfileIntW(
             L"update", L"check_interval_hours", s_updateIntervalH.load(), path.c_str()));
-        const std::wstring updUrl = readStr(L"update", L"manifest_url", L"");
+        const std::wstring updUrl = readStr(L"update", L"manifest_url", kDefaultManifestUrl);
 
         // Phone camera [phone] + calibration geometry [calibration].
         s_phoneEnabled.store(GetPrivateProfileIntW(

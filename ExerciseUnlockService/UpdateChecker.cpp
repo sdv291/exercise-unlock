@@ -181,18 +181,31 @@ namespace ExerciseUnlock::Svc
                         MB_OK | MB_ICONINFORMATION, 0, &resp, FALSE);
     }
 
-    void UpdateChecker::CheckOnce()
+    // Which version the toast went out for. In the registry rather than in
+    // State: the service restarts with every boot and every calibrator
+    // save, and that shouldn't bring the same box back each time.
+    static constexpr wchar_t kToastedKey[]   = L"SOFTWARE\\ExerciseUnlock";
+    static constexpr wchar_t kToastedValue[] = L"UpdateToasted";
+
+    static std::wstring LoadToasted()
     {
-        if (!Config::UpdatesEnabled()) return;
-        const std::wstring url = Config::UpdateManifestUrl();
-        if (url.empty()) return;
+        wchar_t buf[64]{};
+        DWORD cb = sizeof(buf);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, kToastedKey, kToastedValue, RRF_RT_REG_SZ,
+                         nullptr, buf, &cb) != ERROR_SUCCESS)
+            return {};
+        return buf;
+    }
 
-        LogF(L"update: GET %s", url.c_str());
-        const std::string body = HttpsGet(url);
+    static void SaveToasted(const std::wstring& version)
+    {
+        RegSetKeyValueW(HKEY_LOCAL_MACHINE, kToastedKey, kToastedValue, REG_SZ, version.c_str(),
+                        (DWORD)((version.size() + 1) * sizeof(wchar_t)));
+    }
+
+    static void ApplyManifest(const std::string& body)
+    {
         auto& st = GetState();
-        st.updateLastCheckUnix.store(NowUnix());
-        if (body.empty()) return;
-
         std::wstring ver, dl, notes;
         ParseManifest(body, ver, dl, notes);
         if (ver.empty())
@@ -219,22 +232,34 @@ namespace ExerciseUnlock::Svc
             return;
         }
 
-        bool toastThis = false;
         {
             std::lock_guard<std::mutex> lk(st.updateMx);
             st.updateAvailable      = true;
             st.updateLatestVersion  = ver;
             st.updateDownloadUrl    = dl;
             st.updateNotesUrl       = notes;
-            if (st.updateLastToasted != ver)
-            {
-                st.updateLastToasted = ver;
-                toastThis = true;
-            }
         }
         LogF(L"update: NEW version %s available (installed %s) %s",
              ver.c_str(), kVersionString, dl.c_str());
-        if (toastThis) ShowUpdateToast(ver, dl.empty() ? notes : dl);
+        if (LoadToasted() != ver)
+        {
+            SaveToasted(ver);
+            ShowUpdateToast(ver, dl.empty() ? notes : dl);
+        }
+    }
+
+    bool UpdateChecker::CheckOnce()
+    {
+        if (!Config::UpdatesEnabled()) return true;
+        const std::wstring url = Config::UpdateManifestUrl();
+        if (url.empty()) return true;
+
+        LogF(L"update: GET %s", url.c_str());
+        const std::string body = HttpsGet(url);
+        GetState().updateLastCheckUnix.store(NowUnix());
+        if (body.empty()) return false;
+        ApplyManifest(body);
+        return true;
     }
 
     void UpdateChecker::Run()
@@ -245,17 +270,22 @@ namespace ExerciseUnlock::Svc
         // on the pipe/webcam init). Then every N hours.
         if (WaitForSingleObject(m_stopEvent, 15 * 1000) == WAIT_OBJECT_0)
             return;
-        CheckOnce();
+        bool answered = CheckOnce();
 
         for (;;)
         {
+            // 15 s after boot the network is often not up yet, and a PC
+            // that's switched off at night never reaches the next 24 h
+            // check: no answer means try again soon.
+            constexpr DWORD kRetryMs = 15 * 60 * 1000;
             const int hours = Config::UpdateIntervalHours();
             // 0 h = startup-only; sleep forever (or until stop).
-            const DWORD ms = (hours > 0 && hours < 24 * 7)
+            const DWORD ms = !answered ? kRetryMs
+                : (hours > 0 && hours < 24 * 7)
                 ? (DWORD)hours * 3600u * 1000u
                 : INFINITE;
             if (WaitForSingleObject(m_stopEvent, ms) == WAIT_OBJECT_0) break;
-            CheckOnce();
+            answered = CheckOnce();
         }
         LogF(L"update thread stopping");
     }

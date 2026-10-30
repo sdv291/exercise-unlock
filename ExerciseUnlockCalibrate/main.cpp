@@ -4,10 +4,12 @@
 // the child does 5 test reps, counted by the service's own detectors with
 // the new (not yet saved) thresholds.
 //
-//   ExerciseUnlockCalibrate.exe [/lang en|uk] [/setup]
+//   ExerciseUnlockCalibrate.exe [/lang en|uk] [/setup] [/settings]
 //
-//   /setup  launched by the installer before the service starts: after
-//           saving, don't restart the service (setup starts it).
+//   /setup     launched by the installer before the service starts: after
+//              saving, don't restart the service (setup starts it).
+//   /settings  only the settings window (Settings.cpp), no wizard and no
+//              camera.
 //
 // Angles are measured exactly the way SquatDetector / PushUpDetector see
 // them: same MoveNet model (PoseEstimator.cpp), same camera format (RGB32
@@ -26,6 +28,8 @@
 #include "CheckJudge.h"
 #include "Log.h"
 #include "Paths.h"
+#include "Settings.h"
+#include "Snapshot.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -100,7 +104,7 @@ namespace
         tTitleSitLying, tTextSitLying, tTitleSitUp, tTextSitUp, tTitleTestSitup, tTextTestSitup,
         tRow5, tRow6, tHip, tSitNotSeen, tSmallSitup, tSumSitup, tTestThrSitup, tTestNotDeepSitup,
         tTestNoSitup, tAdjLying, tAdjSitTop,
-        tTimeOnly, tRewardTitle, tRewardUnit, tBadSeconds,
+        tSettings, tSettingsSaved,
         tCount
     };
 
@@ -113,7 +117,7 @@ namespace
         L"Next you will take 6 photos: standing and squatting, push-up with straight arms and at the bottom, lying and sitting up for sit-ups. "
         L"Exercise Unlock measures the child's angles and tunes the rep counting to them; after each exercise "
         L"the child does 5 test reps to check it.\n\n"
-        L"To change only the seconds for a rep, press \"Time only\".",
+        L"The seconds per rep, the schedule and everything else are under \"Settings\".",
         L"Standing, side view",
         L"The child stands sideways to the camera at full height: legs straight, arms down.\n\n"
         L"Press \"Take photo\" - the photo is taken right away.",
@@ -138,7 +142,7 @@ namespace
         L"The camera is not sending a picture. Pick another camera in the list above, or close other apps that use it.",
         L"The pose model could not be loaded - is the installation complete?",
         L"Saved to config.ini.", L" The service was restarted.", L" Restart the service (or the computer) to apply.",
-        L"Nothing to save: the photos were skipped and the time per rep has not changed.",
+        L"Could not write config.ini (error %lu). Run the calibration as administrator.",
         L"Nothing to save - all photos were skipped.",
         L"Squats (knee angle)\n  standing %s \x2192 %d, going down %s \x2192 %d\n  going up %s \x2192 %d, down %s \x2192 %d",
         L"Push-ups (elbow angle)\n  up %s \x2192 %d, going down %s \x2192 %d\n  going up %s \x2192 %d, down %s \x2192 %d",
@@ -208,10 +212,8 @@ namespace
         L"No sit-up position recognized: the child lies on the back sideways to the camera, knees bent, the whole body visible.",
         L"lying %d\x00B0 \x2192 %d\x00B0",
         L"top %d\x00B0 \x2192 %d\x00B0",
-        L"Time only",
-        L"Seconds of computer time for one rep:",
-        L"s",
-        L"Seconds for one rep must be a whole number from 1 to 3600.",
+        L"Settings",
+        L"Settings saved.",
     };
 
     const wchar_t* const kUk[] = {
@@ -223,7 +225,7 @@ namespace
         L"Далі ви зробите 6 фото: стоячи й у присіді, віджимання з прямими руками й унизу, лежачи й угорі для преса. "
         L"Exercise Unlock виміряє кути дитини й налаштує під них підрахунок повторів, а після кожної вправи "
         L"дитина зробить 5 пробних повторів для перевірки.\n\n"
-        L"Щоб змінити лише секунди за повтор, натисніть «Лише час».",
+        L"Секунди за повтор, розклад та все інше - у «Налаштуваннях».",
         L"Стоячи, у профіль",
         L"Дитина стоїть боком до камери на повний зріст: ноги прямі, руки опущені.\n\n"
         L"Натисніть «Зробити фото» - знімок буде зроблено одразу.",
@@ -244,7 +246,7 @@ namespace
         L"Стійка й присід відрізняються лише на %d\x00B0 - присядьте глибше або перевірте ракурс камери. Налаштування присідань не змінено.",
         L"Прямі й зігнуті руки відрізняються лише на %d\x00B0 - опустіться нижче або перевірте ракурс камери. Налаштування віджимань не змінено.",
         L"Камеру не знайдено. Підключіть камеру й запустіть калібрування знову.",
-        L"Нічого зберігати: фото пропущено, час за повтор не змінено.",
+        L"Камера зайнята або недоступна. Закрийте інші програми, що її використовують, і виберіть камеру ще раз.",
         L"Камера не передає зображення. Виберіть іншу камеру у списку вище або закрийте інші програми, що її використовують.",
         L"Не вдалося завантажити модель пози - чи завершено встановлення?",
         L"Збережено в config.ini.", L" Службу перезапущено.", L" Перезапустіть службу (або комп'ютер), щоб застосувати.",
@@ -318,10 +320,8 @@ namespace
         L"Положення для преса не розпізнано: дитина лежить на спині боком до камери, коліна зігнуті, усе тіло в кадрі.",
         L"лежачи %d\x00B0 \x2192 %d\x00B0",
         L"угорі %d\x00B0 \x2192 %d\x00B0",
-        L"Лише час",
-        L"Секунд за комп'ютером за один повтор:",
-        L"с",
-        L"Секунди за один повтор мають бути цілим числом від 1 до 3600.",
+        L"Налаштування",
+        L"Налаштування збережено.",
     };
 
     static_assert(std::size(kEn) == tCount && std::size(kUk) == tCount, "string tables out of sync");
@@ -518,19 +518,14 @@ namespace
         const wchar_t* nameEn;
         const wchar_t* nameUk;
         float (*measure)(const BodyPose&);
-        const wchar_t* rewardKey;   // [reward] seconds for one rep
-        int   (*seconds)();         // ... as config.ini has it now
     };
     const ExerciseInfo kExercises[kExerciseCount] = {
         { L"squat",  tRow1, tRow2, tKnee,  tLegsNotSeen, tSmallSquat, tSumSquat, tTestThrSquat, tTestNotDeepSquat,
-          tTestNoSquat, tAdjStand, tAdjDown, Ipc::PostureKind::Squat, L"Squats", L"Присідання", KneeAngle,
-          L"squat_seconds", Config::SquatSeconds },
+          tTestNoSquat, tAdjStand, tAdjDown, Ipc::PostureKind::Squat, L"Squats", L"Присідання", KneeAngle },
         { L"pushup", tRow3, tRow4, tElbow, tPushNotSeen, tSmallPush, tSumPush, tTestThrPush, tTestNotDeepPush,
-          tTestNoPlank, tAdjUp, tAdjDown, Ipc::PostureKind::PushUp, L"Push-ups", L"Віджимання", PushUpElbow,
-          L"pushup_seconds", Config::PushupSeconds },
+          tTestNoPlank, tAdjUp, tAdjDown, Ipc::PostureKind::PushUp, L"Push-ups", L"Віджимання", PushUpElbow },
         { L"situp",  tRow5, tRow6, tHip,   tSitNotSeen, tSmallSitup, tSumSitup, tTestThrSitup, tTestNotDeepSitup,
-          tTestNoSitup, tAdjLying, tAdjSitTop, Ipc::PostureKind::SitUp, L"Sit-ups", L"Прес", SitupHip,
-          L"situp_seconds", Config::SitupSeconds },
+          tTestNoSitup, tAdjLying, tAdjSitTop, Ipc::PostureKind::SitUp, L"Sit-ups", L"Прес", SitupHip },
     };
     constexpr int kSteps = static_cast<int>(std::size(kStepDefs));
     constexpr int kTestReps = 5;
@@ -540,11 +535,10 @@ namespace
     constexpr DWORD kCollectMs   = 5000;
     constexpr size_t kSamples    = 12;
 
-    enum CtlId { idCamera = 100, idBack, idTake, idSkip, idNext, idReward };   // idReward + exercise
+    enum CtlId { idCamera = 100, idBack, idTake, idSkip, idNext };
 
     HINSTANCE g_inst = nullptr;
     HWND g_wnd = nullptr, g_cam = nullptr, g_back = nullptr, g_take = nullptr, g_skip = nullptr, g_next = nullptr;
-    HWND g_reward[kExerciseCount]{};   // seconds per rep, on the summary step
     HFONT g_fontUi = nullptr, g_fontTitle = nullptr, g_fontBig = nullptr;
     UINT g_dpi = 96;
     bool g_setupMode = false;
@@ -1370,18 +1364,45 @@ namespace
         return ok;
     }
 
-    // The summary step's "seconds for one rep" boxes.
-    constexpr int kMaxRewardSeconds = 3600;   // a single rep can't earn more than an hour
-    bool ReadRewards(int (&seconds)[kExerciseCount])
+    ExerciseUnlock::Calib::SettingsRequest SettingsFor(HWND owner)
     {
-        for (int ex = 0; ex < kExerciseCount; ++ex)
+        ExerciseUnlock::Calib::SettingsRequest req;
+        req.inst = g_inst;
+        req.owner = owner;
+        req.uk = g_uk;
+        req.configPath = g_configPath;
+        req.soundsPath = ExerciseUnlock::DataPath(L"sounds.ini");
+        for (const CameraInfo& c : g_cameras) req.cameras.push_back(c.name);
+        return req;
+    }
+
+    // The camera config.ini asks for, -1 when it names none of them.
+    int PreferredCamera()
+    {
+        const std::wstring pref = IniGet(L"camera", L"preferred");
+        for (size_t i = 0; i < g_cameras.size(); ++i)
+            if (!pref.empty() && StrStrIW(g_cameras[i].name.c_str(), pref.c_str())) return static_cast<int>(i);
+        return -1;
+    }
+
+    // Only from steps without a running test: it reads config.ini again,
+    // over the thresholds a test put into Config.
+    void OpenSettings()
+    {
+        const auto r = ExerciseUnlock::Calib::ShowSettings(SettingsFor(g_wnd));
+        if (!r.saved) return;
+        Config::Load();
+        g_cfgMinHipDrop = Config::SquatMinHipDrop();
+        const int pick = PreferredCamera();
+        if (pick >= 0 && pick != static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0)))
         {
-            wchar_t buf[16]{};
-            GetWindowTextW(g_reward[ex], buf, static_cast<int>(std::size(buf)));
-            seconds[ex] = _wtoi(buf);
-            if (seconds[ex] < 1 || seconds[ex] > kMaxRewardSeconds) return false;
+            SendMessageW(g_cam, CB_SETCURSEL, static_cast<WPARAM>(pick), 0);
+            StartCamera(pick);
         }
-        return true;
+        g_status = T(tSettingsSaved);
+        if (r.serviceConfig && !g_setupMode) g_status += RestartService() ? T(tRestarted) : T(tRestartFailed);
+        g_statusIsError = false;
+        InvalidateRect(g_wnd, nullptr, FALSE);
     }
 
     bool Save()
@@ -1389,16 +1410,8 @@ namespace
         const Plan p = ComputePlan();
         const int cam = static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0));
         const bool setCamera = g_cameras.size() > 1 && cam >= 0;
-        int seconds[kExerciseCount]{};
-        if (!ReadRewards(seconds))
-        {
-            g_status = T(tBadSeconds);
-            g_statusIsError = true;
-            return false;
-        }
         bool any = setCamera;
         for (const ExercisePlan& e : p.ex) any = any || e.ok;
-        for (int ex = 0; ex < kExerciseCount; ++ex) any = any || seconds[ex] != kExercises[ex].seconds();
         if (!any)
         {
             g_status = T(tNothingToSave);
@@ -1421,12 +1434,6 @@ namespace
             for (int i = 0; i < 4; ++i) put(k.section, k.key[i], std::to_wstring(v[i]));
             if (ex == kSquat && p.hip) put(L"squat", L"min_hip_drop", Fmt(L"%.2f", p.hipDrop));
             LogF(L"calibrate: saved %s %d/%d/%d/%d", ExerciseName(ex), e.top, e.goingDown, e.goingUp, e.down);
-        }
-        for (int ex = 0; ex < kExerciseCount; ++ex)
-        {
-            if (seconds[ex] == kExercises[ex].seconds()) continue;
-            put(L"reward", kExercises[ex].rewardKey, std::to_wstring(seconds[ex]));
-            LogF(L"calibrate: saved %s reward %d -> %d s", ExerciseName(ex), kExercises[ex].seconds(), seconds[ex]);
         }
         // Only pin the camera when there is a choice to make: with a
         // single camera a pinned name would just make the service wait
@@ -1528,17 +1535,11 @@ namespace
         const bool busy = g_phase != Phase::Live;
         EnableWindow(g_back, g_step > 0 && !busy && !(summary && g_saved));
         ShowWindow(g_take, photoStep || testStep ? SW_SHOW : SW_HIDE);
-        // On the first step "Skip" jumps over all the photos to the seconds.
-        ShowWindow(g_skip, cameraStep || photoStep || testStep ? SW_SHOW : SW_HIDE);
-        SetWindowTextW(g_skip, T(cameraStep ? tTimeOnly : tSkip));
+        // With nothing to skip, the button opens the settings.
+        SetWindowTextW(g_skip, T(cameraStep || summary ? tSettings : tSkip));
         EnableWindow(g_take, !busy && (retake || ((photoStep || testStep) && !g_cameras.empty())));
         EnableWindow(g_skip, !busy && !passed);
         EnableWindow(g_cam, !busy);
-        for (HWND h : g_reward)
-        {
-            ShowWindow(h, summary ? SW_SHOW : SW_HIDE);
-            EnableWindow(h, !g_saved);
-        }
         if (photoStep) SetWindowTextW(g_take, T(g_shots[s.shot].done ? tRetake : tTake));
         if (testStep) SetWindowTextW(g_take, T(retake ? tRetakePhotos : tRestart));
         SetWindowTextW(g_next, T(summary ? (g_saved ? tClose : tSave) : tNext));
@@ -1573,18 +1574,6 @@ namespace
         return RECT{ client.right - Px(424), Px(16), client.right - Px(16), client.bottom - Px(16) };
     }
 
-    // Summary step: the "seconds for one rep" block above the buttons, one
-    // column per exercise, label over edit box. Distances from the panel's
-    // bottom edge.
-    constexpr int kRewardTitleDy = 116, kRewardLabelDy = 92, kRewardEditDy = 72;
-    constexpr int kRewardEditW = 64, kRewardEditH = 26;
-
-    int RewardColumnX(const RECT& p, int ex)
-    {
-        const int gap = Px(12);
-        return p.left + ex * (p.right - p.left + gap) / kExerciseCount;
-    }
-
     void Layout()
     {
         RECT rc;
@@ -1598,9 +1587,6 @@ namespace
         MoveWindow(g_skip, p.left + bw + Px(8), y, bw, Px(32), TRUE);
         MoveWindow(g_take, p.left + 2 * (bw + Px(8)), y, bw, Px(32), TRUE);
         MoveWindow(g_next, p.left + 3 * (bw + Px(8)), y, bw, Px(32), TRUE);
-        for (int ex = 0; ex < kExerciseCount; ++ex)
-            MoveWindow(g_reward[ex], RewardColumnX(p, ex), p.bottom - Px(kRewardEditDy),
-                       Px(kRewardEditW), Px(kRewardEditH), TRUE);
     }
 
     void MakeFonts()
@@ -1615,8 +1601,6 @@ namespace
         g_fontTitle = mk(15, FW_SEMIBOLD);
         g_fontBig = mk(40, FW_BOLD);      // test rep counter over the video
         for (HWND h : { g_cam, g_back, g_take, g_skip, g_next })
-            SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontUi), TRUE);
-        for (HWND h : g_reward)
             SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontUi), TRUE);
     }
 
@@ -1970,7 +1954,7 @@ namespace
         for (const StepDef& s : kStepDefs)
             if (showList && (s.kind == StepKind::Photo || s.kind == StepKind::Test)) ++rows;
         const int listTop = p.bottom - Px(44) - rows * rowH;
-        const int textBottom = (showList ? listTop : p.bottom - Px(kRewardTitleDy)) - Px(10);
+        const int textBottom = listTop - Px(10);
 
         // Word-wrapped paragraph at y, clipped above the checklist.
         auto para = [&](const std::wstring& text, COLORREF color) {
@@ -1999,25 +1983,6 @@ namespace
             const int want = std::min(ExampleHeight(step.example, p.right - p.left), Px(240));
             const RECT card{ p.left, y + Px(24), p.right, std::min(textBottom, y + Px(24) + want) };
             DrawExample(dc, card, step.example);
-        }
-
-        // Summary: captions of the "seconds for one rep" boxes (see Layout).
-        if (step.kind == StepKind::Summary)
-        {
-            SetTextColor(dc, kTextInk);
-            r = RECT{ p.left, p.bottom - Px(kRewardTitleDy), p.right, p.bottom - Px(kRewardLabelDy) };
-            DrawTextW(dc, T(tRewardTitle), -1, &r, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
-            SetTextColor(dc, kInfoInk);
-            for (int ex = 0; ex < kExerciseCount; ++ex)
-            {
-                const int x = RewardColumnX(p, ex);
-                r = RECT{ x, p.bottom - Px(kRewardLabelDy), x + Px(130), p.bottom - Px(kRewardEditDy) };
-                DrawTextW(dc, g_uk ? kExercises[ex].nameUk : kExercises[ex].nameEn, -1, &r,
-                          DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
-                r = RECT{ x + Px(kRewardEditW + 6), p.bottom - Px(kRewardEditDy), x + Px(130),
-                          p.bottom - Px(kRewardEditDy - kRewardEditH) };
-                DrawTextW(dc, T(tRewardUnit), -1, &r, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-            }
         }
 
         SetTextColor(dc, kTextInk);
@@ -2076,13 +2041,6 @@ namespace
         EndPaint(g_wnd, &ps);
     }
 
-    bool NoPhotosTouched()
-    {
-        for (const Shot& s : g_shots)
-            if (s.done || s.skipped) return false;
-        return true;
-    }
-
     void OnCommand(int id, int code)
     {
         switch (id)
@@ -2098,9 +2056,7 @@ namespace
             }
             break;
         case idBack:
-            // Came straight here with "Time only": back to the start, not
-            // to the last of the photos.
-            GoToStep(Cur().kind == StepKind::Summary && NoPhotosTouched() ? 0 : g_step - 1);
+            GoToStep(g_step - 1);
             break;
         case idTake:
             g_status.clear();
@@ -2125,9 +2081,9 @@ namespace
             UpdateControls();
             break;
         case idSkip:
-            if (Cur().kind == StepKind::Camera)
+            if (Cur().kind == StepKind::Camera || Cur().kind == StepKind::Summary)
             {
-                GoToStep(kSteps - 1);        // "Time only"
+                OpenSettings();
                 break;
             }
             if (Cur().kind == StepKind::Test)
@@ -2184,27 +2140,16 @@ namespace
             g_skip = button(idSkip);
             g_take = button(idTake);
             g_next = button(idNext);
-            for (int ex = 0; ex < kExerciseCount; ++ex)
-            {
-                g_reward[ex] = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDITW, std::to_wstring(kExercises[ex].seconds()).c_str(),
-                                               WS_CHILD | WS_TABSTOP | ES_NUMBER | ES_CENTER, 0, 0, 10, 10, hwnd,
-                                               reinterpret_cast<HMENU>(static_cast<INT_PTR>(idReward + ex)), g_inst, nullptr);
-                SendMessageW(g_reward[ex], EM_SETLIMITTEXT, 4, 0);
-            }
             SetWindowTextW(g_back, T(tBack));
             SetWindowTextW(g_skip, T(tSkip));
             MakeFonts();
 
             g_cameras = EnumerateCameras();
-            int pick = 0;
-            const std::wstring pref = IniGet(L"camera", L"preferred");
-            for (size_t i = 0; i < g_cameras.size(); ++i)
-            {
-                SendMessageW(g_cam, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(g_cameras[i].name.c_str()));
-                if (!pref.empty() && StrStrIW(g_cameras[i].name.c_str(), pref.c_str())) pick = static_cast<int>(i);
-            }
+            for (const CameraInfo& c : g_cameras)
+                SendMessageW(g_cam, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.name.c_str()));
             if (!g_cameras.empty())
             {
+                const int pick = std::max(PreferredCamera(), 0);
                 SendMessageW(g_cam, CB_SETCURSEL, static_cast<WPARAM>(pick), 0);
                 if (g_snapshotPath.empty()) StartCamera(pick);
             }
@@ -2308,61 +2253,15 @@ namespace
             OnFrame();
             return 0;
         case WM_APP_SNAPSHOT:
-        {
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            HDC wdc = GetDC(hwnd);
-            HDC dc = CreateCompatibleDC(wdc);
-            BITMAPINFO bi{};
-            bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
-            bi.bmiHeader.biWidth = rc.right;
-            bi.bmiHeader.biHeight = rc.bottom;
-            bi.bmiHeader.biPlanes = 1;
-            bi.bmiHeader.biBitCount = 32;
-            void* bits = nullptr;
-            HBITMAP bmp = CreateDIBSection(wdc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-            HGDIOBJ old = SelectObject(dc, bmp);
-            // Draw straight into the bitmap - PrintWindow copies a blank
-            // whenever the desktop isn't being composed (screen off or
-            // locked) - then let each control print itself on top.
-            HBRUSH bg = CreateSolidBrush(RGB(244, 246, 252));
-            FillRect(dc, &rc, bg);
-            DeleteObject(bg);
-            PaintVideo(dc, VideoRect(rc));
-            PaintPanel(dc, PanelRect(rc));
-            for (HWND c : { g_cam, g_back, g_skip, g_take, g_next, g_reward[0], g_reward[1], g_reward[2] })
-            {
-                if (!IsWindowVisible(c)) continue;
-                RECT cr;
-                GetWindowRect(c, &cr);
-                MapWindowPoints(nullptr, hwnd, reinterpret_cast<POINT*>(&cr), 2);
-                POINT org{};
-                SetViewportOrgEx(dc, cr.left, cr.top, &org);
-                SendMessageW(c, WM_PRINT, reinterpret_cast<WPARAM>(dc), PRF_CLIENT | PRF_NONCLIENT | PRF_ERASEBKGND);
-                SetViewportOrgEx(dc, org.x, org.y, nullptr);
-            }
-            GdiFlush();
-            BITMAPFILEHEADER fh{};
-            const DWORD imageBytes = static_cast<DWORD>(rc.right) * static_cast<DWORD>(rc.bottom) * 4;
-            fh.bfType = 0x4D42;
-            fh.bfOffBits = sizeof(fh) + sizeof(bi.bmiHeader);
-            fh.bfSize = fh.bfOffBits + imageBytes;
-            HANDLE f = CreateFileW(g_snapshotPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-            if (f != INVALID_HANDLE_VALUE)
-            {
-                DWORD wrote = 0;
-                WriteFile(f, &fh, sizeof(fh), &wrote, nullptr);
-                WriteFile(f, &bi.bmiHeader, sizeof(bi.bmiHeader), &wrote, nullptr);
-                WriteFile(f, bits, imageBytes, &wrote, nullptr);
-                CloseHandle(f);
-            }
-            SelectObject(dc, old);
-            DeleteObject(bmp);
-            DeleteDC(dc);
-            ReleaseDC(hwnd, wdc);
+            ExerciseUnlock::Calib::WriteWindowBmp(hwnd, g_snapshotPath, [](HDC dc, const RECT& rc) {
+                HBRUSH bg = CreateSolidBrush(RGB(244, 246, 252));
+                FillRect(dc, &rc, bg);
+                DeleteObject(bg);
+                PaintVideo(dc, VideoRect(rc));
+                PaintPanel(dc, PanelRect(rc));
+            });
             DestroyWindow(hwnd);
             return 0;
-        }
         case WM_APP_CAMERR:
             g_status = T(tCamBusy);
             g_statusIsError = true;
@@ -2386,12 +2285,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     g_uk = PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_UKRAINIAN;
+    bool settingsOnly = false;
     int argc = 0;
     if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
     {
         for (int i = 1; i < argc; ++i)
         {
             if (_wcsicmp(argv[i], L"/setup") == 0) g_setupMode = true;
+            else if (_wcsicmp(argv[i], L"/settings") == 0) settingsOnly = true;
             else if (_wcsicmp(argv[i], L"/lang") == 0 && i + 1 < argc) g_uk = _wcsicmp(argv[++i], L"uk") == 0;
             else if (_wcsicmp(argv[i], L"/snapshot") == 0 && i + 1 < argc) g_snapshotPath = argv[++i];
             else if (_wcsicmp(argv[i], L"/step") == 0 && i + 1 < argc) g_snapshotStep = _wtoi(argv[++i]);
@@ -2413,14 +2314,27 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
+    INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES };
+    InitCommonControlsEx(&icc);
+
+    if (settingsOnly)
+    {
+        g_cameras = EnumerateCameras();
+        ExerciseUnlock::Calib::SettingsRequest req = SettingsFor(nullptr);
+        req.snapshotPath = g_snapshotPath;
+        req.snapshotPage = g_snapshotStep;
+        const auto r = ExerciseUnlock::Calib::ShowSettings(req);
+        if (r.serviceConfig && !g_setupMode) RestartService();
+        MFShutdown();
+        CoUninitialize();
+        return r.saved ? 0 : 1;
+    }
+
     Gdiplus::GdiplusStartupInput gdipInput;
     ULONG_PTR gdipToken = 0;
     Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);   // example pictures
     g_poseOk = SUCCEEDED(g_pose.Load(g_exeDir + L"\\movenet_lightning.onnx"));
     LogF(L"calibrate: start lang=%s setup=%d pose=%d", g_uk ? L"uk" : L"en", g_setupMode ? 1 : 0, g_poseOk ? 1 : 0);
-
-    INITCOMMONCONTROLSEX icc{ sizeof(icc), ICC_STANDARD_CLASSES };
-    InitCommonControlsEx(&icc);
 
     WNDCLASSEXW wc{ sizeof(wc) };
     wc.lpfnWndProc = WndProc;

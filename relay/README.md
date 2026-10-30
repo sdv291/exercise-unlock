@@ -100,6 +100,24 @@ nginx и certbot трогать не нужно.
 
 Обновить страницу — снова скопировать `index.php`, больше ничего.
 
+## Новая версия приложения
+
+Сервис при старте и раз в сутки читает
+`https://exercise-unlock.sdv291.com/download/version.txt`. Если версия там
+новее установленной, на экране блокировки появляется строка об обновлении, а
+на рабочем столе один раз — сообщение со ссылкой. Отключается в настройках
+калибратора (раздел «Телефон і оновлення»).
+
+`version.txt` собирается вместе с установщиком в `installer/out`. Выкладывайте
+в таком порядке, чтобы обновление не появилось раньше самого файла:
+
+```bash
+scp installer/out/ExerciseUnlock-Setup-<версия>.exe root@exercise-unlock.sdv291.com:/var/www/exercise-unlock/download/ExerciseUnlock-Setup.exe
+scp installer/out/version.txt root@exercise-unlock.sdv291.com:/var/www/exercise-unlock/download/
+```
+
+nginx и контейнер трогать не нужно: файлы отдаёт блок `location ^~ /download/`.
+
 ## Журнал
 
 ```bash

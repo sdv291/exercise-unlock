@@ -130,9 +130,6 @@ namespace ExerciseUnlock::Svc
         std::wstring         updateLatestVersion;
         std::wstring         updateDownloadUrl;
         std::wstring         updateNotesUrl;
-        // Last version we've already toasted — so we only pop one
-        // toast per newly-released version, not every poll.
-        std::wstring         updateLastToasted;
         std::atomic<int64_t> updateLastCheckUnix{ 0 };
 
         // v1.3 phone camera link — written by PhoneLink, read on pipe

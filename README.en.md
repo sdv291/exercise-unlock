@@ -123,6 +123,11 @@ The vault from step 3 must hold this child's password — not yours.
 
 ## Config
 
+Everything in `config.ini` and `sounds.ini` can be set in the calibrator's
+Settings window: the button on the wizard's first and last step, or
+`ExerciseUnlockCalibrate.exe /settings` (no wizard, no camera). Saving
+restarts the service. The files can still be edited by hand.
+
 `x64\Release\config.ini`:
 
 ```ini
@@ -130,7 +135,6 @@ The vault from step 3 must hold this child's password — not yours.
 pushup_seconds     = 120   ; 1 push-up = 2 min
 squat_seconds      = 30    ; 1 squat   = 30 s
 situp_seconds      = 300   ; 1 sit-up  = 5 min
-; these three can also be changed in the calibrator: the "Time only" button
 min_unlock_seconds = 600   ; minimum 10 min for an unlock
 
 ; v1.1 progression: after `progression_after_days` from first install,

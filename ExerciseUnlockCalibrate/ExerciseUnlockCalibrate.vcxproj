@@ -80,6 +80,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="CalibLog.cpp" />
+    <ClCompile Include="Settings.cpp" />
     <ClCompile Include="..\ExerciseUnlockService\PoseEstimator.cpp" />
     <!-- Test screen: the service's own detectors and config reader. -->
     <ClCompile Include="CalibRuntime.cpp" />
@@ -95,6 +96,8 @@
     <ClInclude Include="..\ExerciseUnlockService\Config.h" />
     <ClInclude Include="..\ExerciseUnlockService\RepResult.h" />
     <ClInclude Include="CheckJudge.h" />
+    <ClInclude Include="Settings.h" />
+    <ClInclude Include="Snapshot.h" />
     <ClInclude Include="..\ExerciseUnlockService\SquatDetector.h" />
     <ClInclude Include="..\ExerciseUnlockService\PushUpDetector.h" />
     <ClInclude Include="..\ExerciseUnlockService\SitUpDetector.h" />

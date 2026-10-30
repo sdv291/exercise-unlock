@@ -116,6 +116,12 @@ Name: "{group}\{cm:CalibrateShortcut}"; Filename: "{app}\ExerciseUnlockCalibrate
 [InstallDelete]
 ; renamed to lock-user.ps1 in 1.1.1
 Type: files; Name: "{app}\tools\lock-actor.ps1"
+; no longer part of the sound set since 1.3.3
+Type: files; Name: "{app}\data\sounds\amazing.wav"
+Type: files; Name: "{app}\data\sounds\great.wav"
+Type: files; Name: "{app}\data\sounds\insane.wav"
+Type: files; Name: "{app}\data\sounds\legendary.wav"
+Type: files; Name: "{app}\data\sounds\perfect.wav"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\data"
@@ -237,6 +243,7 @@ const
   SVC        = 'ExerciseUnlockService';
   REG_KEY    = 'SOFTWARE\ExerciseUnlock';
   PW_ENV     = 'EU_SETUP_VAULT_PASSWORD';
+  MANIFEST_URL = 'https://exercise-unlock.sdv291.com/download/version.txt';
   LOGON32_LOGON_NETWORK    = 3;
   LOGON32_PROVIDER_DEFAULT = 0;
   ERROR_LOGON_FAILURE      = 1326;
@@ -908,6 +915,27 @@ begin
   DeleteFile('C:\Users\Public\ExerciseUnlockWebcam.bmp');
 end;
 
+{ An update keeps config.ini and sounds.ini, so defaults that came later
+  reach an existing install only here. Only what older versions shipped is
+  replaced: a value somebody chose stays. }
+procedure MigrateDefaults(const Cfg, Snd: String);
+var
+  Cur: String;
+begin
+  if (GetIniInt('update', 'enabled', 0, 0, 1, Cfg) = 0) and (GetIniString('update', 'manifest_url', '', Cfg) = '') then
+  begin
+    SetIniString('update', 'enabled', '1', Cfg);
+    SetIniString('update', 'manifest_url', MANIFEST_URL, Cfg);
+    Log('update check switched on');
+  end;
+  Cur := GetIniString('sounds', 'situp_ready', '', Snd);
+  if (Cur = '') or (Cur = 'pushup_ready.wav') then
+    SetIniString('sounds', 'situp_ready', 'situp_ready.wav', Snd);
+  Cur := GetIniString('sounds', 'situp_counted', '', Snd);
+  if (Cur = '') or (Cur = 'pushup_counted.wav') then
+    SetIniString('sounds', 'situp_counted', 'situp_counted.wav', Snd);
+end;
+
 procedure ConfigureExerciseUnlock;
 var
   Code: Integer;
@@ -957,6 +985,8 @@ begin
     if Code <> 0 then
       MsgBox(FmtMessage(CustomMessage('ErrVault'), [IntToStr(Code), Data + '\admin.log']), mbError, MB_OK);
   end;
+
+  MigrateDefaults(ExpandConstant('{app}\config.ini'), Data + '\sounds.ini');
 
   { 2. Angle calibration while the camera is still free (the service
        isn't running yet). It writes the thresholds into config.ini,

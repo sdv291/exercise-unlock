@@ -6,10 +6,12 @@
 namespace ExerciseUnlock::Svc
 {
     // Background thread that polls Config::UpdateManifestUrl() every
-    // Config::UpdateIntervalHours() hours (plus one check at start).
+    // Config::UpdateIntervalHours() hours (plus one check at start, and
+    // sooner again after a check the server didn't answer).
     // On a new version: writes update info into State and fires a
     // toast in the active user session (once per version — repeated
-    // polls of the same latest-version are silent).
+    // polls and service restarts with the same latest-version are
+    // silent).
     class UpdateChecker
     {
     public:
@@ -19,7 +21,7 @@ namespace ExerciseUnlock::Svc
     private:
         static DWORD WINAPI Thunk(LPVOID param);
         void Run();
-        void CheckOnce();
+        bool CheckOnce();   // false: no answer from the server
 
         HANDLE m_stopEvent{ nullptr };
         HANDLE m_thread{ nullptr };

@@ -107,3 +107,10 @@ if (-not $iscc) { throw "Inno Setup 6 not found - winget install JRSoftware.Inno
 & $iscc /Qp "/DAppVersion=$version" "/DStageDir=build" (Join-Path $here 'ExerciseUnlock.iss')
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
 Write-Host "installer: $(Join-Path $here "out\ExerciseUnlock-Setup-$version.exe")"
+
+# What the update check reads (UpdateChecker.cpp). Goes to the server next
+# to the installer - see "Новая версия приложения" in relay\README.md.
+$manifest = "version: $version`n" +
+            "download: https://exercise-unlock.sdv291.com/download/ExerciseUnlock-Setup.exe`n" +
+            "notes: https://exercise-unlock.sdv291.com/landing/`n"
+[IO.File]::WriteAllText((Join-Path $here 'out\version.txt'), $manifest, [Text.UTF8Encoding]::new($false))
