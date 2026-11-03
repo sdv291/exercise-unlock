@@ -89,6 +89,42 @@ const I18N = {
     outro: 'More movement. Healthier habits. One rep at a time.', outroSize: 42,
     cta: 'Free download · exercise-unlock.sdv291.com/landing', ctaW: 860, scanMe: 'Scan to download',
   },
+  // Fredoka has no Cyrillic: headings in Nunito Black. The calibrator and
+  // settings texts are the app's own Ukrainian ones.
+  uk: {
+    font: 'Nunito', hw: 900,
+    tagline: 'Спершу рух — потім гра.',
+    kid: 'Саша', squats: 'Присідання', pushups: 'Віджимання', situps: 'Прес', earned: 'Час', ready: 'Можна розблокувати', exercise: 'Зроби вправи',
+    scanHint: 'Відскануй телефоном',
+    drawing: 'Мій малюнок — не збережено', save: 'Зберегти', left: s => `залишилось 0:${s}`,
+    toast: 'Комп’ютер заблокується через 5 хвилин', toastW: 730, toastSize: 25,
+    sitting: 'Години сидіння без перерви', hm: (h, m) => `${h} год ${m} хв`, posture: 'Постава', energy: 'Енергія', focus: 'Увага',
+    how: c => `Новий пароль — <tspan fill="${c}">вправи</tspan>`, plusMin: n => `+${n} хв`,
+    ai: 'ШІ зараховує лише чесні повтори', knee: a => `коліно ${a}°`, counter: n => `Присідання: ${n}`, counterW: 430,
+    shallow: 'Мілко — не зараховано', shallowW: 480,
+    moves: 'Три вправи — кожна має свою ціну', moveNames: ['Присідання', 'Віджимання', 'Прес'], moveMins: [3, 6, 5],
+    decide: 'Ціну повтору вирішуєте ви', decideW: 560,
+    phone: 'Немає вебкамери? Є телефон', phoneCount: n => `Прес: ${n}`, connected: 'Підключено до ПК',
+    setup: 'Налаштування за кілька хвилин', calib: 'Калібрування', calibSize: [16, 14], pageSize: 17,
+    calibRows: [['Стоячи', 'коліно 171°'], ['Присід', 'коліно 96°'], ['Перевірка присідань', '5 / 5'],
+                ['Віджимання вгорі', 'лікоть 164°'], ['Віджимання внизу', 'лікоть 108°'], ['Перевірка віджимань', '5 / 5'],
+                ['Прес лежачи', 'стегно 118°'], ['Прес угорі', 'стегно 40°'], ['Перевірка преса', '5 / 5']],
+    settings: 'Exercise Unlock - налаштування',
+    settingsPages: ['Час', 'Розклад', 'Присідання', 'Віджимання', 'Прес', 'Камера', 'Телефон і оновлення', 'Тексти', 'Звуки'],
+    settingsRows: [['Секунд за один присід', '180'], ['Секунд за одне віджимання', '360'], ['Секунд за один підйом корпуса', '300'],
+                   ['Мінімум для розблокування, секунд', '600'], ['Максимум заробітку, секунд', '3600']],
+    earn: 'Кожен повтор — це екранний час', earnedTime: 'Зароблено', unlockFrom: 'розблокування з 10 хв', readyW: 480, readySize: 28, max: 'Максимум: 1 година', maxW: 480,
+    hour: 'Одна сесія — максимум 60 хвилин', minutesLeft: 'хв залишилось', newSession: 'нова сесія!',
+    cycle: c => `Перерва на рух <tspan fill="${c}">щогодини</tspan>`, play: '60 хв гри', move: 'Рухайся!', repeat: 'і так — кожну сесію',
+    health: 'Здорові діти рухаються щодня', min: 'хв', act: 'фізичної активності щодня, у середньому', who: 'Рекомендація ВООЗ для дітей 5–17 років',
+    cardSize: 34, cards: [['Міцні м’язи', 'і кістки'], ['Настрій', 'та енергія'], ['Увага', 'й концентрація'], ['Менше', 'сидіння']],
+    parents: 'Батьки все контролюють', allowed: 'Дозволений час', weekends: 'Вихідні: 08:00 – 21:00',
+    extra: '+1 хвилина, щоб зберегти й закрити', extraW: 700, extraSize: 30,
+    resets1: 'Час обнуляється', resets2: 'щодня — накопичувати не можна', resetsSize: 30,
+    privacy: 'Приватність понад усе', rows: ['Камера працює лише на екрані блокування', 'Відео лишається на ПК або телефоні', 'Передається лише кількість повторів'], rowSize: 32,
+    outro: 'Більше руху. Корисні звички. Повтор за повтором.', outroSize: 36,
+    cta: 'Безкоштовно · exercise-unlock.sdv291.com/landing', ctaW: 860, scanMe: 'Скануй, щоб завантажити',
+  },
 };
 let L = I18N.en;
 function setLang(lang) {
@@ -551,12 +587,13 @@ function scrWizard(lt, P) {
   const shot = P.rowsAt.findIndex((t, i) => i % 3 !== 2 && lt >= t && lt < t + .35);
   if (shot >= 0) g += `<rect width="500" height="492" fill="#fff" opacity="${f3(1 - (lt - P.rowsAt[shot]) / .35)}"/>`;
   g += `</svg><rect x="526" y="14" width="300" height="492" rx="10" fill="#fff"/>` + txt(544, 58, L.calib, 28, { anchor: 'start' });
+  const size = L.calibSize || [18, 17];
   L.calibRows.forEach(([label, val], i) => {
     const y = 104 + i * 44, ok = i < done;
     if (i === cur && done < 9) g += `<rect x="532" y="${y - 28}" width="288" height="40" rx="10" fill="${C.line}"/>`;
     g += ok ? icon('check', 556, y - 8, 26, C.mint) : `<circle cx="556" cy="${y - 8}" r="6" fill="#B7BCD8"/>`;
-    g += txt(578, y, label, 18, { anchor: 'start', family: FONT_B, weight: 800, fill: ok || i === cur ? C.ink : C.muted });
-    if (ok) g += txt(812, y, val, 17, { anchor: 'end', family: FONT_B, weight: 700, fill: C.muted });
+    g += txt(578, y, label, size[0], { anchor: 'start', family: FONT_B, weight: 800, fill: ok || i === cur ? C.ink : C.muted });
+    if (ok) g += txt(812, y, val, size[1], { anchor: 'end', family: FONT_B, weight: 700, fill: C.muted });
   });
   return g;
 }
@@ -567,7 +604,7 @@ function settingsWin(x, y, w, h) {
   L.settingsPages.forEach((p, i) => {
     const py = y + 96 + i * 46;
     if (i === 0) g += `<rect x="${x + 18}" y="${py - 30}" width="210" height="42" rx="6" fill="#F1F4FB"/><rect x="${x + 18}" y="${py - 30}" width="4" height="42" fill="${C.indigo}"/>`;
-    g += txt(x + 36, py, p, 20, { anchor: 'start', family: FONT_B, weight: 800, fill: i === 0 ? C.ink : C.muted });
+    g += txt(x + 36, py, p, L.pageSize || 20, { anchor: 'start', family: FONT_B, weight: 800, fill: i === 0 ? C.ink : C.muted });
   });
   g += `<rect x="${x + 244}" y="${y + 70}" width="2" height="${h - 90}" fill="${C.line}"/>` + txt(x + 270, y + 106, L.settingsPages[0], 34, { anchor: 'start' });
   L.settingsRows.forEach(([label, val], i) => {
