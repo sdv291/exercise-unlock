@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Build the Exercise Unlock promo video.
 
-    python build.py                  # English  -> out/ExerciseUnlock-promo.mp4 (+ .srt)
-    python build.py --lang ru        # Russian  -> out/ExerciseUnlock-promo-ru.mp4 (+ .srt)
+    python build.py                  # English -> out/ExerciseUnlock-promo.mp4 (+ .srt)
     python build.py --stills 3,25.5  # only PNG stills at those seconds -> out/stills/
+
+The illustrated boy in assets/ is the same kid the animation draws; his
+pictures sit in a layer above the scene (scene.html).
 
 Pipeline: narration (edge-tts, female neural voice) -> per-scene timeline
 with word timings -> scene.html renders each frame in headless Chrome ->
@@ -43,109 +45,45 @@ LANGS = {
         dict(id="sitting", lead=0.4, tail=0.8, min=0, marks=dict(posture="posture", energy="energy", focus="focus"),
              text="Kids can sit in front of a screen for hours without even noticing. "
                   "And long stretches of sitting are hard on growing bodies: on posture, on energy, and on focus."),
-        dict(id="how", lead=0.4, tail=1.4, min=0, marks=dict(password="password", squats="squats"),
+        dict(id="how", lead=0.4, tail=1.2, min=0, marks=dict(password="password", squats="squats"),
              text="Exercise Unlock turns the Windows lock screen into a friendly fitness coach. "
-                  "Instead of typing a password, your child unlocks the computer with squats and push-ups."),
+                  "Instead of typing a password, your child unlocks the computer with squats, push-ups and sit-ups."),
         dict(id="ai", lead=0.4, tail=1.6, min=0, marks=dict(ai="ai", half="half"),
              text="A regular webcam and on-device AI follow every movement and count only real, full reps. "
                   "Half-hearted bends simply don't count."),
+        dict(id="moves", lead=0.4, tail=1.2, min=0, marks=dict(squat="squat", push="push", sit="sit", decide="decide"),
+             text="Every exercise is worth its own time: three minutes for a squat, six for a push-up, "
+                  "and five for a sit-up. And you decide what every rep is worth."),
         dict(id="earn", lead=0.4, tail=0.8, min=11.6, marks={},
-             text="Every rep earns screen time. A few squats or push-ups, and the session is ready, "
-                  "up to one full hour."),
+             text="Reps add up to screen time. A few of them, and the session is ready, up to one full hour."),
         dict(id="hour", lead=0.4, tail=1.6, min=0,
              marks=dict(sixty="sixty", five="five", locks="locks", back="exercise", guar="guaranteed"),
              text="And here is the best part. A session never lasts longer than sixty minutes. "
                   "Five minutes before the end, a friendly reminder pops up. "
                   "Then the computer locks, and the only way back is another round of exercise. "
                   "That means a guaranteed movement break, every single hour."),
+        dict(id="phone", lead=0.4, tail=2.6, min=0, marks=dict(qr="qr", scan="scan", floor="floor", counts="counts"),
+             text="No webcam? Use a phone. The lock screen shows a QR code. Scan it, stand the phone on the floor, "
+                  "and it counts the reps for the computer."),
         dict(id="health", lead=0.4, tail=1.2, min=0,
              marks=dict(who="world", muscles="muscles", mood="mood", focus="focus", sitting="sitting"),
              text="The World Health Organization recommends that children get an average of at least "
                   "sixty minutes of physical activity a day. Short, regular bursts of movement help build "
                   "strong muscles and bones, lift mood and energy, sharpen focus, and break up long hours of sitting."),
-        dict(id="parents", lead=0.4, tail=1.2, min=0, marks=dict(locks="locks", extra="extra", resets="resets"),
-             text="Parents stay in control. Set the allowed hours, and the computer locks right on time in the "
-                  "evening, with one extra minute to save and close apps. Earned time resets every day, "
-                  "so there's no hoarding."),
-        dict(id="privacy", lead=0.4, tail=1.2, min=0, marks=dict(camera="camera", processing="processing", nothing="nothing"),
-             text="And privacy is built in. The camera switches on only at the lock screen, "
-                  "and all the processing stays on your PC. Nothing is sent to the cloud."),
-        dict(id="outro", lead=0.5, tail=2.6, min=7.0, marks={},
+        dict(id="parents", lead=0.4, tail=1.2, min=0,
+             marks=dict(weekends="weekends", locks="locks", extra="extra", resets="resets"),
+             text="Parents stay in control. Set the allowed hours, with their own schedule for weekends, "
+                  "and the computer locks right on time in the evening, with one extra minute to save and close apps. "
+                  "Earned time resets every day, so there's no hoarding."),
+        dict(id="setup", lead=0.4, tail=1.4, min=0, marks=dict(photos="photos", test="test", setting="setting"),
+             text="Getting started takes just a few minutes. A short calibration learns how your child moves "
+                  "from six photos, then checks itself with five test reps. And every setting lives in one simple window."),
+        dict(id="privacy", lead=0.4, tail=1.2, min=0, marks=dict(camera="camera", processing="processed", rep="rep"),
+             text="And privacy is built in. The camera turns on only at the lock screen. "
+                  "Video is processed right on the computer or the phone, and never leaves it. "
+                  "Only the rep count travels."),
+        dict(id="outro", lead=0.5, tail=3.4, min=8.0, marks={},
              text="Exercise Unlock. More movement, healthier habits, one rep at a time."),
-    ]),
-    "ru": dict(voice="ru-RU-SvetlanaNeural", suffix="-ru",
-               say={"Exercise Unlock": "Экзерсайз Анлок", "Windows": "Виндоус"}, scenes=[
-        dict(id="intro", lead=0.9, tail=0.8, min=6.0, marks={},
-             text="Знакомьтесь: Exercise Unlock — компьютер, который просит детей подвигаться, прежде чем играть."),
-        dict(id="sitting", lead=0.4, tail=0.8, min=0, marks=dict(posture="осанка", energy="энерги", focus="внимани"),
-             text="Дети могут часами сидеть перед экраном и даже не замечать этого. "
-                  "А долгое сидение без движения вредит растущему организму: страдают осанка, энергия и внимание."),
-        dict(id="how", lead=0.4, tail=1.4, min=0, marks=dict(password="парол", squats="приседани"),
-             text="Exercise Unlock превращает экран блокировки Windows в дружелюбного фитнес-тренера. "
-                  "Вместо пароля ребёнок открывает компьютер приседаниями и отжиманиями."),
-        dict(id="ai", lead=0.4, tail=1.6, min=0, marks=dict(ai="искусствен", half="халтурн"),
-             text="Обычная веб-камера и искусственный интеллект прямо на компьютере следят за каждым движением "
-                  "и засчитывают только настоящие, полные повторения. Халтурные полуприседы просто не считаются."),
-        dict(id="earn", lead=0.4, tail=0.8, min=11.6, marks={},
-             text="Каждое повторение приносит минуты за экраном. Несколько приседаний или отжиманий — "
-                  "и сессия готова, максимум на целый час."),
-        dict(id="hour", lead=0.4, tail=1.6, min=0,
-             marks=dict(sixty="шестидесяти", five="пять", locks="блокируется", back="упражнени", guar="гарантирован"),
-             text="А теперь самое главное. Сессия никогда не длится дольше шестидесяти минут. "
-                  "За пять минут до конца появляется дружеское напоминание. "
-                  "Затем компьютер блокируется, и вернуться можно только через новую порцию упражнений. "
-                  "Это значит — гарантированный перерыв на движение каждый час."),
-        dict(id="health", lead=0.4, tail=1.2, min=0,
-             marks=dict(who="всемирн", muscles="мышц", mood="настроени", focus="концентраци", sitting="сидени"),
-             text="Всемирная организация здравоохранения рекомендует детям в среднем не меньше шестидесяти минут "
-                  "физической активности в день. Короткие регулярные разминки помогают укрепить мышцы и кости, "
-                  "поднимают настроение и энергию, улучшают концентрацию и прерывают долгие часы сидения."),
-        dict(id="parents", lead=0.4, tail=1.2, min=0, marks=dict(locks="заблокируется", extra="одну", resets="обнуляется"),
-             text="Родители всё контролируют. Задайте разрешённые часы — и вечером компьютер заблокируется точно "
-                  "по расписанию, оставив одну минуту, чтобы сохранить работу и закрыть программы. "
-                  "Заработанное время обнуляется каждый день, так что копить его не получится."),
-        dict(id="privacy", lead=0.4, tail=1.2, min=0, marks=dict(camera="камера", processing="обработка", nothing="ничего"),
-             text="И конечно, приватность. Камера включается только на экране блокировки, "
-                  "а вся обработка происходит на вашем компьютере. Ничего не отправляется в облако."),
-        dict(id="outro", lead=0.5, tail=2.6, min=7.0, marks={},
-             text="Exercise Unlock. Больше движения, полезные привычки — повтор за повтором."),
-    ]),
-    "uk": dict(voice="uk-UA-PolinaNeural", suffix="-uk",
-               say={"Exercise Unlock": "Екзерсайз Анлок", "Windows": "Віндоус"}, scenes=[
-        dict(id="intro", lead=0.9, tail=0.8, min=6.0, marks={},
-             text="Знайомтеся: Exercise Unlock — комп'ютер, який просить дітей порухатися, перш ніж грати."),
-        dict(id="sitting", lead=0.4, tail=0.8, min=0, marks=dict(posture="постав", energy="енергі", focus="уваг"),
-             text="Діти можуть годинами сидіти перед екраном і навіть цього не помічати. "
-                  "А довге сидіння без руху шкодить організму, що росте: страждають постава, енергія та увага."),
-        dict(id="how", lead=0.4, tail=1.4, min=0, marks=dict(password="парол", squats="присідан"),
-             text="Exercise Unlock перетворює екран блокування Windows на дружнього фітнес-тренера. "
-                  "Замість пароля дитина відкриває комп'ютер присіданнями та віджиманнями."),
-        dict(id="ai", lead=0.4, tail=1.6, min=0, marks=dict(ai="штучн", half="халтурн"),
-             text="Звичайна вебкамера та штучний інтелект прямо на комп'ютері стежать за кожним рухом "
-                  "і зараховують лише справжні, повні повторення. Халтурні напівприсіди просто не рахуються."),
-        dict(id="earn", lead=0.4, tail=0.8, min=11.6, marks={},
-             text="Кожне повторення приносить хвилини за екраном. Кілька присідань або віджимань — "
-                  "і сесія готова, максимум на цілу годину."),
-        dict(id="hour", lead=0.4, tail=1.6, min=0,
-             marks=dict(sixty="шістдесят", five="нагадуван", locks="блокується", back="вправ", guar="гарантован"),
-             text="А тепер найголовніше. Сесія ніколи не триває довше шістдесяти хвилин. "
-                  "За п'ять хвилин до кінця з'являється дружнє нагадування. "
-                  "Потім комп'ютер блокується, і повернутися можна лише через нову порцію вправ. "
-                  "Це означає — гарантована перерва на рух щогодини."),
-        dict(id="health", lead=0.4, tail=1.2, min=0,
-             marks=dict(who="всесвітн", muscles="зміцн", mood="настр", focus="концентрац", sitting="сидінн"),
-             text="Всесвітня організація охорони здоров'я рекомендує дітям у середньому щонайменше шістдесят хвилин "
-                  "фізичної активності на день. Короткі регулярні розминки допомагають зміцнити м'язи та кістки, "
-                  "покращують настрій і додають енергії, підвищують концентрацію та переривають довгі години сидіння."),
-        dict(id="parents", lead=0.4, tail=1.2, min=0, marks=dict(locks="заблокується", extra="одну", resets="обнуляється"),
-             text="Батьки все контролюють. Задайте дозволені години — і ввечері комп'ютер заблокується точно "
-                  "за розкладом, залишивши одну хвилину, щоб зберегти роботу й закрити програми. "
-                  "Зароблений час обнуляється щодня, тож накопичувати його не вийде."),
-        dict(id="privacy", lead=0.4, tail=1.2, min=0, marks=dict(camera="камера", processing="обробка", nothing="нічого"),
-             text="І звісно, приватність. Камера вмикається лише на екрані блокування, "
-                  "а вся обробка відбувається на вашому комп'ютері. Нічого не надсилається в хмару."),
-        dict(id="outro", lead=0.5, tail=2.6, min=7.0, marks={},
-             text="Exercise Unlock. Більше руху, корисні звички — повтор за повтором."),
     ]),
 }
 
@@ -434,6 +372,8 @@ def open_page(p, tl, lang):
         return [document.fonts.check('700 50px Fredoka'), document.fonts.check('900 50px Nunito')];
     }""")
     print("fonts loaded:", ok)
+    page.evaluate("() => window.photosReady")
+    page.wait_for_timeout(300)
     return browser, page
 
 
@@ -481,7 +421,7 @@ def main():
                "-vf", "scale=in_range=pc:out_range=tv,format=yuv420p", "-color_range", "tv",
                "-c:v", "libx264", "-preset", "medium", "-crf", "18",
                "-c:a", "aac", "-b:a", "192k", "-ac", "2",
-               "-c:s", "mov_text", "-metadata:s:s:0", f"language={dict(en='eng', ru='rus', uk='ukr')[lang]}",
+               "-c:s", "mov_text", "-metadata:s:s:0", f"language={dict(en='eng')[lang]}",
                "-movflags", "+faststart", "-t", f"{tl['total']:.3f}", str(mp4)]
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         for i in range(nframes):
