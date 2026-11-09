@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DetectorParams.h"
+
 #include <windows.h>
 #include <atomic>
 #include <mutex>
@@ -72,6 +74,20 @@ namespace ExerciseUnlock::Svc
         static int   SitupMinRepMs()      { return s_situpMinRepMs.load(); }
         static int   SitupMaxRepMs()      { return s_situpMaxRepMs.load(); }
         static float SitupQualityMin()    { return s_situpQualityMin.load(); }
+
+        // All of an exercise's detector settings at once (the getters
+        // above and below).
+        static SquatParams  Squat();
+        static PushupParams Pushup();
+        static SitupParams  Situp();
+        // The phone's own calibration ([phone_squat] / [phone_pushup] /
+        // [phone_situp], written by ExerciseUnlockCalibrate through the
+        // phone): angles - and the squat's hip drop - measured in the phone
+        // camera's own frame; timing and the other gates are the webcam's.
+        // An exercise calibrated only on the webcam keeps its angles. False
+        // when there is no phone calibration at all: the phone then maps its
+        // poses onto the webcam's frame ([calibration] aspect).
+        static bool PhoneProfile(SquatParams& squat, PushupParams& pushup, SitupParams& situp);
 
         // Daily active window (minutes since local midnight). Outside
         // it, exercises don't count and StartSession is refused.
@@ -249,6 +265,12 @@ namespace ExerciseUnlock::Svc
         static std::atomic<bool>  s_phoneEnabled;
         static std::wstring       s_phoneRelayUrl;
         static std::atomic<float> s_calibrationAspect;
+
+        // [phone_*]: the four angles in the order of the Set*Angles calls
+        // below; have = all four were there.
+        struct PhoneAngles { bool have = false; float a[4]{}; };
+        static PhoneAngles  s_phoneAngles[3];   // squat, pushup, situp; under s_stringsMx
+        static float        s_phoneHipDrop;     // [phone_squat] min_hip_drop, < 0 = none
 
         static std::atomic<bool>  s_updateEnabled;
         static std::atomic<int>   s_updateIntervalH;

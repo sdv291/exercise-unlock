@@ -4,12 +4,18 @@
 // the child does 5 test reps, counted by the service's own detectors with
 // the new (not yet saved) thresholds.
 //
-//   ExerciseUnlockCalibrate.exe [/lang en|uk] [/setup] [/settings]
+//   ExerciseUnlockCalibrate.exe [/lang en|uk] [/setup] [/settings] [/phone]
 //
-//   /setup     launched by the installer before the service starts: after
-//              saving, don't restart the service (setup starts it).
+//   /setup     after saving, don't restart the service (a run before it is
+//              installed or started).
 //   /settings  only the settings window (Settings.cpp), no wizard and no
 //              camera.
+//   /phone     start with "Phone (QR code)" picked: no webcam is opened.
+//
+// "Phone (QR code)" in the camera list calibrates the phone camera instead:
+// the phone page streams its poses through the relay, the same steps run on
+// them, and the result goes into the phone's own sections ([phone_squat]
+// ...) - the webcam's stay as they are.
 //
 // Angles are measured exactly the way SquatDetector / PushUpDetector see
 // them: same MoveNet model (PoseEstimator.cpp), same camera format (RGB32
@@ -30,6 +36,11 @@
 #include "Paths.h"
 #include "Settings.h"
 #include "Snapshot.h"
+#include "MiniJson.h"
+#include "PhoneCounter.h"
+#include "QrCode.h"
+#include "RelayClient.h"
+#include "Version.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -44,6 +55,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -80,6 +92,9 @@ using ExerciseUnlock::Svc::SquatDetector;
 using ExerciseUnlock::Calib::KeepOrder;
 using ExerciseUnlock::Calib::Swing;
 namespace Ipc = ExerciseUnlock::Ipc;
+namespace Json = ExerciseUnlock::Svc::Json;
+namespace Relay = ExerciseUnlock::Svc::Relay;
+namespace Qr = ExerciseUnlock::Qr;
 
 namespace
 {
@@ -105,6 +120,7 @@ namespace
         tRow5, tRow6, tHip, tSitNotSeen, tSmallSitup, tSumSitup, tTestThrSitup, tTestNotDeepSitup,
         tTestNoSitup, tAdjLying, tAdjSitTop,
         tSettings, tSettingsSaved,
+        tPhone, tPhoneScan, tPhoneServer, tPhoneNoServer, tPhoneWaiting, tPhoneReset, tSumPhone,
         tCount
     };
 
@@ -214,6 +230,15 @@ namespace
         L"top %d\x00B0 \x2192 %d\x00B0",
         L"Settings",
         L"Settings saved.",
+        L"Phone (QR code)",
+        L"Scan this code with the phone camera and press \"Start\" on the phone. Then put the phone where it will stand "
+        L"during the exercises - on the floor 2-3 m away, the child fully visible from the side. The address below can also be typed in.",
+        L"Connecting to the server...",
+        L"No connection to the server %s - the phone needs the internet on this computer. Pick a webcam or check the connection, "
+        L"then pick the phone again.",
+        L"The phone is connected - waiting for its camera. Press \"Start\" on the phone.",
+        L"The phone and the webcam are calibrated separately: the photos so far were reset.",
+        L"Saved as the phone's own settings ([phone_squat], [phone_pushup], [phone_situp] in config.ini); the webcam's stay as they are.",
     };
 
     const wchar_t* const kUk[] = {
@@ -322,6 +347,15 @@ namespace
         L"угорі %d\x00B0 \x2192 %d\x00B0",
         L"Налаштування",
         L"Налаштування збережено.",
+        L"Телефон (QR-код)",
+        L"Відскануйте цей код камерою телефона й натисніть на телефоні «Почати». Потім поставте телефон туди, де він стоятиме "
+        L"під час вправ, - на підлогу за 2-3 м, дитину має бути видно збоку повністю. Адресу нижче можна також ввести вручну.",
+        L"Підключення до сервера...",
+        L"Немає зв'язку з сервером %s - телефону потрібен інтернет на цьому комп'ютері. Виберіть вебкамеру або перевірте з'єднання, "
+        L"а потім виберіть телефон ще раз.",
+        L"Телефон підключено - чекаємо на його камеру. Натисніть на телефоні «Почати».",
+        L"Телефон і вебкамера калібруються окремо: зроблені досі фото скинуто.",
+        L"Зберігається як власні налаштування телефона ([phone_squat], [phone_pushup], [phone_situp] у config.ini); налаштування вебкамери не змінюються.",
     };
 
     static_assert(std::size(kEn) == tCount && std::size(kUk) == tCount, "string tables out of sync");
@@ -535,13 +569,15 @@ namespace
     constexpr DWORD kCollectMs   = 5000;
     constexpr size_t kSamples    = 12;
 
-    enum CtlId { idCamera = 100, idBack, idTake, idSkip, idNext };
+    enum CtlId { idCamera = 100, idBack, idTake, idSkip, idNext, idUrl };
 
     HINSTANCE g_inst = nullptr;
     HWND g_wnd = nullptr, g_cam = nullptr, g_back = nullptr, g_take = nullptr, g_skip = nullptr, g_next = nullptr;
+    HWND g_url = nullptr;              // the phone page's address under its QR code, to type in
     HFONT g_fontUi = nullptr, g_fontTitle = nullptr, g_fontBig = nullptr;
     UINT g_dpi = 96;
     bool g_setupMode = false;
+    bool g_startPhone = false;        // /phone
     std::wstring g_snapshotPath;      // developer option: render one step to a .bmp and exit
     int g_snapshotStep = 0;
     constexpr UINT WM_APP_SNAPSHOT = WM_APP + 3;
@@ -620,6 +656,7 @@ namespace
     };
     TestRun g_tests[kExerciseCount];
     float g_cfgMinHipDrop = 0.0f;          // config.ini's, for plans without a hip drop
+    float g_webcamMinHipDrop = 0.0f;       // [squat]'s, as loaded
 
     // What a failed check changed: thresholds loosened to fit the test
     // reps (ComputePlan uses them instead of the photo-based ones), or a
@@ -935,6 +972,293 @@ namespace
         g_camThread = std::thread(CameraThread, g_camSession, g_cameras[static_cast<size_t>(index)].link);
     }
 
+    // ------------------------------------------------------------ phone
+    // "Phone (QR code)" in the camera list: the calibration through the
+    // phone camera, for the phone's own thresholds (Config::PhoneProfile).
+    // A relay connection of its own - a new id and key each time, never the
+    // service's - and a QR code with its token. The phone page (mode
+    // "calib") streams its poses, which take the same path as a camera's
+    // frames: no picture, the skeleton only.
+    constexpr UINT WM_APP_PHONE    = WM_APP + 4;   // the connection changed
+    constexpr UINT WM_APP_PHONETAP = WM_APP + 5;   // "Take photo" pressed on the phone
+
+    enum class PhoneState { Connecting, NoServer, Waiting, Connected };
+
+    struct PhoneSession
+    {
+        std::atomic<bool> stop{ false };
+        Relay::Socket     sock;
+        std::wstring      relay;                     // config.ini [phone] relay, for the error text
+        std::mutex        mx;                        // the three below
+        PhoneState        state = PhoneState::Connecting;
+        std::string       url;                       // what the QR code says, once the relay is ready
+        std::string       sid;                       // the phone on the other end, "" = none
+        HANDLE            done = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        ~PhoneSession() { if (done) CloseHandle(done); }
+    };
+    std::shared_ptr<PhoneSession> g_phone;
+    std::thread g_phoneThread;
+    int         g_phoneItem = -1;       // its row in the camera list; -1 = no relay in config.ini
+    bool        g_phoneMode = false;    // the photos and thresholds are the phone's
+    ULONGLONG   g_phonePingMs = 0;
+    std::string g_calibSent;            // the step last shown on the phone
+    bool        g_sourceReady = false;
+
+    PhoneState PhoneStateNow()
+    {
+        if (!g_phone) return PhoneState::NoServer;
+        std::lock_guard<std::mutex> lk(g_phone->mx);
+        return g_phone->state;
+    }
+
+    // To the phone on the other end, if there is one.
+    void PhoneSend(PhoneSession& s, const std::string& msg)
+    {
+        std::string sid;
+        {
+            std::lock_guard<std::mutex> lk(s.mx);
+            sid = s.sid;
+        }
+        if (sid.empty()) return;
+        Json::Writer w;
+        w.BeginObject().Key("t").String("to").Key("sid").String(sid).Key("msg").Raw(msg).EndObject();
+        s.sock.Send(w.Str());
+    }
+
+    void PhoneThread(std::shared_ptr<PhoneSession> s, Relay::RelayUrl url)
+    {
+        auto setState = [&](PhoneState st) {
+            {
+                std::lock_guard<std::mutex> lk(s->mx);
+                s->state = st;
+            }
+            if (!s->stop.load()) PostMessageW(g_wnd, WM_APP_PHONE, 0, 0);
+        };
+        DWORD err = 0;
+        if (!s->sock.Open(url, err))
+        {
+            LogF(L"calibrate: relay %s unreachable (%lu)", s->relay.c_str(), err);
+            setState(PhoneState::NoServer);
+            SetEvent(s->done);
+            return;
+        }
+        {
+            Json::Writer w;
+            w.BeginObject().Key("t").String("hello").Key("pc").String(Relay::RandomBase32(16))
+             .Key("key").String(Relay::RandomBase32(20)).Key("v").Int(1)
+             .Key("app").String(Relay::ToUtf8(ExerciseUnlock::kVersionString)).EndObject();
+            s->sock.Send(w.Str());
+        }
+
+        TestDetectors test;
+        std::string text;
+        while (!s->stop.load() && s->sock.Receive(text))
+        {
+            Json::Value m;
+            if (!Json::Parser::Parse(text, m) || !m.IsObject()) continue;
+            const std::string t = m.Str("t");
+            if (t == "ready")
+            {
+                const std::string token = Relay::RandomBase32(10);
+                Json::Writer w;
+                w.BeginObject().Key("t").String("offer").Key("token").String(token).EndObject();
+                s->sock.Send(w.Str());
+                {
+                    std::lock_guard<std::mutex> lk(s->mx);
+                    s->url = url.qrBase + token;
+                }
+                LogF(L"calibrate: phone code %hs", (url.qrBase + token).c_str());
+                setState(PhoneState::Waiting);
+            }
+            else if (t == "join")
+            {
+                const std::string sid = m.Str("sid");
+                bool taken = false;
+                {
+                    std::lock_guard<std::mutex> lk(s->mx);
+                    taken = !s->sid.empty();
+                    if (!taken) s->sid = sid;
+                }
+                if (taken)
+                {
+                    // One phone measures; another scan of the code is turned away.
+                    Json::Writer w;
+                    w.BeginObject().Key("t").String("kick").Key("sid").String(sid).Key("reason").String("busy").EndObject();
+                    s->sock.Send(w.Str());
+                    continue;
+                }
+                PhoneSend(*s, R"({"t":"config","v":1,"mode":"calib","poses":1,"space":"phone","exercises":[]})");
+                LogF(L"calibrate: phone joined");
+                setState(PhoneState::Connected);
+            }
+            else if (t == "leave")
+            {
+                bool ours = false;
+                {
+                    std::lock_guard<std::mutex> lk(s->mx);
+                    ours = s->sid == m.Str("sid");
+                    if (ours) s->sid.clear();
+                }
+                if (!ours) continue;
+                {
+                    std::lock_guard<std::mutex> lk(g_frameMx);
+                    g_latest = Frame{};
+                }
+                LogF(L"calibrate: phone left");
+                setState(PhoneState::Waiting);
+            }
+            else if (t == "from")
+            {
+                const Json::Value* msg = m.Get("msg");
+                if (!msg || !msg->IsObject()) continue;
+                {
+                    std::lock_guard<std::mutex> lk(s->mx);
+                    if (m.Str("sid") != s->sid) continue;
+                }
+                const std::string mt = msg->Str("t");
+                if (mt == "pose")
+                {
+                    BodyPose pose{};
+                    uint32_t w = 0, h = 0;
+                    uint64_t ts = 0;
+                    if (!ExerciseUnlock::Svc::PhoneCounter::ParsePose(*msg, pose, w, h, ts)) continue;
+                    TestFrame(test, pose);
+                    {
+                        std::lock_guard<std::mutex> lk(g_frameMx);
+                        g_latest.bgra.clear();   // the phone sends no picture
+                        g_latest.w = w;
+                        g_latest.h = h;
+                        g_latest.pose = pose;
+                    }
+                    g_lastFrameMs = GetTickCount64();
+                    if (!g_framePending.exchange(true)) PostMessageW(g_wnd, WM_APP_FRAME, 0, 0);
+                }
+                else if (mt == "tap")
+                    PostMessageW(g_wnd, WM_APP_PHONETAP, 0, 0);
+                else if (mt == "hello")
+                    LogF(L"calibrate: phone %hs", msg->Str("ua").substr(0, 100).c_str());
+                else if (mt == "diag" && (msg->Str("kind") == "start" || msg->Str("kind") == "startfail" ||
+                                          msg->Str("kind") == "error"))
+                    LogF(L"calibrate: phone %hs %hs", msg->Str("kind").c_str(), msg->Str("msg").substr(0, 100).c_str());
+            }
+        }
+        if (!s->stop.load())
+        {
+            LogF(L"calibrate: relay connection lost");
+            {
+                std::lock_guard<std::mutex> lk(s->mx);
+                s->sid.clear();
+                s->url.clear();
+            }
+            {
+                std::lock_guard<std::mutex> lk(g_frameMx);
+                g_latest = Frame{};
+            }
+            setState(PhoneState::NoServer);
+        }
+        SetEvent(s->done);
+    }
+
+    void UpdatePhoneUrl()
+    {
+        std::string url;
+        bool show = false;
+        if (g_phone)
+        {
+            std::lock_guard<std::mutex> lk(g_phone->mx);
+            show = g_phone->state == PhoneState::Waiting && !g_phone->url.empty();
+            url = g_phone->url;
+        }
+        SetWindowTextW(g_url, Relay::ToWide(url).c_str());
+        ShowWindow(g_url, show ? SW_SHOWNA : SW_HIDE);
+    }
+
+    void StopPhone()
+    {
+        if (std::shared_ptr<PhoneSession> s = std::move(g_phone))
+        {
+            s->stop = true;
+            PhoneSend(*s, g_saved ? R"({"t":"bye","reason":"saved"})" : R"({"t":"bye","reason":"closed"})");
+            s->sock.Shutdown();                                    // the relay answers, Receive returns
+            if (WaitForSingleObject(s->done, 2000) != WAIT_OBJECT_0) s->sock.Abort();
+            if (g_phoneThread.joinable())
+            {
+                if (WaitForSingleObject(s->done, 2000) == WAIT_OBJECT_0) g_phoneThread.join();
+                else g_phoneThread.detach();
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lk(g_frameMx);
+            g_latest = Frame{};
+        }
+        if (g_url) UpdatePhoneUrl();
+    }
+
+    void StartPhone()
+    {
+        StopPhone();
+        auto s = std::make_shared<PhoneSession>();
+        s->relay = Config::PhoneRelayUrl();
+        Relay::RelayUrl url;
+        g_phone = s;
+        g_calibSent.clear();
+        g_phonePingMs = GetTickCount64();
+        if (!Relay::ParseRelay(s->relay, url))
+        {
+            s->state = PhoneState::NoServer;
+            SetEvent(s->done);
+            return;
+        }
+        LogF(L"calibrate: phone source via %s", s->relay.c_str());
+        g_phoneThread = std::thread(PhoneThread, s, url);
+    }
+
+    // The phone source before its first pose: the QR code to scan, or what
+    // keeps it from showing.
+    void PaintPhoneWait(HDC dc, const RECT& area)
+    {
+        PhoneState st = PhoneState::NoServer;
+        std::string url;
+        if (g_phone)
+        {
+            std::lock_guard<std::mutex> lk(g_phone->mx);
+            st = g_phone->state;
+            url = g_phone->url;
+        }
+        const std::wstring text = st == PhoneState::NoServer   ? Fmt(T(tPhoneNoServer), g_phone ? g_phone->relay.c_str() : L"")
+                                : st == PhoneState::Connecting ? std::wstring(T(tPhoneServer))
+                                : st == PhoneState::Connected  ? std::wstring(T(tPhoneWaiting))
+                                                               : std::wstring(T(tPhoneScan));
+        int textTop = area.top + Px(40);
+        Qr::Code code;
+        if (st == PhoneState::Waiting && Qr::Encode(url, code))
+        {
+            constexpr int kQuiet = 4;
+            const int avail = std::min(area.right - area.left, area.bottom - area.top - Px(190));
+            const int m = std::max(2, avail / (code.size + 2 * kQuiet));
+            const int px = (code.size + 2 * kQuiet) * m;
+            const int ox = area.left + (area.right - area.left - px) / 2, oy = area.top + Px(24);
+            const RECT bg{ ox, oy, ox + px, oy + px };
+            HBRUSH white = CreateSolidBrush(RGB(255, 255, 255));
+            HBRUSH black = CreateSolidBrush(RGB(0, 0, 0));
+            FillRect(dc, &bg, white);
+            for (int y = 0; y < code.size; ++y)
+                for (int x = 0; x < code.size; ++x)
+                {
+                    if (!code.At(x, y)) continue;
+                    const RECT r{ ox + (kQuiet + x) * m, oy + (kQuiet + y) * m, ox + (kQuiet + x + 1) * m, oy + (kQuiet + y + 1) * m };
+                    FillRect(dc, &r, black);
+                }
+            DeleteObject(white);
+            DeleteObject(black);
+            textTop = oy + px + Px(14);
+        }
+        RECT tr{ area.left + Px(32), textTop, area.right - Px(32), area.bottom - Px(56) };
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(220, 220, 230));
+        DrawTextW(dc, text.c_str(), -1, &tr, DT_CENTER | DT_WORDBREAK);
+    }
+
     // ------------------------------------------------------------ thresholds
     // One exercise's four thresholds, as the detectors name them: top (rest
     // pose: standing / arms straight / lying), going down, going up, down
@@ -959,6 +1283,14 @@ namespace
         { L"pushup", { L"up_angle",       L"going_down_angle", L"going_up_angle", L"down_angle" } },
         { L"situp",  { L"lying_angle",    L"rising_angle",     L"lowering_angle", L"sitting_angle" } },
     };
+
+    // Where an exercise's thresholds go: the webcam's sections, or the
+    // phone's own ([phone_squat] ..., read by Config::PhoneProfile).
+    const wchar_t* Section(int ex)
+    {
+        static const wchar_t* const kPhone[kExerciseCount] = { L"phone_squat", L"phone_pushup", L"phone_situp" };
+        return g_phoneMode ? kPhone[ex] : kIni[ex].section;
+    }
 
     // The exercise's two photos: the rest pose first, then the other end.
     void PhotoShots(int ex, int& topShot, int& downShot)
@@ -1327,15 +1659,18 @@ namespace
                 s += e.why.empty() ? Fmt(T(tSumKept), g_uk ? kExercises[ex].nameUk : kExercises[ex].nameEn) : e.why;
                 continue;
             }
+            const wchar_t* sec = Section(ex);
             s += Fmt(T(kExercises[ex].summary),
-                     OldVal(k.section, k.key[0]).c_str(), e.top, OldVal(k.section, k.key[1]).c_str(), e.goingDown,
-                     OldVal(k.section, k.key[2]).c_str(), e.goingUp, OldVal(k.section, k.key[3]).c_str(), e.down);
+                     OldVal(sec, k.key[0]).c_str(), e.top, OldVal(sec, k.key[1]).c_str(), e.goingDown,
+                     OldVal(sec, k.key[2]).c_str(), e.goingUp, OldVal(sec, k.key[3]).c_str(), e.down);
             if (ex == kSquat && p.hip)
-                s += L"\n" + Fmt(T(tSumHip), OldVal(L"squat", L"min_hip_drop").c_str(), p.hipDrop);
+                s += L"\n" + Fmt(T(tSumHip), OldVal(Section(kSquat), L"min_hip_drop").c_str(), p.hipDrop);
             s += L"\n" + TestSummary(ex);
         }
         const int cam = static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0));
-        if (cam >= 0 && cam < static_cast<int>(g_cameras.size()))
+        if (g_phoneMode)
+            s += L"\n\n" + Fmt(T(tSumCamera), T(tPhone)) + L"\n" + T(tSumPhone);
+        else if (cam >= 0 && cam < static_cast<int>(g_cameras.size()))
             s += L"\n\n" + Fmt(T(tSumCamera), g_cameras[static_cast<size_t>(cam)].name.c_str());
         return s;
     }
@@ -1392,9 +1727,10 @@ namespace
         const auto r = ExerciseUnlock::Calib::ShowSettings(SettingsFor(g_wnd));
         if (!r.saved) return;
         Config::Load();
-        g_cfgMinHipDrop = Config::SquatMinHipDrop();
+        g_webcamMinHipDrop = Config::SquatMinHipDrop();
+        if (!g_phoneMode) g_cfgMinHipDrop = g_webcamMinHipDrop;
         const int pick = PreferredCamera();
-        if (pick >= 0 && pick != static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0)))
+        if (!g_phoneMode && pick >= 0 && pick != static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0)))
         {
             SendMessageW(g_cam, CB_SETCURSEL, static_cast<WPARAM>(pick), 0);
             StartCamera(pick);
@@ -1409,7 +1745,7 @@ namespace
     {
         const Plan p = ComputePlan();
         const int cam = static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0));
-        const bool setCamera = g_cameras.size() > 1 && cam >= 0;
+        const bool setCamera = !g_phoneMode && g_cameras.size() > 1 && cam >= 0 && cam < static_cast<int>(g_cameras.size());
         bool any = setCamera;
         for (const ExercisePlan& e : p.ex) any = any || e.ok;
         if (!any)
@@ -1431,9 +1767,10 @@ namespace
             if (!e.ok) continue;
             const IniKeys& k = kIni[ex];
             const int v[4] = { e.top, e.goingDown, e.goingUp, e.down };
-            for (int i = 0; i < 4; ++i) put(k.section, k.key[i], std::to_wstring(v[i]));
-            if (ex == kSquat && p.hip) put(L"squat", L"min_hip_drop", Fmt(L"%.2f", p.hipDrop));
-            LogF(L"calibrate: saved %s %d/%d/%d/%d", ExerciseName(ex), e.top, e.goingDown, e.goingUp, e.down);
+            for (int i = 0; i < 4; ++i) put(Section(ex), k.key[i], std::to_wstring(v[i]));
+            if (ex == kSquat && p.hip) put(Section(kSquat), L"min_hip_drop", Fmt(L"%.2f", p.hipDrop));
+            LogF(L"calibrate: saved %s %s %d/%d/%d/%d", g_phoneMode ? L"phone" : L"webcam", ExerciseName(ex),
+                 e.top, e.goingDown, e.goingUp, e.down);
         }
         // Only pin the camera when there is a choice to make: with a
         // single camera a pinned name would just make the service wait
@@ -1441,8 +1778,9 @@ namespace
         if (setCamera) put(L"camera", L"preferred", g_cameras[static_cast<size_t>(cam)].name);
         // The angles are measured on x / width, y / height of this camera's
         // frame, so they depend on its aspect ratio. The phone camera page
-        // rescales its poses to it (service PhoneLink sends it along).
-        for (int i = 1; i < kShotCount; ++i)
+        // rescales its poses to it (service PhoneLink sends it along) - unless
+        // the phone has thresholds of its own, measured on its own frame.
+        for (int i = 1; i < kShotCount && !g_phoneMode; ++i)
         {
             const Frame& f = g_shots[i].photo;
             if (g_shots[i].done && f.w > 0 && f.h > 0)
@@ -1460,6 +1798,7 @@ namespace
             return false;
         }
         if (p.hip) LogF(L"calibrate: saved squat hip drop %.2f", p.hipDrop);
+        if (g_phone) PhoneSend(*g_phone, R"({"t":"bye","reason":"saved"})");
         g_status = T(tSaved);
         if (!g_setupMode) g_status += RestartService() ? T(tRestarted) : T(tRestartFailed);
         g_statusIsError = false;
@@ -1522,6 +1861,33 @@ namespace
     }
 
     // ------------------------------------------------------------ UI
+    // Something to measure on: a camera, or a phone that sends its poses.
+    bool SourceReady()
+    {
+        if (!g_phoneMode) return !g_cameras.empty();
+        return PhoneStateNow() == PhoneState::Connected && GetTickCount64() - g_lastFrameMs.load() < 3000;
+    }
+
+    // The wizard's step on the phone's screen: what to do now, and its own
+    // "Take photo" while the step takes one.
+    void SendCalibStep()
+    {
+        if (!g_phone) return;
+        const StepDef& s = Cur();
+        Json::Writer w;
+        w.BeginObject().Key("t").String("calib")
+         .Key("title").String(Relay::ToUtf8(T(s.title)))
+         .Key("text").String(Relay::ToUtf8(T(s.text)))
+         .Key("photo").Bool(s.kind == StepKind::Photo)
+         .Key("busy").Bool(g_phase != Phase::Live || !SourceReady())
+         .Key("shot").Int(s.kind == StepKind::Photo ? s.shot : 0)
+         .Key("test").String(s.kind == StepKind::Test ? Relay::ToUtf8(kExercises[s.exercise].logName) : std::string())
+         .EndObject();
+        if (w.Str() == g_calibSent) return;
+        g_calibSent = w.Str();
+        PhoneSend(*g_phone, g_calibSent);
+    }
+
     void UpdateControls()
     {
         const StepDef& s = Cur();
@@ -1537,13 +1903,14 @@ namespace
         ShowWindow(g_take, photoStep || testStep ? SW_SHOW : SW_HIDE);
         // With nothing to skip, the button opens the settings.
         SetWindowTextW(g_skip, T(cameraStep || summary ? tSettings : tSkip));
-        EnableWindow(g_take, !busy && (retake || ((photoStep || testStep) && !g_cameras.empty())));
+        EnableWindow(g_take, !busy && (retake || ((photoStep || testStep) && SourceReady())));
         EnableWindow(g_skip, !busy && !passed);
         EnableWindow(g_cam, !busy);
         if (photoStep) SetWindowTextW(g_take, T(g_shots[s.shot].done ? tRetake : tTake));
         if (testStep) SetWindowTextW(g_take, T(retake ? tRetakePhotos : tRestart));
         SetWindowTextW(g_next, T(summary ? (g_saved ? tClose : tSave) : tNext));
         EnableWindow(g_next, !busy && (photoStep ? g_shots[s.shot].done : !testStep || passed));
+        SendCalibStep();
         InvalidateRect(g_wnd, nullptr, FALSE);
     }
 
@@ -1587,6 +1954,8 @@ namespace
         MoveWindow(g_skip, p.left + bw + Px(8), y, bw, Px(32), TRUE);
         MoveWindow(g_take, p.left + 2 * (bw + Px(8)), y, bw, Px(32), TRUE);
         MoveWindow(g_next, p.left + 3 * (bw + Px(8)), y, bw, Px(32), TRUE);
+        const RECT v = VideoRect(rc);
+        MoveWindow(g_url, v.left + Px(24), v.bottom - Px(44), v.right - v.left - Px(48), Px(26), TRUE);
     }
 
     void MakeFonts()
@@ -1602,6 +1971,7 @@ namespace
         g_fontBig = mk(40, FW_BOLD);      // test rep counter over the video
         for (HWND h : { g_cam, g_back, g_take, g_skip, g_next })
             SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontUi), TRUE);
+        if (g_url) SendMessageW(g_url, WM_SETFONT, reinterpret_cast<WPARAM>(g_fontTitle), TRUE);
     }
 
     void DrawSkeleton(HDC dc, const RECT& r, const BodyPose& pose)
@@ -1662,8 +2032,13 @@ namespace
         else { std::lock_guard<std::mutex> lk(g_frameMx); f = g_latest; }
 
         SelectObject(dc, g_fontUi);
-        if (f.bgra.empty())
+        if (f.bgra.empty() && (f.w == 0 || f.h == 0))
         {
+            if (g_phoneMode)
+            {
+                PaintPhoneWait(dc, area);
+                return;
+            }
             DrawShadowText(dc, g_cameras.empty() ? T(tNoCamera) : L"...", area,
                            DT_CENTER | DT_VCENTER | DT_SINGLELINE, RGB(220, 220, 230));
             return;
@@ -1680,9 +2055,19 @@ namespace
         bi.bmiHeader.biPlanes = 1;
         bi.bmiHeader.biBitCount = 32;
         bi.bmiHeader.biCompression = BI_RGB;
-        SetStretchBltMode(dc, HALFTONE);
-        StretchDIBits(dc, v.left, v.top, vw, vh, 0, 0, static_cast<int>(f.w), static_cast<int>(f.h),
-                      f.bgra.data(), &bi, DIB_RGB_COLORS, SRCCOPY);
+        if (f.bgra.empty())
+        {
+            // The phone sends no picture: its frame, with the skeleton on it.
+            HBRUSH frame = CreateSolidBrush(RGB(14, 16, 26));
+            FillRect(dc, &v, frame);
+            DeleteObject(frame);
+        }
+        else
+        {
+            SetStretchBltMode(dc, HALFTONE);
+            StretchDIBits(dc, v.left, v.top, vw, vh, 0, 0, static_cast<int>(f.w), static_cast<int>(f.h),
+                          f.bgra.data(), &bi, DIB_RGB_COLORS, SRCCOPY);
+        }
         DrawSkeleton(dc, v, f.pose);
 
         // Live measurement badge for the current step.
@@ -2041,6 +2426,33 @@ namespace
         EndPaint(g_wnd, &ps);
     }
 
+    // Webcam <-> phone: other frames and other config.ini sections - nothing
+    // measured on one counts for the other.
+    void SwitchSource(bool phone)
+    {
+        bool any = false;
+        for (Shot& shot : g_shots)
+        {
+            any = any || shot.done;
+            shot = Shot{};
+        }
+        for (int ex = 0; ex < kExerciseCount; ++ex) ResetExercise(ex);
+        g_phoneMode = phone;
+        // A check without a hip drop from the photos uses the source's own.
+        g_cfgMinHipDrop = g_webcamMinHipDrop;
+        if (phone)
+        {
+            const std::wstring v = IniGet(L"phone_squat", L"min_hip_drop");
+            if (!v.empty()) g_cfgMinHipDrop = std::wcstof(v.c_str(), nullptr);
+        }
+        if (any)
+        {
+            g_status = T(tPhoneReset);
+            g_statusIsError = false;
+        }
+        LogF(L"calibrate: source %s", phone ? L"phone" : L"webcam");
+    }
+
     void OnCommand(int id, int code)
     {
         switch (id)
@@ -2049,10 +2461,23 @@ namespace
             if (code == CBN_SELCHANGE)
             {
                 g_status.clear();
-                StartCamera(static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0)));
+                const int sel = static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0));
+                const bool phone = sel >= 0 && sel == g_phoneItem;
+                if (phone != g_phoneMode) SwitchSource(phone);
+                if (phone)
+                {
+                    StopCamera();
+                    StartPhone();
+                }
+                else
+                {
+                    StopPhone();
+                    StartCamera(sel);
+                }
                 // Another camera sees the child differently: count from zero.
                 if (Cur().kind == StepKind::Test && !g_tests[Cur().exercise].passed) StartTest(Cur().exercise);
-                InvalidateRect(g_wnd, nullptr, FALSE);
+                UpdatePhoneUrl();
+                UpdateControls();
             }
             break;
         case idBack:
@@ -2112,6 +2537,18 @@ namespace
         {
             EndCapture();
         }
+        // The relay drops a connection that says nothing for a minute.
+        if (g_phone && GetTickCount64() - g_phonePingMs >= 20000)
+        {
+            g_phonePingMs = GetTickCount64();
+            g_phone->sock.Send(R"({"t":"ping"})");
+        }
+        // The phone's poses start or stop: "Take photo" follows.
+        if (SourceReady() != g_sourceReady)
+        {
+            g_sourceReady = !g_sourceReady;
+            UpdateControls();
+        }
         // An open camera that stays silent: say so instead of an endless "...".
         if (g_camSession && g_status.empty() && GetTickCount64() - g_lastFrameMs.load() >= kNoFramesMs)
         {
@@ -2140,6 +2577,8 @@ namespace
             g_skip = button(idSkip);
             g_take = button(idTake);
             g_next = button(idNext);
+            g_url = CreateWindowExW(0, WC_EDITW, L"", WS_CHILD | ES_READONLY | ES_CENTER | ES_AUTOHSCROLL,
+                                    0, 0, 10, 10, hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(idUrl)), g_inst, nullptr);
             SetWindowTextW(g_back, T(tBack));
             SetWindowTextW(g_skip, T(tSkip));
             MakeFonts();
@@ -2147,11 +2586,27 @@ namespace
             g_cameras = EnumerateCameras();
             for (const CameraInfo& c : g_cameras)
                 SendMessageW(g_cam, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.name.c_str()));
-            if (!g_cameras.empty())
+            // The phone, last in the list - when config.ini has a relay for it.
+            if (Relay::RelayUrl relay; Config::PhoneEnabled() && Relay::ParseRelay(Config::PhoneRelayUrl(), relay))
+                g_phoneItem = static_cast<int>(SendMessageW(g_cam, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(T(tPhone))));
+            if (g_startPhone && g_phoneItem >= 0 && g_snapshotPath.empty())
+            {
+                SendMessageW(g_cam, CB_SETCURSEL, static_cast<WPARAM>(g_phoneItem), 0);
+                g_phoneMode = true;
+                StartPhone();
+            }
+            else if (!g_cameras.empty())
             {
                 const int pick = std::max(PreferredCamera(), 0);
                 SendMessageW(g_cam, CB_SETCURSEL, static_cast<WPARAM>(pick), 0);
                 if (g_snapshotPath.empty()) StartCamera(pick);
+            }
+            else if (g_phoneItem >= 0 && g_snapshotPath.empty())
+            {
+                // No webcam at all: the phone is the camera.
+                SendMessageW(g_cam, CB_SETCURSEL, static_cast<WPARAM>(g_phoneItem), 0);
+                g_phoneMode = true;
+                StartPhone();
             }
             if (!g_poseOk) { g_status = T(tNoModel); g_statusIsError = true; }
             Layout();
@@ -2252,6 +2707,25 @@ namespace
         case WM_APP_FRAME:
             OnFrame();
             return 0;
+        case WM_APP_PHONE:
+            g_calibSent.clear();   // a phone that just connected gets the step
+            UpdatePhoneUrl();
+            UpdateControls();
+            return 0;
+        case WM_APP_PHONETAP:
+            // "Take photo" on the phone does what the button here does.
+            if (Cur().kind == StepKind::Photo && IsWindowEnabled(g_take)) OnCommand(idTake, BN_CLICKED);
+            return 0;
+        case WM_CTLCOLORSTATIC:
+            if (reinterpret_cast<HWND>(lp) == g_url)
+            {
+                // The address sits on the dark video area.
+                static HBRUSH dark = CreateSolidBrush(RGB(30, 30, 40));
+                SetTextColor(reinterpret_cast<HDC>(wp), RGB(255, 230, 90));
+                SetBkColor(reinterpret_cast<HDC>(wp), RGB(30, 30, 40));
+                return reinterpret_cast<LRESULT>(dark);
+            }
+            return DefWindowProcW(hwnd, msg, wp, lp);
         case WM_APP_SNAPSHOT:
             ExerciseUnlock::Calib::WriteWindowBmp(hwnd, g_snapshotPath, [](HDC dc, const RECT& rc) {
                 HBRUSH bg = CreateSolidBrush(RGB(244, 246, 252));
@@ -2270,6 +2744,7 @@ namespace
             return 0;
         case WM_DESTROY:
             KillTimer(hwnd, kTimerId);
+            StopPhone();
             StopCamera();
             PostQuitMessage(g_saved ? 0 : 1);
             return 0;
@@ -2293,6 +2768,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
         {
             if (_wcsicmp(argv[i], L"/setup") == 0) g_setupMode = true;
             else if (_wcsicmp(argv[i], L"/settings") == 0) settingsOnly = true;
+            else if (_wcsicmp(argv[i], L"/phone") == 0) g_startPhone = true;
             else if (_wcsicmp(argv[i], L"/lang") == 0 && i + 1 < argc) g_uk = _wcsicmp(argv[++i], L"uk") == 0;
             else if (_wcsicmp(argv[i], L"/snapshot") == 0 && i + 1 < argc) g_snapshotPath = argv[++i];
             else if (_wcsicmp(argv[i], L"/step") == 0 && i + 1 < argc) g_snapshotStep = _wtoi(argv[++i]);
@@ -2310,7 +2786,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     // time of day.
     Config::Load();
     Config::SetIgnoreSchedule(true);
-    g_cfgMinHipDrop = Config::SquatMinHipDrop();
+    g_cfgMinHipDrop = g_webcamMinHipDrop = Config::SquatMinHipDrop();
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);

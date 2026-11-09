@@ -1,0 +1,16 @@
+# What's new in this version: the update window (ExerciseUnlockUpdate)
+# lists it to a parent. build-installer.ps1 copies it into version.txt.
+# Rewrite it for every release: one point per line, "en:" or "uk:" first,
+# up to 8 short points per language.
+en: The phone can be calibrated on its own: "Phone (QR code)" in the calibration
+en: Phone reps are counted by the computer from the phone's poses, not taken on trust
+en: Updates download and install from the app's own window
+en: The calibration starts right after setup
+en: The service restarts itself after a failure
+en: Standard accounts can't change the time zone to shift the allowed hours
+uk: Телефон можна відкалібрувати окремо: «Телефон (QR-код)» у калібруванні
+uk: Повтори з телефона рахує комп'ютер за позами з телефона, а не на слово
+uk: Оновлення завантажуються й встановлюються з вікна програми
+uk: Калібрування запускається одразу після інсталяції
+uk: Служба сама перезапускається після збою
+uk: Звичайні облікові записи не можуть змінити часовий пояс, щоб зсунути дозволені години

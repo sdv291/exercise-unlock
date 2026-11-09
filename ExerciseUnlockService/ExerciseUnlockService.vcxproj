@@ -114,6 +114,8 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="UpdateChecker.cpp" />
     <ClCompile Include="PhoneLink.cpp" />
+    <ClCompile Include="PhoneCounter.cpp" />
+    <ClCompile Include="RelayClient.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ServiceMain.h" />
@@ -135,6 +137,9 @@ if exist "$(ProjectDir)config.ini" if not exist "$(OutDir)config.ini" copy /Y "$
     <ClInclude Include="UpdateChecker.h" />
     <ClInclude Include="PhoneLink.h" />
     <ClInclude Include="MiniJson.h" />
+    <ClInclude Include="PhoneCounter.h" />
+    <ClInclude Include="RelayClient.h" />
+    <ClInclude Include="DetectorParams.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="app.rc" />

@@ -4,6 +4,7 @@
 #include "PoseEstimator.h"
 #include "AngleFilter.h"
 #include "RepResult.h"
+#include "DetectorParams.h"
 
 #include <deque>
 
@@ -18,11 +19,20 @@ namespace ExerciseUnlock::Svc
     class SquatDetector
     {
     public:
+        // publish (the webcam's): Config's thresholds, the tick clock, and
+        // phase / angle / the shared count written into State. A phone's
+        // (publish = false, PhoneCounter) gets its clock, posture and
+        // thresholds with every frame and keeps its results to itself -
+        // see LastRep().
+        explicit SquatDetector(bool publish = true) : m_publish(publish) {}
+
         // Push one pose frame through the state machine. Cheap enough
         // to call on every camera frame; the phase transitions are
         // gated by both angle thresholds and dwell time so a jitter
         // pose won't false-count.
         void Update(const BodyPose& pose);
+        // A phone's frame: postureOk = its own classifier latched Squat.
+        void Update(const BodyPose& pose, uint64_t nowMs, bool postureOk, const SquatParams& p);
 
         // Explicitly reset the counter and phase — used when a new
         // challenge starts (v0.7+).
@@ -32,6 +42,9 @@ namespace ExerciseUnlock::Svc
         const RepResult& LastRep() const { return m_lastRep; }
 
     private:
+        void Step(const BodyPose& pose, uint64_t now, bool postureOk, const SquatParams& p, bool offHours);
+
+        bool            m_publish = true;
         RepResult       m_lastRep{};
         Ipc::SquatPhase m_phase{ Ipc::SquatPhase::Unknown };
         uint32_t        m_count{ 0 };

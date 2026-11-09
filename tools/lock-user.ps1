@@ -26,6 +26,13 @@
          flag UF_PASSWD_CANT_CHANGE). Via net user /passwordchg:no.
          Removes the "Change a password..." option from Ctrl+Alt+Del.
 
+      4. Takes "Change the time zone" (SeTimeZonePrivilege) from
+         BUILTIN\Users. The schedule and the daily reset go by local
+         time, and by default every standard account may move the time
+         zone - which shifts the allowed hours. Administrators and
+         LOCAL SERVICE (automatic time zone) keep it. Applies to ALL
+         standard accounts, from their next sign-in.
+
     Changes are reversible — run with -Undo to restore defaults.
 
 .PARAMETER User
@@ -117,6 +124,126 @@ function Remove-RegValue($path, $name)
     }
 }
 
+# --- Step 4: the time zone right of BUILTIN\Users ---
+# -Undo gives it back only when this script took it (the marker value):
+# a PC where a policy had already removed it stays that way.
+$usersSid      = 'S-1-5-32-545'
+$timeZoneRight = 'SeTimeZonePrivilege'
+$markerKey     = 'HKLM:\SOFTWARE\ExerciseUnlock'
+$markerName    = 'TimeZoneLocked'
+
+# User rights live in the LSA policy; Windows PowerShell has no cmdlet.
+function Add-UserRightsType
+{
+    if ('EuUserRights' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+
+public static class EuUserRights
+{
+    [StructLayout(LayoutKind.Sequential)]
+    struct LSA_UNICODE_STRING { public ushort Length; public ushort MaximumLength; public IntPtr Buffer; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct LSA_OBJECT_ATTRIBUTES
+    {
+        public int Length; public IntPtr RootDirectory; public IntPtr ObjectName;
+        public uint Attributes; public IntPtr SecurityDescriptor; public IntPtr SecurityQualityOfService;
+    }
+
+    [DllImport("advapi32.dll")]
+    static extern uint LsaOpenPolicy(IntPtr systemName, ref LSA_OBJECT_ATTRIBUTES attributes, uint access, out IntPtr policy);
+    [DllImport("advapi32.dll")]
+    static extern uint LsaEnumerateAccountRights(IntPtr policy, byte[] sid, out IntPtr rights, out uint count);
+    [DllImport("advapi32.dll")]
+    static extern uint LsaAddAccountRights(IntPtr policy, byte[] sid, LSA_UNICODE_STRING[] rights, uint count);
+    [DllImport("advapi32.dll")]
+    static extern uint LsaRemoveAccountRights(IntPtr policy, byte[] sid, [MarshalAs(UnmanagedType.U1)] bool allRights,
+                                              LSA_UNICODE_STRING[] rights, uint count);
+    [DllImport("advapi32.dll")]
+    static extern uint LsaFreeMemory(IntPtr buffer);
+    [DllImport("advapi32.dll")]
+    static extern uint LsaClose(IntPtr policy);
+    [DllImport("advapi32.dll")]
+    static extern int LsaNtStatusToWinError(uint status);
+
+    const uint POLICY_CREATE_ACCOUNT = 0x10, POLICY_LOOKUP_NAMES = 0x800;
+    const uint STATUS_OBJECT_NAME_NOT_FOUND = 0xC0000034;
+
+    static void Check(uint status)
+    {
+        if (status != 0) throw new Win32Exception(LsaNtStatusToWinError(status));
+    }
+
+    static IntPtr Open(uint access)
+    {
+        LSA_OBJECT_ATTRIBUTES attributes = new LSA_OBJECT_ATTRIBUTES();
+        attributes.Length = Marshal.SizeOf(typeof(LSA_OBJECT_ATTRIBUTES));
+        IntPtr policy;
+        Check(LsaOpenPolicy(IntPtr.Zero, ref attributes, access, out policy));
+        return policy;
+    }
+
+    static byte[] Sid(string sid)
+    {
+        SecurityIdentifier id = new SecurityIdentifier(sid);
+        byte[] bytes = new byte[id.BinaryLength];
+        id.GetBinaryForm(bytes, 0);
+        return bytes;
+    }
+
+    public static bool Has(string sid, string right)
+    {
+        IntPtr policy = Open(POLICY_LOOKUP_NAMES);
+        try
+        {
+            IntPtr rights;
+            uint count;
+            uint status = LsaEnumerateAccountRights(policy, Sid(sid), out rights, out count);
+            if (status == STATUS_OBJECT_NAME_NOT_FOUND) return false;   // holds no rights at all
+            Check(status);
+            try
+            {
+                int size = Marshal.SizeOf(typeof(LSA_UNICODE_STRING));
+                for (int i = 0; i < count; i++)
+                {
+                    LSA_UNICODE_STRING s = (LSA_UNICODE_STRING)Marshal.PtrToStructure(
+                        new IntPtr(rights.ToInt64() + (long)i * size), typeof(LSA_UNICODE_STRING));
+                    if (string.Equals(Marshal.PtrToStringUni(s.Buffer, s.Length / 2), right, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                return false;
+            }
+            finally { LsaFreeMemory(rights); }
+        }
+        finally { LsaClose(policy); }
+    }
+
+    public static void Set(string sid, string right, bool grant)
+    {
+        LSA_UNICODE_STRING[] rights = new LSA_UNICODE_STRING[1];
+        rights[0].Buffer = Marshal.StringToHGlobalUni(right);
+        rights[0].Length = (ushort)(right.Length * 2);
+        rights[0].MaximumLength = (ushort)((right.Length + 1) * 2);
+        IntPtr policy = Open(POLICY_CREATE_ACCOUNT | POLICY_LOOKUP_NAMES);
+        try
+        {
+            Check(grant ? LsaAddAccountRights(policy, Sid(sid), rights, 1)
+                        : LsaRemoveAccountRights(policy, Sid(sid), false, rights, 1));
+        }
+        finally
+        {
+            LsaClose(policy);
+            Marshal.FreeHGlobal(rights[0].Buffer);
+        }
+    }
+}
+'@
+}
+
 if (-not $Undo)
 {
     Write-Host "Locking account '$User' to Exercise Unlock tile only..."
@@ -124,7 +251,7 @@ if (-not $Undo)
 
     # 1. Block convenience PIN sign-in via policy. Both keys together
     #    cover Windows 10 and 11 variations.
-    Write-Host "  [1/3] Disabling PIN sign-in policy..."
+    Write-Host "  [1/4] Disabling PIN sign-in policy..."
     Set-RegDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' `
                  'AllowDomainPINLogon' 0
     Set-RegDword 'HKLM:\SOFTWARE\Policies\Microsoft\PassportForWork' `
@@ -140,7 +267,7 @@ if (-not $Undo)
     #    screen. The filters live under
     #    HKLM\...\Authentication\Credential Provider Filters\{CLSID}
     #    with a "Disabled" DWORD = 1.
-    Write-Host "  [2/3] Hiding alternative sign-in tiles..."
+    Write-Host "  [2/4] Hiding alternative sign-in tiles..."
     foreach ($name in $providersToDisable.Keys)
     {
         [void](Try-DisableProvider $name $providersToDisable[$name])
@@ -149,11 +276,28 @@ if (-not $Undo)
     # 3. Prevent the account from changing its own password.
     #    The native tool `net user` sets the UF_PASSWD_CANT_CHANGE
     #    flag in SAM.
-    Write-Host "  [3/3] Blocking '$User' password change..."
+    Write-Host "  [3/4] Blocking '$User' password change..."
     & net user $User /passwordchg:no | Out-Null
     if ($LASTEXITCODE -ne 0)
     {
         Write-Host "        warning: 'net user $User' failed (account missing?)"
+    }
+
+    # 4. Standard accounts can't move the time zone (see the header).
+    #    Marker first: if the removal then fails, -Undo only re-grants
+    #    a right Users still have.
+    Write-Host "  [4/4] Forbidding time zone changes to standard accounts..."
+    try {
+        Add-UserRightsType
+        if ([EuUserRights]::Has($usersSid, $timeZoneRight)) {
+            Set-RegDword $markerKey $markerName 1
+            [EuUserRights]::Set($usersSid, $timeZoneRight, $false)
+            Write-Host "        taken from Users"
+        } else {
+            Write-Host "        Users don't have it - nothing to do"
+        }
+    } catch {
+        Write-Host "        warning: $($_.Exception.Message.Trim())"
     }
 
     Write-Host ""
@@ -165,7 +309,7 @@ else
     Write-Host "Reverting restrictions for account '$User'..."
     Write-Host ""
 
-    Write-Host "  [1/3] Re-enabling PIN sign-in policy..."
+    Write-Host "  [1/4] Re-enabling PIN sign-in policy..."
     Remove-RegValue 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' `
                     'AllowDomainPINLogon'
     Remove-RegValue 'HKLM:\SOFTWARE\Policies\Microsoft\PassportForWork' `
@@ -175,14 +319,29 @@ else
     Remove-RegValue 'HKLM:\SOFTWARE\Microsoft\PolicyManager\default\Settings\AllowSignInOptions' `
                     'value'
 
-    Write-Host "  [2/3] Re-enabling alternative sign-in tiles..."
+    Write-Host "  [2/4] Re-enabling alternative sign-in tiles..."
     foreach ($name in $providersToDisable.Keys)
     {
         Try-RestoreProvider $name $providersToDisable[$name]
     }
 
-    Write-Host "  [3/3] Allowing '$User' to change password..."
+    Write-Host "  [3/4] Allowing '$User' to change password..."
     & net user $User /passwordchg:yes | Out-Null
+
+    Write-Host "  [4/4] Allowing time zone changes again..."
+    try {
+        $marker = Get-ItemProperty -Path $markerKey -Name $markerName -ErrorAction SilentlyContinue
+        if ($marker -and $marker.$markerName -eq 1) {
+            Add-UserRightsType
+            [EuUserRights]::Set($usersSid, $timeZoneRight, $true)
+            Remove-RegValue $markerKey $markerName
+            Write-Host "        given back to Users"
+        } else {
+            Write-Host "        not taken by this script - left as is"
+        }
+    } catch {
+        Write-Host "        warning: $($_.Exception.Message.Trim())"
+    }
 
     Write-Host ""
     Write-Host "Done. Restrictions removed; defaults restored."

@@ -115,6 +115,8 @@ namespace ExerciseUnlock::Svc
     std::atomic<bool>  Config::s_phoneEnabled       { true };
     std::wstring       Config::s_phoneRelayUrl      { kDefaultRelayUrl };
     std::atomic<float> Config::s_calibrationAspect  { 0.0f };
+    Config::PhoneAngles Config::s_phoneAngles[3];
+    float              Config::s_phoneHipDrop       { -1.0f };
 
     constexpr wchar_t  kDefaultManifestUrl[] = L"https://exercise-unlock.sdv291.com/download/version.txt";
     std::atomic<bool>  Config::s_updateEnabled      { true };
@@ -228,6 +230,75 @@ namespace ExerciseUnlock::Svc
     {
         std::lock_guard<std::mutex> lk(s_stringsMx);
         return s_phoneRelayUrl;
+    }
+
+    SquatParams Config::Squat()
+    {
+        SquatParams p;
+        p.standing         = SquatStandingAngle();
+        p.down             = SquatDownAngle();
+        p.goingDown        = SquatGoingDownAngle();
+        p.goingUp          = SquatGoingUpAngle();
+        p.minRepMs         = SquatMinRepMs();
+        p.maxRepMs         = SquatMaxRepMs();
+        p.qualityMin       = SquatQualityMin();
+        p.maxHipDrift      = SquatMaxHipDrift();
+        p.minHipDrop       = SquatMinHipDrop();
+        p.mode             = SquatDetectorMode();
+        p.standingHipFrac  = SquatStandingHipFrac();
+        p.downHipFrac      = SquatDownHipFrac();
+        p.goingDownHipFrac = SquatGoingDownHipFrac();
+        p.goingUpHipFrac   = SquatGoingUpHipFrac();
+        return p;
+    }
+
+    PushupParams Config::Pushup()
+    {
+        PushupParams p;
+        p.up         = PushupUpAngle();
+        p.down       = PushupDownAngle();
+        p.goingDown  = PushupGoingDownAngle();
+        p.goingUp    = PushupGoingUpAngle();
+        p.plankMin   = PushupPlankMinAngle();
+        p.minRepMs   = PushupMinRepMs();
+        p.maxRepMs   = PushupMaxRepMs();
+        p.qualityMin = PushupQualityMin();
+        return p;
+    }
+
+    SitupParams Config::Situp()
+    {
+        SitupParams p;
+        p.lying      = SitupLyingAngle();
+        p.rising     = SitupRisingAngle();
+        p.lowering   = SitupLoweringAngle();
+        p.sitting    = SitupSittingAngle();
+        p.minRepMs   = SitupMinRepMs();
+        p.maxRepMs   = SitupMaxRepMs();
+        p.qualityMin = SitupQualityMin();
+        return p;
+    }
+
+    bool Config::PhoneProfile(SquatParams& squat, PushupParams& pushup, SitupParams& situp)
+    {
+        squat = Squat();
+        pushup = Pushup();
+        situp = Situp();
+        std::lock_guard<std::mutex> lk(s_stringsMx);
+        if (const PhoneAngles& s = s_phoneAngles[0]; s.have)
+        {
+            squat.standing = s.a[0]; squat.goingDown = s.a[1]; squat.goingUp = s.a[2]; squat.down = s.a[3];
+        }
+        if (s_phoneHipDrop >= 0.0f) squat.minHipDrop = s_phoneHipDrop;
+        if (const PhoneAngles& s = s_phoneAngles[1]; s.have)
+        {
+            pushup.up = s.a[0]; pushup.goingDown = s.a[1]; pushup.goingUp = s.a[2]; pushup.down = s.a[3];
+        }
+        if (const PhoneAngles& s = s_phoneAngles[2]; s.have)
+        {
+            situp.lying = s.a[0]; situp.rising = s.a[1]; situp.lowering = s.a[2]; situp.sitting = s.a[3];
+        }
+        return s_phoneAngles[0].have || s_phoneAngles[1].have || s_phoneAngles[2].have;
     }
 
     static std::wstring FindConfigPath()
@@ -445,11 +516,35 @@ namespace ExerciseUnlock::Svc
         const std::wstring relayUrl = readStr(L"phone", L"relay", kDefaultRelayUrl);
         s_calibrationAspect.store(readFloat(L"calibration", L"aspect", s_calibrationAspect.load()));
 
+        // The phone's own calibration: an exercise counts as calibrated
+        // when all four of its angles are there.
+        PhoneAngles phone[3];
+        {
+            static const wchar_t* const kSections[3] = { L"phone_squat", L"phone_pushup", L"phone_situp" };
+            static const wchar_t* const kKeys[3][4] = {
+                { L"standing_angle", L"going_down_angle", L"going_up_angle", L"down_angle" },
+                { L"up_angle",       L"going_down_angle", L"going_up_angle", L"down_angle" },
+                { L"lying_angle",    L"rising_angle",     L"lowering_angle", L"sitting_angle" },
+            };
+            for (int ex = 0; ex < 3; ++ex)
+            {
+                phone[ex].have = true;
+                for (int i = 0; i < 4; ++i)
+                {
+                    phone[ex].a[i] = readFloat(kSections[ex], kKeys[ex][i], -1.0f);
+                    if (phone[ex].a[i] <= 0.0f) phone[ex].have = false;
+                }
+            }
+        }
+        const float phoneHipDrop = readFloat(L"phone_squat", L"min_hip_drop", -1.0f);
+
         {
             std::lock_guard<std::mutex> lk(s_stringsMx);
             s_vcamBlocklist = vcam;
             s_updateUrl     = updUrl;
             s_phoneRelayUrl = relayUrl;
+            for (int ex = 0; ex < 3; ++ex) s_phoneAngles[ex] = phone[ex];
+            s_phoneHipDrop = phoneHipDrop;
         }
 
         s_cameraLockScreenOnly.store(GetPrivateProfileIntW(
@@ -498,6 +593,9 @@ namespace ExerciseUnlock::Svc
              s_situpLyingAng.load(), s_situpRisingAng.load(),
              s_situpLoweringAng.load(), s_situpSittingAng.load(),
              s_situpMinRepMs.load(), s_situpMaxRepMs.load());
+        if (phone[0].have || phone[1].have || phone[2].have)
+            LogF(L"config: phone calibration squat=%d pushup=%d situp=%d hipDrop=%.2f",
+                 phone[0].have ? 1 : 0, phone[1].have ? 1 : 0, phone[2].have ? 1 : 0, phoneHipDrop);
         LogF(L"config: schedule active %02d:%02d..%02d:%02d local",
              s_activeFromMin.load() / 60, s_activeFromMin.load() % 60,
              s_activeToMin.load()   / 60, s_activeToMin.load()   % 60);

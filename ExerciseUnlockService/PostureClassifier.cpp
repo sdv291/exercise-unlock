@@ -115,7 +115,7 @@ namespace ExerciseUnlock::Svc
         m_latched       = Ipc::PostureKind::None;
         m_pending       = Ipc::PostureKind::None;
         m_pendingStreak = 0;
-        GetState().postureKind.store(static_cast<uint8_t>(Ipc::PostureKind::None));
+        if (m_publish) GetState().postureKind.store(static_cast<uint8_t>(Ipc::PostureKind::None));
     }
 
     void PostureClassifier::Update(const BodyPose& pose)
@@ -231,7 +231,7 @@ namespace ExerciseUnlock::Svc
         // perspective-stretched pushup looking "vertical") are
         // diagnosable from the service log.
         const uint64_t now = GetTickCount64();
-        if (now - m_lastDebugLogMs >= 1000)
+        if (m_publish && now - m_lastDebugLogMs >= 1000)
         {
             m_lastDebugLogMs = now;
             const wchar_t* rawName =
@@ -279,6 +279,7 @@ namespace ExerciseUnlock::Svc
             {
                 const Ipc::PostureKind prev = m_latched;
                 m_latched = m_pending;
+                if (!m_publish) return;
                 GetState().postureKind.store(static_cast<uint8_t>(m_latched));
                 const wchar_t* name = (m_latched == Ipc::PostureKind::Squat)  ? L"Squat"
                                     : (m_latched == Ipc::PostureKind::PushUp) ? L"PushUp"

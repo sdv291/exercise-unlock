@@ -255,6 +255,11 @@ namespace ExerciseUnlock::Svc
             // let the webcam thread re-check now, not at its next poll.
             g_webcam.Wake();
             g_phone.Wake();
+            // Someone at the console now: the update window may be due
+            // for them (a parent signing in gets "Download and install").
+            if (eventType == WTS_SESSION_LOGON || eventType == WTS_SESSION_UNLOCK ||
+                eventType == WTS_CONSOLE_CONNECT)
+                g_updater.Wake();
             return NO_ERROR;
 
         case SERVICE_CONTROL_INTERROGATE:
@@ -266,7 +271,7 @@ namespace ExerciseUnlock::Svc
         }
     }
 
-    void RunUntilStopped(HANDLE stopEvent)
+    DWORD RunUntilStopped(HANDLE stopEvent)
     {
         // Fresh log per service start — one run, one log, easier for
         // the parent to spot regressions without wading through yesterday.
@@ -305,14 +310,19 @@ namespace ExerciseUnlock::Svc
         LogF(L"RunUntilStopped: -> PhoneLink::Start");
         g_phone.Start(stopEvent);
         LogF(L"RunUntilStopped: -> PipeServer::Run");
-        g_server.Run(stopEvent);    // blocks until stopEvent fires
+        const bool served = g_server.Run(stopEvent);    // blocks until stopEvent fires
         LogF(L"RunUntilStopped: <- PipeServer::Run");
+        // Without its pipe the lock screen can't reach the service: stop
+        // the other threads too and exit with an error, so it's restarted
+        // instead of running on unreachable.
+        if (!served) SetEvent(stopEvent);
         g_updater.Join();
         g_phone.Join();
         g_session.Join();
         g_webcam.Join();
         PersistentState::Save();    // flush counters one last time before exit
         ActivityLog::ServiceStopping();
+        return served ? NO_ERROR : ERROR_INTERNAL_ERROR;
     }
 
     void WINAPI ServiceMain(DWORD /*argc*/, LPWSTR* /*argv*/)
@@ -339,11 +349,12 @@ namespace ExerciseUnlock::Svc
         SetStatus(SERVICE_RUNNING);
         LogF(L"service running");
 
-        RunUntilStopped(g_stopEvent);
+        const DWORD exitCode = RunUntilStopped(g_stopEvent);
 
         CloseHandle(g_stopEvent);
         g_stopEvent = nullptr;
 
-        SetStatus(SERVICE_STOPPED);
+        // Non-zero: a failure for the SCM (setup sets "sc failureflag 1").
+        SetStatus(SERVICE_STOPPED, exitCode);
     }
 }

@@ -79,6 +79,7 @@ namespace ExerciseUnlock::Svc
         m_elbowFilter.Reset();
         m_lastRep        = RepResult{};
 
+        if (!m_publish) return;
         auto& st = GetState();
         st.pushUpCount.store(0);
         st.pushUpPhase.store(static_cast<uint8_t>(PushUpPhase::Unknown));
@@ -108,11 +109,20 @@ namespace ExerciseUnlock::Svc
         // it does blip for a moment we don't want to lose the
         // in-progress rep state. The detector's own missStreak will
         // tear down state after sustained posture loss.
-        if (st.postureKind.load() !=
-            static_cast<uint8_t>(Ipc::PostureKind::PushUp))
-        {
-            return;
-        }
+        const bool postureOk = st.postureKind.load() == static_cast<uint8_t>(Ipc::PostureKind::PushUp);
+        Step(pose, GetTickCount64(), postureOk, Config::Pushup(), offHours);
+    }
+
+    void PushUpDetector::Update(const BodyPose& pose, uint64_t nowMs, bool postureOk, const PushupParams& p)
+    {
+        // The session and the schedule are PhoneLink's to check (CreditRep).
+        Step(pose, nowMs, postureOk, p, false);
+    }
+
+    void PushUpDetector::Step(const BodyPose& pose, uint64_t now, bool postureOk, const PushupParams& p, bool offHours)
+    {
+        State* const st = m_publish ? &GetState() : nullptr;
+        if (!postureOk) return;
 
         // Elbow angle: shoulder-elbow-wrist. Average both arms when
         // both have a confident triplet.
@@ -199,10 +209,9 @@ namespace ExerciseUnlock::Svc
         // axis the body projects onto in the camera frame).
         if (nElbow == 0 || !havePlank || !wristsNearFloor)
         {
-            const uint64_t nowT = GetTickCount64();
-            if (nowT - m_lastDebugLogMs >= 1000)
+            if (st && now - m_lastDebugLogMs >= 1000)
             {
-                m_lastDebugLogMs = nowT;
+                m_lastDebugLogMs = now;
                 auto c = [](const auto& j) { return j.confidence; };
                 LogF(L"pushup SKIP nElbow=%d havePlank=%d horiz=%d wrFloor=%d "
                      L"|wrist-ankle|=%.2f dx=%.2f dy=%.2f "
@@ -223,7 +232,7 @@ namespace ExerciseUnlock::Svc
                 m_smoothedElbow = 0.0f;
                 m_smoothedPlank = 0.0f;
                 m_repStartTickMs = 0;
-                st.pushUpPhase.store(static_cast<uint8_t>(PushUpPhase::Unknown));
+                if (st) st->pushUpPhase.store(static_cast<uint8_t>(PushUpPhase::Unknown));
             }
             return;
         }
@@ -255,8 +264,11 @@ namespace ExerciseUnlock::Svc
         const float elbow    = m_smoothedElbow;
         const float plankAvg = m_smoothedPlank;
 
-        st.pushUpElbowAngle.store(elbow);
-        st.pushUpPlankAngle.store(plankAvg);
+        if (st)
+        {
+            st->pushUpElbowAngle.store(elbow);
+            st->pushUpPlankAngle.store(plankAvg);
+        }
 
         if (m_phase == PushUpPhase::GoingDown || m_phase == PushUpPhase::Down ||
             m_phase == PushUpPhase::GoingUp)
@@ -270,9 +282,7 @@ namespace ExerciseUnlock::Svc
         if (rawElbow < m_windowMinRawElbow) m_windowMinRawElbow = rawElbow;
         if (rawElbow > m_windowMaxRawElbow) m_windowMaxRawElbow = rawElbow;
 
-        const uint64_t now = GetTickCount64();
-
-        if (now - m_lastDebugLogMs >= 1000)
+        if (st && now - m_lastDebugLogMs >= 1000)
         {
             m_lastDebugLogMs = now;
             LogF(L"pushup DBG smooth=%.1f raw=[%.1f..%.1f] plank=%.1f phase=%u",
@@ -282,15 +292,16 @@ namespace ExerciseUnlock::Svc
             m_windowMaxRawElbow = -1.0f;
         }
 
-        // Pull live thresholds from Config each frame so a config
-        // reload / hand-edit shows up without a service restart.
-        const float kUp       = Config::PushupUpAngle();
-        const float kDown     = Config::PushupDownAngle();
-        const float kGoDown   = Config::PushupGoingDownAngle();
-        const float kGoUp     = Config::PushupGoingUpAngle();
-        const float kPlankMin = Config::PushupPlankMinAngle();
-        const uint64_t kMinRepMs = static_cast<uint64_t>(Config::PushupMinRepMs());
-        const uint64_t kMaxRepMs = static_cast<uint64_t>(Config::PushupMaxRepMs());
+        // The webcam's thresholds are Config's live values, taken each
+        // frame so a config reload / hand-edit shows up without a service
+        // restart.
+        const float kUp       = p.up;
+        const float kDown     = p.down;
+        const float kGoDown   = p.goingDown;
+        const float kGoUp     = p.goingUp;
+        const float kPlankMin = p.plankMin;
+        const uint64_t kMinRepMs = static_cast<uint64_t>(p.minRepMs);
+        const uint64_t kMaxRepMs = static_cast<uint64_t>(p.maxRepMs);
 
         // Plank gate: hard requirement. We only reached here because
         // havePlank was true (see the skip block above), so plankAvg is
@@ -299,7 +310,7 @@ namespace ExerciseUnlock::Svc
         if (plankAvg < kPlankMin)
         {
             m_phase = PushUpPhase::NotInPlank;
-            st.pushUpPhase.store(static_cast<uint8_t>(PushUpPhase::NotInPlank));
+            if (st) st->pushUpPhase.store(static_cast<uint8_t>(PushUpPhase::NotInPlank));
             return;
         }
 
@@ -338,7 +349,7 @@ namespace ExerciseUnlock::Svc
                     m_repStartTickMs = now;
                 }
             }
-            st.pushUpPhase.store(static_cast<uint8_t>(m_phase));
+            if (st) st->pushUpPhase.store(static_cast<uint8_t>(m_phase));
             return;
         }
 
@@ -396,7 +407,7 @@ namespace ExerciseUnlock::Svc
                 float quality = (span > 1.0f) ? (depth / span) : 1.0f;
                 if (quality < 0.0f) quality = 0.0f;
                 if (quality > 1.0f) quality = 1.0f;
-                const float qMin = Config::PushupQualityMin();
+                const float qMin = p.qualityMin;
                 const bool timingOk = (dur >= kMinRepMs && dur <= kMaxRepMs);
                 const bool qualityOk = (qMin <= 0.0f) || (quality >= qMin);
                 RepResult r;
@@ -409,9 +420,9 @@ namespace ExerciseUnlock::Svc
                 r.tooSlow = !timingOk && dur > kMaxRepMs;
                 r.shallow = !qualityOk;
                 m_lastRep = r;
-                if (counted && offHours)
+                if (st && counted && offHours)
                 {
-                    st.offHoursReps.fetch_add(1);
+                    st->offHoursReps.fetch_add(1);
                     LogF(L"pushup outside the schedule - not credited  dur=%llums", dur);
                 }
                 else if (counted)
@@ -419,12 +430,15 @@ namespace ExerciseUnlock::Svc
                     // Shared total (phone reps land here too) — see
                     // SquatDetector.
                     ++m_count;
-                    const uint32_t total = st.pushUpCount.fetch_add(1) + 1;
-                    LogF(L"pushup +1  total=%u  elbow=%.1f  plank=%.1f  dur=%llums  q=%.2f",
-                         total, elbow, plankAvg, dur, quality);
-                    PersistentState::Save();
+                    if (st)
+                    {
+                        const uint32_t total = st->pushUpCount.fetch_add(1) + 1;
+                        LogF(L"pushup +1  total=%u  elbow=%.1f  plank=%.1f  dur=%llums  q=%.2f",
+                             total, elbow, plankAvg, dur, quality);
+                        PersistentState::Save();
+                    }
                 }
-                else
+                else if (st)
                 {
                     LogF(L"pushup DROP dur=%llums q=%.2f (window %llu..%llu, qMin=%.2f)",
                          dur, quality, kMinRepMs, kMaxRepMs, qMin);
@@ -446,6 +460,6 @@ namespace ExerciseUnlock::Svc
             break;
         }
 
-        st.pushUpPhase.store(static_cast<uint8_t>(m_phase));
+        if (st) st->pushUpPhase.store(static_cast<uint8_t>(m_phase));
     }
 }

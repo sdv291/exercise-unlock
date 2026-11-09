@@ -10,6 +10,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ExerciseUnlockAdmin", "Exer
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ExerciseUnlockCalibrate", "ExerciseUnlockCalibrate\ExerciseUnlockCalibrate.vcxproj", "{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0004}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ExerciseUnlockUpdate", "ExerciseUnlockUpdate\ExerciseUnlockUpdate.vcxproj", "{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0005}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -32,6 +34,10 @@ Global
 		{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0004}.Debug|x64.Build.0 = Debug|x64
 		{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0004}.Release|x64.ActiveCfg = Release|x64
 		{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0004}.Release|x64.Build.0 = Release|x64
+		{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0005}.Debug|x64.ActiveCfg = Debug|x64
+		{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0005}.Debug|x64.Build.0 = Debug|x64
+		{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0005}.Release|x64.ActiveCfg = Release|x64
+		{9F1A2F70-5B7B-4B0E-9C4D-1B4C3C7A0005}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

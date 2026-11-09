@@ -2,9 +2,16 @@
 //
 // Opened from the QR code on the PC's lock screen (/s/<TOKEN>). Talks to
 // the PC through the relay (/ws/phone): gets the exercises and calibrated
-// thresholds, runs MoveNet on the camera, counts reps with the same
-// detectors as the PC (exercises.js) and reports each rep. The PC credits
-// it and answers with the running totals.
+// thresholds, runs MoveNet on the camera and streams the poses (17 joints
+// a frame, never a picture). The PC counts the reps from them with its own
+// detectors, credits them and answers each one ({t:'result'}) and with the
+// running totals. The page counts too (exercises.js, the same detectors),
+// but only for what it shows: the posture banner, the angle, the debug
+// panel. A PC from before pose streaming (no `poses` in its config) still
+// gets the page's own {t:'rep'}.
+//
+// The calibration wizard on the PC opens the same page (config mode
+// 'calib'): it only streams poses and shows the wizard's current step.
 //
 // /demo?demo=squat, =pushup or =situp feeds synthetic poses instead of
 // the camera - only without a PC, for trying the page out.
@@ -57,6 +64,12 @@
       ex_pushup: 'Віджимання',
       ex_situp: 'Прес',
       demo: 'Демо без камери',
+      calibHint: 'Калібрування: постав телефон туди, де він стоятиме під час вправ, і не рухай його. Далі — за підказками на комп\'ютері.',
+      photo: 'Зробити фото',
+      calibSavedTitle: 'Калібрування збережено',
+      calibSaved: 'Тепер телефон рахує вправи за новими налаштуваннями.',
+      calibEndedTitle: 'Калібрування завершено',
+      calibEnded: 'Майстер калібрування на комп\'ютері закрито.',
     },
     en: {
       connecting: 'Connecting to the computer…',
@@ -94,6 +107,12 @@
       ex_pushup: 'Push-ups',
       ex_situp: 'Sit-ups',
       demo: 'Demo without camera',
+      calibHint: 'Calibration: put the phone where it will stand during the exercises and keep it still. Then follow the computer.',
+      photo: 'Take photo',
+      calibSavedTitle: 'Calibration saved',
+      calibSaved: 'The phone now counts with the new settings.',
+      calibEndedTitle: 'Calibration finished',
+      calibEnded: 'The calibration wizard on the computer was closed.',
     },
   };
   const lang = /^(uk|ru|be)/i.test(navigator.language || '') ? 'uk' : 'en';
@@ -110,12 +129,14 @@
     start: $('screen-start'), live: $('screen-live'), end: $('screen-end'),
     startMsg: $('start-msg'), startBtn: $('btn-start'), hint: $('place-hint'),
     video: $('video'), canvas: $('overlay'), banner: $('banner'), toast: $('toast'), debug: $('debug'),
-    counters: $('counters'), barFill: $('bar-fill'), earned: $('earned-text'),
+    counters: $('counters'), progress: $('progress'), barFill: $('bar-fill'), earned: $('earned-text'),
+    calib: $('calib'), calibText: $('calib-text'), photo: $('btn-photo'),
     flip: $('btn-flip'), endTitle: $('end-title'), endMsg: $('end-msg'),
   };
   ui.hint.textContent = T('placeHint');
   ui.startBtn.textContent = T('start');
   ui.flip.textContent = T('flip');
+  ui.photo.textContent = T('photo');
   ui.startMsg.textContent = T('connecting');
 
   function show(screen) {
@@ -173,9 +194,14 @@
                 '/ws/phone?token=' + encodeURIComponent(token);
 
   let ws = null, retry = 0, ended = false;
-  let config = null;          // {exercises:[{id, params}], aspect, ...} from the PC
+  let config = null;          // {exercises:[{id, params}], aspect, poses, space, mode} from the PC
   let status = null;          // last {t:'status'} from the PC
+  let calibStep = null;       // last {t:'calib'} from the calibration wizard
   let seq = 0;
+
+  // The PC counts from streamed poses (and answers {t:'result'}).
+  const verified = () => !!(config && config.poses);
+  const calibrating = () => !!(config && config.mode === 'calib');
 
   function sendMsg(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
@@ -196,6 +222,7 @@
     ws.onclose = (e) => {
       if (ended) return;
       if (e.code === 4404) return finish(T('endedTitle'), T('expired'));
+      if (e.code === 4410 && calibrating()) return finish(T('calibEndedTitle'), T('calibEnded'));
       if (e.code === 4410) return finish(T('endedTitle'), T('pcOffline'));
       if (e.code === 4001) return finish(T('endedTitle'), T('replaced'));
       if (e.code === 4000) return finish(T('endedTitle'), T('ended'));
@@ -211,10 +238,21 @@
         config = m;
         buildCounters();
         coach = new EU.Coach(config.exercises || []);
+        // The wizard's page: its step instead of counters and progress.
+        ui.counters.hidden = ui.progress.hidden = calibrating();
+        ui.calib.hidden = !calibrating();
+        if (calibrating()) ui.hint.textContent = T('calibHint');
         if (!running) {
           ui.startMsg.textContent = '';
           ui.startBtn.hidden = false;
         }
+        break;
+      case 'result':
+        onResult(m);
+        break;
+      case 'calib':
+        calibStep = m;
+        renderCalib();
         break;
       case 'status': {
         const wasEnough = status && status.enough;
@@ -227,8 +265,10 @@
         toast(T('rejected', m.why || '?'));
         break;
       case 'bye':
-        finish(m.reason === 'unlocked' ? T('unlockedTitle') : T('endedTitle'),
-               m.reason === 'unlocked' ? T('unlocked') : T('ended'));
+        if (m.reason === 'saved') finish(T('calibSavedTitle'), T('calibSaved'));
+        else if (calibrating()) finish(T('calibEndedTitle'), T('calibEnded'));
+        else finish(m.reason === 'unlocked' ? T('unlockedTitle') : T('endedTitle'),
+                    m.reason === 'unlocked' ? T('unlocked') : T('ended'));
         break;
       default:
         break;
@@ -265,6 +305,32 @@
     ui.barFill.style.width = (min > 0 ? Math.min(100, (earned / min) * 100) : 100) + '%';
     ui.earned.textContent = status.enough ? T('enough') : T('earned', mmss(earned), mmss(min));
     ui.earned.className = status.enough ? 'ok' : '';
+  }
+
+  // The PC's verdict on a rep it counted from the poses: the sound and the
+  // counter follow it, not this page's own detectors.
+  function onResult(m) {
+    if (m.ok) {
+      sounds.rep();
+      bump(m.ex);
+      return;
+    }
+    const now = performance.now();
+    if (now - lastDropToast < 2500) return;
+    lastDropToast = now;
+    const key = 'drop_' + m.why;
+    toast(TEXT.en[key] !== undefined ? T(key) : T('rejected', m.why || '?'));
+    sounds.drop();
+  }
+
+  // The wizard's current step, from the PC; "Take photo" here does what it
+  // does there.
+  function renderCalib() {
+    if (!calibStep || !running) return;
+    banner(calibStep.title || '', 'go');
+    ui.calibText.textContent = calibStep.text || '';
+    ui.photo.hidden = !calibStep.photo;
+    ui.photo.disabled = !!calibStep.busy;
   }
 
   // Count up right away; the PC's next status has the authoritative total.
@@ -339,11 +405,24 @@
   // Frame-normalized -> the PC camera's convention. The PC measures angles
   // on x / frameWidth, y / frameHeight of its own camera, so its calibrated
   // thresholds include that camera's aspect ratio. Rescale x so that a
-  // pixel distance counts the same here as it would there.
+  // pixel distance counts the same here as it would there. Thresholds
+  // calibrated on this phone (space 'phone') are in its own frame already.
   function toPcSpace(pose, W, H) {
+    if (config && config.space === 'phone') return pose;
     const aspect = (config && config.aspect) || 16 / 9;
     const k = W / (H * aspect);
     return pose.map((j) => ({ x: j.x * k, y: j.y, c: j.c }));
+  }
+
+  // What the PC counts from: the frame's 17 joints, x / y in 1/10000 of the
+  // frame, confidence in percent - never the picture. Off while exercises
+  // don't count anyway (outside the hours, computer unlocked).
+  function streamPose(r, now) {
+    if (!verified() || (!calibrating() && !countingActive())) return;
+    const k = [];
+    const clamp = (v) => Math.max(-10000, Math.min(20000, Math.round(v)));
+    for (const j of r.pose) k.push(clamp(j.x * 10000), clamp(j.y * 10000), Math.round(Math.max(0, Math.min(1, j.c)) * 100));
+    sendMsg({ t: 'pose', ts: Math.round(now), w: r.W, h: r.H, k });
   }
 
   // ------------------------------------------------------------ failure reports
@@ -397,6 +476,7 @@
           return;
         }
         frame = { pose: r.pose, pcPose: toPcSpace(r.pose, r.W, r.H), W: r.W, H: r.H };
+        streamPose(r, now);
         if (!failures.firstFrame) {
           failures.firstFrame = true;
           report('firstframe', { ms: Math.round(now - failures.startedAt), w: r.W, h: r.H });
@@ -417,6 +497,11 @@
 
   function process(frame, now) {
     if (!coach) return;
+    if (calibrating()) {
+      // The wizard measures on the PC; the banner is its step (renderCalib).
+      diagnose(frame, now, null);
+      return;
+    }
     if (!countingActive()) {
       // Same as the service: detectors are frozen, nothing accumulates.
       banner(status.why === 'hours' ? T('inactiveHours')
@@ -437,13 +522,15 @@
            : r.posture === EU.Posture.SitUp ? T('seeSitUp') : T('seeNone'),
              r.posture === EU.Posture.None ? '' : 'go');
     }
+    // A PC that counts from the poses answers with {t:'result'} instead.
     for (const rep of r.reps) {
+      if (verified()) continue;
       seq++;
       sendMsg({ t: 'rep', ex: rep.id, n: seq, q: Math.round(rep.quality * 100) / 100, dur: Math.round(rep.durMs) });
       sounds.rep();
       bump(rep.id);
     }
-    if (r.drops.length && now - lastDropToast > 2500) {
+    if (!verified() && r.drops.length && now - lastDropToast > 2500) {
       lastDropToast = now;
       toast(T('drop_' + r.drops[0].why));
       sounds.drop();
@@ -453,12 +540,19 @@
 
   // ------------------------------------------------------------ diagnostics
 
-  // Tap the video: everything that decides "counted or not", so a parent
-  // can see why a rep didn't count (and send a screenshot).
+  // Five quick taps on the video: everything that decides "counted or
+  // not", so a parent can see why a rep didn't count (and send a
+  // screenshot). A child touching the screen now and then never opens it.
   const PHASES = ['unknown', 'top', 'going down', 'down', 'going up', 'not in position'];
   const diag = { fps: 0, lastT: 0, angles: [], last: '', lastAt: 0, shownAt: 0,
                  posture: '', sentAt: 0, frames: 0, twoLegs: 0 };
+  let debugTaps = [];
   document.querySelector('.stage').addEventListener('click', () => {
+    const now = performance.now();
+    debugTaps = debugTaps.filter((t) => now - t < 3000);
+    debugTaps.push(now);
+    if (debugTaps.length < 5) return;
+    debugTaps = [];
     ui.debug.hidden = !ui.debug.hidden;
   });
 
@@ -620,9 +714,11 @@
     show(ui.live);
     renderStatus();
     startLoop();
+    renderCalib();
   }
 
   ui.startBtn.addEventListener('click', start);
+  ui.photo.addEventListener('click', () => sendMsg({ t: 'tap' }));
   ui.flip.addEventListener('click', async () => {
     if (demo) return;
     facing = facing === 'user' ? 'environment' : 'user';

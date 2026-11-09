@@ -40,10 +40,10 @@ static int RunConsole()
     }
 
     LogF(L"running in --console mode. Press Ctrl+C to stop.");
-    RunUntilStopped(g_consoleStopEvent);
+    const DWORD exitCode = RunUntilStopped(g_consoleStopEvent);
 
     CloseHandle(g_consoleStopEvent);
-    return 0;
+    return exitCode == NO_ERROR ? 0 : 1;
 }
 
 int wmain(int argc, wchar_t** argv)

@@ -10,11 +10,11 @@ namespace ExerciseUnlock::Svc
     // While the lock screen is up (same rule as the webcam, see
     // CameraWantedNow) this keeps a WebSocket to <relay>/ws/pc and offers a
     // pairing token; the lock-screen QR window shows <relay>/S/<TOKEN>. A
-    // phone that opens it gets the exercises and calibrated thresholds,
-    // counts reps itself and reports "+1 squat"; reps are credited here
-    // under the same rules as webcam reps (schedule, no running session,
-    // not faster than the rep timing allows). On unlock the phone is told
-    // and the connection closes.
+    // phone that opens it gets the exercises and calibrated thresholds and
+    // streams its poses (17 joints a frame, no pictures); the reps are
+    // counted here from them by the webcam's detectors (PhoneCounter) and
+    // credited under the same rules as webcam reps (schedule, no running
+    // session). On unlock the phone is told and the connection closes.
     class PhoneLink
     {
     public:

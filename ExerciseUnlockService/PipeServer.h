@@ -17,8 +17,9 @@ namespace ExerciseUnlock::Svc
     {
     public:
         // Runs the accept loop on the caller's thread until Stop() is
-        // called or the passed stop event is signaled.
-        void Run(HANDLE stopEvent);
+        // called or the passed stop event is signaled. False: it could
+        // not serve at all.
+        bool Run(HANDLE stopEvent);
 
         void Stop();
 

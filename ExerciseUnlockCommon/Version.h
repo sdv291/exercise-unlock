@@ -7,10 +7,10 @@ namespace ExerciseUnlock
     // Semver. Bump before every release — the UpdateChecker uses
     // these numbers to compare against the server manifest.
     inline constexpr int kVersionMajor = 1;
-    inline constexpr int kVersionMinor = 3;
-    inline constexpr int kVersionPatch = 3;
+    inline constexpr int kVersionMinor = 4;
+    inline constexpr int kVersionPatch = 0;
 
-    inline constexpr wchar_t kVersionString[] = L"1.3.3";
+    inline constexpr wchar_t kVersionString[] = L"1.4.0";
 
     // Pack major.minor.patch into one comparable uint32 (M<<16|m<<8|p).
     inline constexpr uint32_t PackVersion(int M, int m, int p)

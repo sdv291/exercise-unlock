@@ -87,6 +87,7 @@ namespace ExerciseUnlock::Svc
         m_hipHistory.clear();
         m_lastRep = RepResult{};
 
+        if (!m_publish) return;
         auto& st = GetState();
         st.squatCount.store(0);
         st.squatPhase.store(static_cast<uint8_t>(SquatPhase::Unknown));
@@ -125,11 +126,20 @@ namespace ExerciseUnlock::Svc
         // rep in progress. Letting the detector's own missStreak
         // decide when to tear down state keeps a real rep alive
         // across short gate blips.
-        if (st.postureKind.load() !=
-            static_cast<uint8_t>(Ipc::PostureKind::Squat))
-        {
-            return;
-        }
+        const bool postureOk = st.postureKind.load() == static_cast<uint8_t>(Ipc::PostureKind::Squat);
+        Step(pose, GetTickCount64(), postureOk, Config::Squat(), offHours);
+    }
+
+    void SquatDetector::Update(const BodyPose& pose, uint64_t nowMs, bool postureOk, const SquatParams& p)
+    {
+        // The session and the schedule are PhoneLink's to check (CreditRep).
+        Step(pose, nowMs, postureOk, p, false);
+    }
+
+    void SquatDetector::Step(const BodyPose& pose, uint64_t now, bool postureOk, const SquatParams& p, bool offHours)
+    {
+        State* const st = m_publish ? &GetState() : nullptr;
+        if (!postureOk) return;
 
         // Per-leg knee angles when the hip/knee/ankle triplet on that
         // side is confident. We used to AVERAGE both legs, which lets
@@ -179,7 +189,7 @@ namespace ExerciseUnlock::Svc
                 m_smoothedInit = false;
                 m_smoothedRatio = 0.0f;
                 m_repStartTickMs = 0;
-                st.squatPhase.store(static_cast<uint8_t>(SquatPhase::Unknown));
+                if (st) st->squatPhase.store(static_cast<uint8_t>(SquatPhase::Unknown));
             }
             return;
         }
@@ -263,7 +273,7 @@ namespace ExerciseUnlock::Svc
         const float angle = m_smoothedRatio;
 
         // Wire field holds the smoothed knee angle in degrees.
-        st.squatKneeAngle.store(angle);
+        if (st) st->squatKneeAngle.store(angle);
 
         // Track deepest point of the current descent for quality
         // scoring on the way back up.
@@ -273,13 +283,12 @@ namespace ExerciseUnlock::Svc
             if (angle < m_repMinAngle) m_repMinAngle = angle;
         }
 
-        const uint64_t now = GetTickCount64();
-
-        // Pull live thresholds from Config each frame so a config
-        // reload / hand-edit shows up without a service restart.
-        const int   mode     = Config::SquatDetectorMode();  // 0=angle, 1=floor, 2=both
-        const uint64_t kMinRepMs = static_cast<uint64_t>(Config::SquatMinRepMs());
-        const uint64_t kMaxRepMs = static_cast<uint64_t>(Config::SquatMaxRepMs());
+        // The webcam's thresholds are Config's live values, taken each
+        // frame so a config reload / hand-edit shows up without a service
+        // restart.
+        const int   mode     = p.mode;  // 0=angle, 1=floor, 2=both
+        const uint64_t kMinRepMs = static_cast<uint64_t>(p.minRepMs);
+        const uint64_t kMaxRepMs = static_cast<uint64_t>(p.maxRepMs);
 
         // --- compute floor-relative hip fraction when needed ---
         //   hipFrac = (ankleY - hipY) / (ankleY - shoulderY)
@@ -318,8 +327,8 @@ namespace ExerciseUnlock::Svc
         // Resolve effective "standing" / "down" booleans per mode so
         // the state machine below can stay single-shape.
         auto isStandingNow = [&]() -> bool {
-            const bool angleOk = (angle >= Config::SquatStandingAngle());
-            const bool floorOk = haveFloor && (hipFrac >= Config::SquatStandingHipFrac());
+            const bool angleOk = (angle >= p.standing);
+            const bool floorOk = haveFloor && (hipFrac >= p.standingHipFrac);
             if (mode == 0) return angleOk;
             if (mode == 1) return floorOk;
             return angleOk && floorOk;                        // mode == 2 (both)
@@ -335,22 +344,22 @@ namespace ExerciseUnlock::Svc
             // asymmetric knee lifts where the standing leg's ankle
             // confidence stays low.
             if (nGood < 2) return false;
-            const bool angleOk = (angle <= Config::SquatDownAngle());
-            const bool floorOk = haveFloor && (hipFrac <= Config::SquatDownHipFrac());
+            const bool angleOk = (angle <= p.down);
+            const bool floorOk = haveFloor && (hipFrac <= p.downHipFrac);
             if (mode == 0) return angleOk;
             if (mode == 1) return floorOk;
             return angleOk && floorOk;
         };
         auto crossGoingDown = [&]() -> bool {
-            const bool angleOk = (angle < Config::SquatGoingDownAngle());
-            const bool floorOk = haveFloor && (hipFrac < Config::SquatGoingDownHipFrac());
+            const bool angleOk = (angle < p.goingDown);
+            const bool floorOk = haveFloor && (hipFrac < p.goingDownHipFrac);
             if (mode == 0) return angleOk;
             if (mode == 1) return floorOk;
             return angleOk || floorOk;                        // "both" starts descent on either
         };
         auto crossGoingUp = [&]() -> bool {
-            const bool angleOk = (angle > Config::SquatGoingUpAngle());
-            const bool floorOk = haveFloor && (hipFrac > Config::SquatGoingUpHipFrac());
+            const bool angleOk = (angle > p.goingUp);
+            const bool floorOk = haveFloor && (hipFrac > p.goingUpHipFrac);
             if (mode == 0) return angleOk;
             if (mode == 1) return floorOk;
             return angleOk || floorOk;
@@ -359,12 +368,12 @@ namespace ExerciseUnlock::Svc
         // Keep the kStand/kDown names below as "effective booleans" via
         // the lambdas. For logging continuity we still expose the raw
         // angle values the FSM would otherwise reference.
-        const float kStand   = Config::SquatStandingAngle();
-        const float kDown    = Config::SquatDownAngle();
+        const float kStand   = p.standing;
+        const float kDown    = p.down;
         (void)kStand; (void)kDown;   // (angle shown in DBG log still)
 
         // Debug log once per second — now that hipFrac is computed.
-        if (now - m_lastDebugLogMs >= 1000)
+        if (st && now - m_lastDebugLogMs >= 1000)
         {
             m_lastDebugLogMs = now;
             auto conf = [](const auto& j) { return j.confidence; };
@@ -408,7 +417,7 @@ namespace ExerciseUnlock::Svc
             {
                 // Intermediate — try to guess which side we're on so
                 // we don't get stuck in Unknown between glitches.
-                if (angle >= Config::SquatGoingUpAngle())
+                if (angle >= p.goingUp)
                 {
                     m_phase = SquatPhase::Standing;
                     m_lastStandingTickMs = now;
@@ -421,7 +430,7 @@ namespace ExerciseUnlock::Svc
                     m_repStartHipX   = curHipX;
                 }
             }
-            st.squatPhase.store(static_cast<uint8_t>(m_phase));
+            if (st) st->squatPhase.store(static_cast<uint8_t>(m_phase));
             return;
         }
 
@@ -517,7 +526,7 @@ namespace ExerciseUnlock::Svc
                 float quality = (span > 1.0f) ? (depth / span) : 1.0f;
                 if (quality < 0.0f) quality = 0.0f;
                 if (quality > 1.0f) quality = 1.0f;
-                const float qMin = Config::SquatQualityMin();
+                const float qMin = p.qualityMin;
                 const bool timingOk = (m_repStartTickMs != 0 &&
                                        dur >= kMinRepMs && dur <= kMaxRepMs);
                 const bool qualityOk = (qMin <= 0.0f) || (quality >= qMin);
@@ -527,7 +536,7 @@ namespace ExerciseUnlock::Svc
                 // and now, this wasn't a stationary squat — it was the
                 // user stepping around. Only enforced when we actually
                 // have both snapshot and current hip X.
-                const float maxDrift = Config::SquatMaxHipDrift();
+                const float maxDrift = p.maxHipDrift;
                 float hipDrift = 0.0f;
                 bool  hipDriftOk = true;
                 if (maxDrift > 0.0f &&
@@ -552,7 +561,7 @@ namespace ExerciseUnlock::Svc
                 // reliably because MoveNet rates the hip joint one
                 // of the most-confident, independent of per-leg
                 // angle noise that fooled every earlier gate.
-                const float minDrop = Config::SquatMinHipDrop();
+                const float minDrop = p.minHipDrop;
                 float hipDrop = 0.0f;
                 bool  hipDropOk = true;
                 if (minDrop > 0.0f &&
@@ -584,9 +593,9 @@ namespace ExerciseUnlock::Svc
                 r.hipsStayed = !hipDropOk;
                 r.hipDrop    = hipDrop;
                 m_lastRep    = r;
-                if (counted && offHours)
+                if (st && counted && offHours)
                 {
-                    st.offHoursReps.fetch_add(1);
+                    st->offHoursReps.fetch_add(1);
                     LogF(L"squat outside the schedule - not credited  dur=%llums", dur);
                 }
                 else if (counted)
@@ -596,15 +605,18 @@ namespace ExerciseUnlock::Svc
                     // counter, and this detector restarts with every
                     // camera stream.
                     ++m_count;
-                    const uint32_t total = st.squatCount.fetch_add(1) + 1;
-                    LogF(L"squat +1  total=%u  angle=%.1f  dur=%llums  q=%.2f  "
-                         L"hipDx=%.2f osc=%d asym=%.1f hipDy=%.2f",
-                         total, angle, dur, quality,
-                         hipDrift, m_repOscillations, m_repMaxAsymmetry,
-                         hipDrop);
-                    PersistentState::Save();
+                    if (st)
+                    {
+                        const uint32_t total = st->squatCount.fetch_add(1) + 1;
+                        LogF(L"squat +1  total=%u  angle=%.1f  dur=%llums  q=%.2f  "
+                             L"hipDx=%.2f osc=%d asym=%.1f hipDy=%.2f",
+                             total, angle, dur, quality,
+                             hipDrift, m_repOscillations, m_repMaxAsymmetry,
+                             hipDrop);
+                        PersistentState::Save();
+                    }
                 }
-                else
+                else if (st)
                 {
                     LogF(L"squat DROP dur=%llums q=%.2f hipDx=%.2f osc=%d "
                          L"asym=%.1f hipDy=%.2f (window %llu..%llu, qMin=%.2f, "
@@ -630,6 +642,6 @@ namespace ExerciseUnlock::Svc
             break;
         }
 
-        st.squatPhase.store(static_cast<uint8_t>(m_phase));
+        if (st) st->squatPhase.store(static_cast<uint8_t>(m_phase));
     }
 }

@@ -29,6 +29,7 @@ pwsh -File tools\redeploy.ps1     # elevated
 - `ExerciseUnlockProvider.dll` — credential provider DLL
 - `ExerciseUnlockService.exe` — сервис + сенсорный pipeline
 - `ExerciseUnlockAdmin.exe` — админ CLI
+- `ExerciseUnlockUpdate.exe` — окно «доступна новая версия» с кнопкой «скачать и установить» (его открывает сервис)
 - `onnxruntime.dll`, `movenet_lightning.onnx`, `movenet.data`, `config.ini` — рантайм
 
 ### Шаг 1 — установить сервис (от админа)

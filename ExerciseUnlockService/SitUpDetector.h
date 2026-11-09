@@ -4,6 +4,7 @@
 #include "PoseEstimator.h"
 #include "AngleFilter.h"
 #include "RepResult.h"
+#include "DetectorParams.h"
 
 namespace ExerciseUnlock::Svc
 {
@@ -19,13 +20,25 @@ namespace ExerciseUnlock::Svc
     class SitUpDetector
     {
     public:
+        // publish (the webcam's): Config's thresholds, the tick clock, and
+        // phase / angle / the shared count written into State. A phone's
+        // (publish = false, PhoneCounter) gets its clock, posture and
+        // thresholds with every frame and keeps its results to itself -
+        // see LastRep().
+        explicit SitUpDetector(bool publish = true) : m_publish(publish) {}
+
         void Update(const BodyPose& pose);
+        // A phone's frame: postureOk = its own classifier latched SitUp.
+        void Update(const BodyPose& pose, uint64_t nowMs, bool postureOk, const SitupParams& p);
         void Reset();
 
         // The last finished attempt (counted or dropped, and why).
         const RepResult& LastRep() const { return m_lastRep; }
 
     private:
+        void Step(const BodyPose& pose, uint64_t now, bool postureOk, const SitupParams& p, bool offHours);
+
+        bool             m_publish = true;
         RepResult        m_lastRep{};
         Ipc::SitUpPhase  m_phase{ Ipc::SitUpPhase::Unknown };
         uint64_t         m_repStartTickMs{ 0 };

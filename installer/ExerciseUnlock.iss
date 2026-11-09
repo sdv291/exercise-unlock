@@ -17,9 +17,11 @@
 ;     it in the DPAPI vault (via ExerciseUnlockAdmin, password passed in an
 ;     environment variable — never on a command line or on disk)
 ;   * registers the credential provider, installs + hardens the service
-;   * optionally disables PIN / Windows Hello sign-in (tools\lock-user.ps1)
-;   * optionally runs the angle calibration (ExerciseUnlockCalibrate.exe):
-;     live camera + 6 photos and test reps -> thresholds written to config.ini
+;   * optionally disables PIN / Windows Hello sign-in and time zone changes
+;     by standard accounts (tools\lock-user.ps1)
+;   * starts the calibration (ExerciseUnlockCalibrate.exe) when "Finish" is
+;     clicked, if its box on the last page is ticked: live camera, 6 photos
+;     and test reps -> thresholds written to config.ini
 ; All runtime data (vault, state, logs, users.allow, sounds) lives in
 ; {app}\data, locked to SYSTEM + Administrators; components find it via
 ; HKLM\SOFTWARE\ExerciseUnlock\InstallDir (ExerciseUnlockCommon\Paths.h).
@@ -84,7 +86,8 @@ Name: "uk"; MessagesFile: "compiler:Languages\Ukrainian.isl"
 Source: "{#StageDir}\bin\ExerciseUnlockService.exe";  DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\bin\ExerciseUnlockAdmin.exe";    DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\bin\ExerciseUnlockCalibrate.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#StageDir}\bin\onnxruntime.dll";            DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\bin\ExerciseUnlockUpdate.exe";   DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\bin\onnxruntime.dll";           DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\bin\movenet_lightning.onnx";     DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\config.ini";                     DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#StageDir}\app.ico";                        DestDir: "{app}"; Flags: ignoreversion
@@ -105,13 +108,30 @@ Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Cr
 Root: HKLM; Subkey: "SOFTWARE\ExerciseUnlock"; Flags: uninsdeletekey
 ; Tells the service, the provider and the admin tool where {app}\data is.
 Root: HKLM; Subkey: "SOFTWARE\ExerciseUnlock"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}"
+; The language of the update window (ExerciseUnlockUpdate.exe).
+Root: HKLM; Subkey: "SOFTWARE\ExerciseUnlock"; ValueType: string; ValueName: "Language"; ValueData: "{language}"
+; Windows Error Reporting keeps the last 5 minidumps of a service crash in
+; {app}\data\dumps (the service restarts itself: sc failure).
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\ExerciseUnlockService.exe"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\ExerciseUnlockService.exe"; ValueType: expandsz; ValueName: "DumpFolder"; ValueData: "{app}\data\dumps"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\ExerciseUnlockService.exe"; ValueType: dword; ValueName: "DumpCount"; ValueData: "5"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\ExerciseUnlockService.exe"; ValueType: dword; ValueName: "DumpType"; ValueData: "1"
 
 [Tasks]
-Name: "calibrate"; Description: "{cm:TaskCalibrate}"
 Name: "lockdown"; Description: "{cm:TaskLockdown}"
 
 [Icons]
 Name: "{group}\{cm:CalibrateShortcut}"; Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"
+; The same wizard with the phone camera picked (its QR code); no webcam is opened.
+Name: "{group}\{cm:CalibratePhoneShortcut}"; Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/phone /lang {language}"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"
+
+[Run]
+; The calibration starts once "Finish" is clicked (ticked on a new install,
+; offered unticked on an update). The service is running by then: on the
+; desktop it leaves the camera alone ([camera] lock_screen_only), and
+; without /setup the calibrator restarts it after saving.
+Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; Description: "{cm:RunCalibrate}"; Flags: postinstall nowait skipifsilent; Check: not KeepSettings
+Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; Description: "{cm:RunCalibrate}"; Flags: postinstall nowait skipifsilent unchecked; Check: KeepSettings
 
 [InstallDelete]
 ; renamed to lock-user.ps1 in 1.1.1
@@ -205,14 +225,14 @@ en.PwdWrong=The password is not correct for the account "%1".
 uk.PwdWrong=Неправильний пароль для облікового запису «%1».
 en.PwdUnverified=Windows could not check the password (error %1). Make sure it is correct.%n%nContinue anyway?
 uk.PwdUnverified=Windows не вдалося перевірити пароль (помилка %1). Переконайтеся, що він правильний.%n%nУсе одно продовжити?
-en.TaskLockdown=Disable PIN, Windows Hello and picture password sign-in on this PC (for all accounts) and forbid the child to change the password. Recommended - otherwise the exercises can be bypassed.
-uk.TaskLockdown=Вимкнути вхід через PIN-код, Windows Hello та графічний пароль на цьому ПК (для всіх облікових записів) і заборонити дитині змінювати пароль. Рекомендовано - інакше вправи можна обійти.
-en.TaskCalibrate=Calibrate the exercise angles for the child now: live camera view and 4 photos, about 3 minutes. Needs the camera and the child.
-uk.TaskCalibrate=Відкалібрувати кути вправ під дитину зараз: відео з камери й 4 фото, близько 3 хвилин. Потрібні камера й дитина.
-en.StatusCalibrate=Calibrating the exercise angles (see the calibration window)...
-uk.StatusCalibrate=Калібрування кутів вправ (див. вікно калібрування)...
+en.TaskLockdown=Disable PIN, Windows Hello and picture password sign-in on this PC (for all accounts), forbid the child to change the password and standard accounts to change the time zone (it would shift the allowed hours). Recommended - otherwise the exercises can be bypassed.
+uk.TaskLockdown=Вимкнути вхід через PIN-код, Windows Hello та графічний пароль на цьому ПК (для всіх облікових записів), заборонити дитині змінювати пароль, а звичайним обліковим записам - часовий пояс (він зсуває дозволені години). Рекомендовано - інакше вправи можна обійти.
+en.RunCalibrate=Start the calibration: tune the exercises to the child with the camera (about 5 minutes, the child should be there)
+uk.RunCalibrate=Запустити калібрування: налаштувати вправи під дитину з камерою (близько 5 хвилин, потрібна дитина)
 en.CalibrateShortcut=Exercise Unlock calibration
 uk.CalibrateShortcut=Калібрування Exercise Unlock
+en.CalibratePhoneShortcut=Exercise Unlock phone calibration
+uk.CalibratePhoneShortcut=Калібрування телефона Exercise Unlock
 en.ReadyChildAccount=Child's account:
 uk.ReadyChildAccount=Обліковий запис дитини:
 en.StatusAccount=Saving the child's account settings...
@@ -621,14 +641,20 @@ begin
 end;
 
 function InitializeSetup: Boolean;
+var
+  Code: Integer;
 begin
   Result := True;
   DetectInstalled;
   { A silent run can only update: a first install asks for the account
-    and its password. }
+    and its password. The app's update window (/FROMAPP=1) gets the
+    normal wizard instead, already elevated. }
   if WizardSilent and not Verified then
   begin
-    SuppressibleMsgBox(CustomMessage('NoSilent'), mbError, MB_OK, IDOK);
+    if Installed and (ExpandConstant('{param:FROMAPP|0}') = '1') then
+      ShellExec('', ExpandConstant('{srcexe}'), '/LANG=' + ActiveLanguage, '', SW_SHOWNORMAL, ewNoWait, Code)
+    else
+      SuppressibleMsgBox(CustomMessage('NoSilent'), mbError, MB_OK, IDOK);
     Result := False;
   end;
 end;
@@ -789,8 +815,7 @@ begin
   Result := Result + NewLine + NewLine + MemoDirInfo;
   if KeepSettings then
   begin
-    { MemoTasksInfo still lists the remembered calibration task, which
-      an update skips (see ConfigureExerciseUnlock). }
+    { The tasks page is skipped on an update: list what it remembered. }
     if WizardIsTaskSelected('lockdown') then
       Result := Result + NewLine + NewLine + SetupMessage(msgReadyMemoTasks) + NewLine + Space + CustomMessage('TaskLockdown');
   end
@@ -968,6 +993,10 @@ begin
   { Not icacls ... /T: on files it leaves an empty ACL that nobody can
     write (1.1.0 bug). secure-data also repairs files damaged by that. }
   RunHidden(Admin, 'secure-data');
+  { Crash dumps of the service ([Registry] LocalDumps): created here so
+    they inherit the data folder's ACL - a dump holds pieces of the
+    service's memory. }
+  ForceDirectories(Data + '\dumps');
   MigrateLegacyData(Data);
   SetArrayLength(Lines, 1);
   Lines[0] := ChildUser;
@@ -988,20 +1017,9 @@ begin
 
   MigrateDefaults(ExpandConstant('{app}\config.ini'), Data + '\sounds.ini');
 
-  { 2. Angle calibration while the camera is still free (the service
-       isn't running yet). It writes the thresholds into config.ini,
-       which the service reads when it starts below. }
-  if WizardIsTaskSelected('calibrate') and not KeepSettings then
-  begin
-    SetStatus(CustomMessage('StatusCalibrate'));
-    if not Exec(ExpandConstant('{app}\ExerciseUnlockCalibrate.exe'), '/setup /lang ' + ActiveLanguage,
-                ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Code) then
-      Log('calibration could not start');
-    Log(Format('calibration exit code %d', [Code]));
-  end;
-
-  { 3. Service: create or repoint, auto-restart on crash, lock it so
-       non-admins can't stop it, start. }
+  { 2. Service: create or repoint, auto-restart on crash, lock it so
+       non-admins can't stop it, start. The calibration comes after
+       setup closes ([Run]). }
   SetStatus(CustomMessage('StatusService'));
   BinPath := ' binPath= "\"' + SvcExe + '\"" start= auto DisplayName= "Exercise Unlock"';
   if RunHidden(SysExe('sc.exe'), 'query ' + SVC) = ERROR_SERVICE_DOES_NOT_EXIST then
@@ -1010,6 +1028,9 @@ begin
     RunHidden(SysExe('sc.exe'), 'config ' + SVC + BinPath);
   RunHidden(SysExe('sc.exe'), 'description ' + SVC + ' "' + CustomMessage('ServiceDescription') + '"');
   RunHidden(SysExe('sc.exe'), 'failure ' + SVC + ' reset= 86400 actions= restart/5000/restart/5000/restart/30000');
+  { ...and when it stops itself with an error (no pipe to serve), not
+    only when it crashes. }
+  RunHidden(SysExe('sc.exe'), 'failureflag ' + SVC + ' 1');
   Code := RunHidden(Admin, 'harden');
   if Code <> 0 then
     MsgBox(FmtMessage(CustomMessage('ErrHarden'), [IntToStr(Code), Data + '\admin.log']), mbError, MB_OK);
@@ -1017,7 +1038,7 @@ begin
   if (Code <> 0) and (Code <> ERROR_SERVICE_ALREADY_RUNNING) then
     MsgBox(FmtMessage(CustomMessage('ErrService'), [IntToStr(Code)]), mbError, MB_OK);
 
-  { 4. Optional lockdown of PIN / Hello / password change. Undo it for a
+  { 3. Optional lockdown of PIN / Hello / password change. Undo it for a
        previously configured account when it changes or is unticked. }
   WantLock := WizardIsTaskSelected('lockdown');
   if (PrevLock = 1) and ((not WantLock) or (CompareText(PrevUser, ChildUser) <> 0)) and (PrevUser <> '') then
@@ -1056,6 +1077,8 @@ begin
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
       FmtMessage(CustomMessage('FinishedNote'), [ChildUser, ExpandConstant('{app}\config.ini')]);
     WizardForm.AdjustLabelHeight(WizardForm.FinishedLabel);
+    { the calibration box goes under the longer text }
+    WizardForm.RunList.Top := WizardForm.FinishedLabel.Top + WizardForm.FinishedLabel.Height + ScaleY(12);
   end;
 end;
 

@@ -22,6 +22,12 @@ namespace ExerciseUnlock::Svc
     class PostureClassifier
     {
     public:
+        // publish (the webcam's): the latched kind goes into
+        // State::postureKind. A phone's (PhoneCounter) keeps it: Latched().
+        explicit PostureClassifier(bool publish = true) : m_publish(publish) {}
+
+        Ipc::PostureKind Latched() const { return m_latched; }
+
         // One pose frame through the classifier. Updates State::
         // postureKind only when the latched decision changes.
         void Update(const BodyPose& pose);
@@ -48,6 +54,7 @@ namespace ExerciseUnlock::Svc
         // SitUp -> Squat) without passing through None.
         static constexpr int kSwitchFrames = 15;
 
+        bool             m_publish = true;
         Ipc::PostureKind m_latched{ Ipc::PostureKind::None };
         Ipc::PostureKind m_pending{ Ipc::PostureKind::None };
         int              m_pendingStreak{ 0 };

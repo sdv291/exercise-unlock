@@ -124,16 +124,23 @@ namespace ExerciseUnlock::Svc
         return s.substr(a, b - a + 1);
     }
 
+    struct Manifest
+    {
+        std::wstring version, download, notes, sha256;
+        std::vector<std::wstring> changesEn, changesUk;   // "What's new", a point each
+    };
+
     // Parse a tiny line-based manifest:
     //   version: 1.2.0
     //   download: https://.../ExerciseUnlock-1.2.0-Setup.exe
     //   notes: https://.../releases/tag/v1.2.0
+    //   sha256: <hex of the installer>
+    //   change-en: <a point of "What's new">   (any number of these, from
+    //   change-uk: <the same in Ukrainian>      installer\changes.txt)
     // Blank lines and `#` comments are ignored.
-    static void ParseManifest(const std::string& utf8,
-                              std::wstring& version,
-                              std::wstring& downloadUrl,
-                              std::wstring& notesUrl)
+    static Manifest ParseManifest(const std::string& utf8)
     {
+        Manifest m;
         const int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8.data(),
                                                 (int)utf8.size(), nullptr, 0);
         std::wstring wide(wideLen, L'\0');
@@ -155,75 +162,163 @@ namespace ExerciseUnlock::Svc
             std::wstring val = Trim(line.substr(colon + 1));
             for (auto& c : key) c = (wchar_t)towlower(c);
 
-            if      (key == L"version")  version     = val;
-            else if (key == L"download") downloadUrl = val;
-            else if (key == L"notes")    notesUrl    = val;
+            if      (key == L"version")   m.version  = val;
+            else if (key == L"download")  m.download = val;
+            else if (key == L"notes")     m.notes    = val;
+            else if (key == L"sha256")    m.sha256   = val;
+            else if (val.empty())         continue;
+            else if (key == L"change-en") m.changesEn.push_back(val);
+            else if (key == L"change-uk") m.changesUk.push_back(val);
         }
+        return m;
     }
 
-    // Reach into the active user session to show a WTSSendMessage
-    // info box. Non-modal from the service's perspective — WTS does
-    // the UI blocking in the user's session, not ours.
-    static void ShowUpdateToast(const std::wstring& version, const std::wstring& url)
+    // A manifest value that goes on a command line in quotes.
+    static bool Plain(const std::wstring& s)
     {
-        DWORD sessionId = WTSGetActiveConsoleSessionId();
-        if (sessionId == 0xFFFFFFFF) return;
-
-        std::wstring title = L"Exercise Unlock — update available";
-        std::wstring body  = L"Version " + version + L" is available.\n\n";
-        if (!url.empty()) body += url;
-        else              body += L"See the project page for the download.";
-
-        DWORD resp = 0;
-        WTSSendMessageW(WTS_CURRENT_SERVER_HANDLE, sessionId,
-                        title.data(), (DWORD)(title.size() * sizeof(wchar_t)),
-                        body.data(),  (DWORD)(body.size()  * sizeof(wchar_t)),
-                        MB_OK | MB_ICONINFORMATION, 0, &resp, FALSE);
+        return s.find_first_of(L"\" \t\r\n") == std::wstring::npos;
     }
 
-    // Which version the toast went out for. In the registry rather than in
-    // State: the service restarts with every boot and every calibrator
-    // save, and that shouldn't bring the same box back each time.
+    // A "What's new" point as one quoted argument: no quote inside, no
+    // backslash before the closing one, not too long.
+    static std::wstring QuotedArg(std::wstring s)
+    {
+        for (auto& c : s)
+            if (c == L'"') c = L'\x201D';
+        if (s.size() > 200) s.resize(200);
+        while (!s.empty() && s.back() == L'\\') s.pop_back();
+        return L"\"" + s + L"\"";
+    }
+
+    // An administrator's session or not. UAC gives administrators a split
+    // token, and its elevation type says so; without one (UAC off, or a
+    // standard account) the groups decide.
+    static bool IsAdminUser(HANDLE token)
+    {
+        TOKEN_ELEVATION_TYPE type{};
+        DWORD cb = 0;
+        if (GetTokenInformation(token, TokenElevationType, &type, sizeof(type), &cb) &&
+            type != TokenElevationTypeDefault)
+            return true;
+        BYTE admins[SECURITY_MAX_SID_SIZE];
+        DWORD size = sizeof(admins);
+        BOOL member = FALSE;
+        HANDLE check = nullptr;   // CheckTokenMembership takes an impersonation token
+        if (CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, admins, &size) &&
+            DuplicateToken(token, SecurityIdentification, &check))
+        {
+            CheckTokenMembership(check, admins, &member);
+            CloseHandle(check);
+        }
+        return member != FALSE;
+    }
+
+    // Starts ExerciseUnlockUpdate.exe (next to the service) as the user
+    // the token belongs to, on their desktop.
+    static bool StartWindow(HANDLE token, const std::wstring& args)
+    {
+        wchar_t self[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, self, MAX_PATH);
+        std::wstring dir = self;
+        dir.resize(dir.find_last_of(L'\\'));
+        const std::wstring exe = dir + L"\\ExerciseUnlockUpdate.exe";
+        std::wstring cmd = L"\"" + exe + L"\"" + args;
+
+        void* env = nullptr;
+        CreateEnvironmentBlock(&env, token, FALSE);
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        si.lpDesktop = const_cast<LPWSTR>(L"winsta0\\default");
+        PROCESS_INFORMATION pi{};
+        const BOOL ok = CreateProcessAsUserW(token, exe.c_str(), cmd.data(), nullptr, nullptr, FALSE,
+                                             CREATE_UNICODE_ENVIRONMENT, env, dir.c_str(), &si, &pi);
+        const DWORD err = GetLastError();
+        if (env) DestroyEnvironmentBlock(env);
+        if (!ok)
+        {
+            LogF(L"update: can't start %s (error %lu)", exe.c_str(), err);
+            return false;
+        }
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return true;
+    }
+
+    // What has been shown, per kind of account. In the registry rather
+    // than in State: the service restarts with every boot and every
+    // calibrator save, and that shouldn't bring the window back each time.
+    //   UpdateToasted, UpdateToastedAt   an administrator's "Download and
+    //                                    install": version and when. "Later"
+    //                                    means about a day later (kRemindSec).
+    //   UpdateToldChild                  "ask a parent": once per version.
     static constexpr wchar_t kToastedKey[]   = L"SOFTWARE\\ExerciseUnlock";
     static constexpr wchar_t kToastedValue[] = L"UpdateToasted";
+    static constexpr wchar_t kToastedAt[]    = L"UpdateToastedAt";
+    static constexpr wchar_t kToldChild[]    = L"UpdateToldChild";
+    // Under 24 h, so the next daily check is never just too early.
+    static constexpr int64_t kRemindSec      = 20 * 3600;
 
-    static std::wstring LoadToasted()
+    static std::wstring ReadValue(const wchar_t* name)
     {
         wchar_t buf[64]{};
         DWORD cb = sizeof(buf);
-        if (RegGetValueW(HKEY_LOCAL_MACHINE, kToastedKey, kToastedValue, RRF_RT_REG_SZ,
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, kToastedKey, name, RRF_RT_REG_SZ,
                          nullptr, buf, &cb) != ERROR_SUCCESS)
             return {};
         return buf;
     }
 
+    static void WriteValue(const wchar_t* name, const std::wstring& value)
+    {
+        RegSetKeyValueW(HKEY_LOCAL_MACHINE, kToastedKey, name, REG_SZ, value.c_str(),
+                        (DWORD)((value.size() + 1) * sizeof(wchar_t)));
+    }
+
+    static bool WindowDue(const std::wstring& version)
+    {
+        if (ReadValue(kToastedValue) != version) return true;
+        int64_t at = 0;
+        DWORD cb = sizeof(at);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, kToastedKey, kToastedAt, RRF_RT_REG_QWORD,
+                         nullptr, &at, &cb) != ERROR_SUCCESS)
+            return true;
+        return NowUnix() - at >= kRemindSec;
+    }
+
     static void SaveToasted(const std::wstring& version)
     {
-        RegSetKeyValueW(HKEY_LOCAL_MACHINE, kToastedKey, kToastedValue, REG_SZ, version.c_str(),
-                        (DWORD)((version.size() + 1) * sizeof(wchar_t)));
+        const int64_t now = NowUnix();
+        WriteValue(kToastedValue, version);
+        RegSetKeyValueW(HKEY_LOCAL_MACHINE, kToastedKey, kToastedAt, REG_QWORD, &now, sizeof(now));
     }
+
+    // The newer version on offer and the window's arguments for it; empty
+    // when there's none, or nothing in the manifest the window could
+    // install. Only the update thread touches them.
+    static std::wstring g_offerVersion, g_offerArgs;
 
     static void ApplyManifest(const std::string& body)
     {
         auto& st = GetState();
-        std::wstring ver, dl, notes;
-        ParseManifest(body, ver, dl, notes);
-        if (ver.empty())
+        const Manifest m = ParseManifest(body);
+        g_offerVersion.clear();
+        g_offerArgs.clear();
+        if (m.version.empty())
         {
             LogF(L"update: manifest has no 'version:' line — ignoring");
             return;
         }
 
-        const uint32_t serverVer = ParseVersion(ver);
+        const uint32_t serverVer = ParseVersion(m.version);
         if (serverVer == 0)
         {
-            LogF(L"update: can't parse server version '%s'", ver.c_str());
+            LogF(L"update: can't parse server version '%s'", m.version.c_str());
             return;
         }
         if (serverVer <= kVersionPacked)
         {
             LogF(L"update: up to date (installed %s, server %s)",
-                 kVersionString, ver.c_str());
+                 kVersionString, m.version.c_str());
             std::lock_guard<std::mutex> lk(st.updateMx);
             st.updateAvailable = false;
             st.updateLatestVersion.clear();
@@ -235,17 +330,49 @@ namespace ExerciseUnlock::Svc
         {
             std::lock_guard<std::mutex> lk(st.updateMx);
             st.updateAvailable      = true;
-            st.updateLatestVersion  = ver;
-            st.updateDownloadUrl    = dl;
-            st.updateNotesUrl       = notes;
+            st.updateLatestVersion  = m.version;
+            st.updateDownloadUrl    = m.download;
+            st.updateNotesUrl       = m.notes;
         }
         LogF(L"update: NEW version %s available (installed %s) %s",
-             ver.c_str(), kVersionString, dl.c_str());
-        if (LoadToasted() != ver)
+             m.version.c_str(), kVersionString, m.download.c_str());
+        if (m.download.empty() || !Plain(m.version) || !Plain(m.download) ||
+            !Plain(m.notes) || !Plain(m.sha256))
         {
-            SaveToasted(ver);
-            ShowUpdateToast(ver, dl.empty() ? notes : dl);
+            LogF(L"update: no usable 'download:' line, no window");
+            return;
         }
+        g_offerVersion = m.version;
+        g_offerArgs = L" /version " + m.version + L" /download \"" + m.download + L"\"";
+        if (!m.sha256.empty()) g_offerArgs += L" /sha256 " + m.sha256;
+        if (!m.notes.empty())  g_offerArgs += L" /notes \"" + m.notes + L"\"";
+        for (size_t i = 0; i < m.changesEn.size() && i < 8; ++i)
+            g_offerArgs += L" /change-en " + QuotedArg(m.changesEn[i]);
+        for (size_t i = 0; i < m.changesUk.size() && i < 8; ++i)
+            g_offerArgs += L" /change-uk " + QuotedArg(m.changesUk[i]);
+    }
+
+    // The update window for whoever is at the console, when it's due for
+    // them: an administrator gets "Download and install" (again about a
+    // day later), anyone else - the child - "ask a parent", once per
+    // version. Runs after every check and when someone signs in or unlocks.
+    static void OfferUpdate()
+    {
+        if (g_offerVersion.empty()) return;
+        const DWORD session = WTSGetActiveConsoleSessionId();
+        HANDLE token = nullptr;
+        if (session == 0xFFFFFFFF || !WTSQueryUserToken(session, &token))
+            return;   // nobody signed in: the next sign-in brings it
+        const bool admin = IsAdminUser(token);
+        const bool due = admin ? WindowDue(g_offerVersion) : ReadValue(kToldChild) != g_offerVersion;
+        if (due && StartWindow(token, g_offerArgs + (admin ? L"" : L" /ask")))
+        {
+            LogF(L"update: %s window opened in session %lu",
+                 admin ? L"install" : L"ask-a-parent", session);
+            if (admin) SaveToasted(g_offerVersion);
+            else       WriteValue(kToldChild, g_offerVersion);
+        }
+        CloseHandle(token);
     }
 
     bool UpdateChecker::CheckOnce()
@@ -259,6 +386,7 @@ namespace ExerciseUnlock::Svc
         GetState().updateLastCheckUnix.store(NowUnix());
         if (body.empty()) return false;
         ApplyManifest(body);
+        OfferUpdate();
         return true;
     }
 
@@ -266,26 +394,38 @@ namespace ExerciseUnlock::Svc
     {
         LogF(L"update thread starting (installed %s)", kVersionString);
 
+        constexpr ULONGLONG kNever = ~0ull;
+        HANDLE waits[2] = { m_stopEvent, m_wake };
         // One check on startup (small jitter so service isn't blocked
         // on the pipe/webcam init). Then every N hours.
-        if (WaitForSingleObject(m_stopEvent, 15 * 1000) == WAIT_OBJECT_0)
-            return;
-        bool answered = CheckOnce();
-
+        ULONGLONG nextCheck = GetTickCount64() + 15 * 1000;
         for (;;)
         {
+            const ULONGLONG now = GetTickCount64();
+            const DWORD left = nextCheck == kNever ? INFINITE
+                             : nextCheck > now     ? (DWORD)(nextCheck - now)
+                             : 0;
+            const DWORD w = WaitForMultipleObjects(2, waits, FALSE, left);
+            if (w == WAIT_OBJECT_0) break;
+            if (w == WAIT_OBJECT_0 + 1)
+            {
+                // Someone signed in or unlocked: offer it once their
+                // desktop has come up.
+                if (WaitForSingleObject(m_stopEvent, 10 * 1000) == WAIT_OBJECT_0) break;
+                OfferUpdate();
+                continue;
+            }
+
+            const bool answered = CheckOnce();
             // 15 s after boot the network is often not up yet, and a PC
             // that's switched off at night never reaches the next 24 h
             // check: no answer means try again soon.
-            constexpr DWORD kRetryMs = 15 * 60 * 1000;
+            constexpr ULONGLONG kRetryMs = 15 * 60 * 1000;
             const int hours = Config::UpdateIntervalHours();
-            // 0 h = startup-only; sleep forever (or until stop).
-            const DWORD ms = !answered ? kRetryMs
-                : (hours > 0 && hours < 24 * 7)
-                ? (DWORD)hours * 3600u * 1000u
-                : INFINITE;
-            if (WaitForSingleObject(m_stopEvent, ms) == WAIT_OBJECT_0) break;
-            answered = CheckOnce();
+            // 0 h = startup-only: no more checks (sign-ins still get the window).
+            nextCheck = !answered                     ? GetTickCount64() + kRetryMs
+                      : (hours > 0 && hours < 24 * 7) ? GetTickCount64() + (ULONGLONG)hours * 3600 * 1000
+                      : kNever;
         }
         LogF(L"update thread stopping");
     }
@@ -299,8 +439,16 @@ namespace ExerciseUnlock::Svc
     void UpdateChecker::Start(HANDLE stopEvent)
     {
         m_stopEvent = stopEvent;
+        // Never closed: the control handler may still call Wake() while
+        // the service stops.
+        m_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         m_thread = CreateThread(nullptr, 0, Thunk, this, 0, nullptr);
         if (!m_thread) LogF(L"update: CreateThread failed %lu", GetLastError());
+    }
+
+    void UpdateChecker::Wake()
+    {
+        if (m_wake) SetEvent(m_wake);
     }
 
     void UpdateChecker::Join()

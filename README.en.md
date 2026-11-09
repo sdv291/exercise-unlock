@@ -37,6 +37,8 @@ Output lands in `x64\Release\`:
 - `ExerciseUnlockProvider.dll` — credential provider DLL
 - `ExerciseUnlockService.exe` — service + sensor pipeline
 - `ExerciseUnlockAdmin.exe` — admin CLI
+- `ExerciseUnlockUpdate.exe` — the "new version available" window with
+  "Download and install" (the service opens it)
 - `onnxruntime.dll`, `movenet_lightning.onnx`, `movenet.data`,
   `config.ini` — runtime
 

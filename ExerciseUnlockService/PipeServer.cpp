@@ -140,7 +140,7 @@ namespace ExerciseUnlock::Svc
         m_stop.store(true);
     }
 
-    void PipeServer::Run(HANDLE stopEvent)
+    bool PipeServer::Run(HANDLE stopEvent)
     {
         LogF(L"pipe server starting on %s", kPipeName);
 
@@ -149,7 +149,7 @@ namespace ExerciseUnlock::Svc
         if (!BuildPipeSecurity(sa, sdHolder))
         {
             LogF(L"failed to build pipe SD — bailing out");
-            return;
+            return false;
         }
 
         // Overlapped so ConnectNamedPipe can wait on either a client or
@@ -261,6 +261,7 @@ namespace ExerciseUnlock::Svc
         JoinAllClientThreads(1000);
 
         LogF(L"pipe server stopped");
+        return true;
     }
 
     void PipeServer::TrackClientThread(HANDLE thread)

@@ -4,6 +4,7 @@
 #include "PoseEstimator.h"
 #include "AngleFilter.h"
 #include "RepResult.h"
+#include "DetectorParams.h"
 
 namespace ExerciseUnlock::Svc
 {
@@ -17,13 +18,25 @@ namespace ExerciseUnlock::Svc
     class PushUpDetector
     {
     public:
+        // publish (the webcam's): Config's thresholds, the tick clock, and
+        // phase / angle / the shared count written into State. A phone's
+        // (publish = false, PhoneCounter) gets its clock, posture and
+        // thresholds with every frame and keeps its results to itself -
+        // see LastRep().
+        explicit PushUpDetector(bool publish = true) : m_publish(publish) {}
+
         void Update(const BodyPose& pose);
+        // A phone's frame: postureOk = its own classifier latched PushUp.
+        void Update(const BodyPose& pose, uint64_t nowMs, bool postureOk, const PushupParams& p);
         void Reset();
 
         // The last finished attempt (counted or dropped, and why).
         const RepResult& LastRep() const { return m_lastRep; }
 
     private:
+        void Step(const BodyPose& pose, uint64_t now, bool postureOk, const PushupParams& p, bool offHours);
+
+        bool             m_publish = true;
         RepResult        m_lastRep{};
         Ipc::PushUpPhase m_phase{ Ipc::PushUpPhase::Unknown };
         uint32_t         m_count{ 0 };

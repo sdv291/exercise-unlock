@@ -89,6 +89,10 @@
     <ClCompile Include="..\ExerciseUnlockService\SquatDetector.cpp" />
     <ClCompile Include="..\ExerciseUnlockService\PushUpDetector.cpp" />
     <ClCompile Include="..\ExerciseUnlockService\SitUpDetector.cpp" />
+    <!-- "Phone (QR code)": the relay connection, the phone's poses, the QR code. -->
+    <ClCompile Include="..\ExerciseUnlockService\RelayClient.cpp" />
+    <ClCompile Include="..\ExerciseUnlockService\PhoneCounter.cpp" />
+    <ClCompile Include="..\ExerciseUnlockCommon\QrCode.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ExerciseUnlockService\PoseEstimator.h" />
@@ -102,6 +106,10 @@
     <ClInclude Include="..\ExerciseUnlockService\PushUpDetector.h" />
     <ClInclude Include="..\ExerciseUnlockService\SitUpDetector.h" />
     <ClInclude Include="..\ExerciseUnlockService\PostureClassifier.h" />
+    <ClInclude Include="..\ExerciseUnlockService\RelayClient.h" />
+    <ClInclude Include="..\ExerciseUnlockService\PhoneCounter.h" />
+    <ClInclude Include="..\ExerciseUnlockService\MiniJson.h" />
+    <ClInclude Include="..\ExerciseUnlockCommon\QrCode.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="app.rc" />

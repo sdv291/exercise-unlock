@@ -47,7 +47,7 @@ if (-not $NoBuild)
 }
 
 foreach ($f in 'ExerciseUnlockService.exe', 'ExerciseUnlockAdmin.exe', 'ExerciseUnlockProvider.dll', 'ExerciseUnlockCalibrate.exe',
-               'onnxruntime.dll', 'movenet_lightning.onnx')
+               'ExerciseUnlockUpdate.exe', 'onnxruntime.dll', 'movenet_lightning.onnx')
 {
     if (-not (Test-Path (Join-Path $bin $f))) { throw "missing build output: $bin\$f" }
 }
@@ -106,11 +106,30 @@ if (-not $iscc) { throw "Inno Setup 6 not found - winget install JRSoftware.Inno
 
 & $iscc /Qp "/DAppVersion=$version" "/DStageDir=build" (Join-Path $here 'ExerciseUnlock.iss')
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
-Write-Host "installer: $(Join-Path $here "out\ExerciseUnlock-Setup-$version.exe")"
+$setupExe = Join-Path $here "out\ExerciseUnlock-Setup-$version.exe"
+Write-Host "installer: $setupExe"
 
 # What the update check reads (UpdateChecker.cpp). Goes to the server next
 # to the installer - see "Новая версия приложения" in relay\README.md.
+# sha256: the update window (ExerciseUnlockUpdate) only runs a download
+# that matches it. change-en / change-uk: its "What's new", from changes.txt.
+$sha256 = (Get-FileHash $setupExe -Algorithm SHA256).Hash.ToLowerInvariant()
 $manifest = "version: $version`n" +
             "download: https://exercise-unlock.sdv291.com/download/ExerciseUnlock-Setup.exe`n" +
-            "notes: https://exercise-unlock.sdv291.com/landing/`n"
+            "notes: https://exercise-unlock.sdv291.com/landing/`n" +
+            "sha256: $sha256`n"
+$points = @{ en = 0; uk = 0 }
+foreach ($line in [IO.File]::ReadAllLines((Join-Path $here 'changes.txt'), [Text.Encoding]::UTF8))
+{
+    if ($line -match '^\s*(#|$)') { continue }
+    if ($line -notmatch '^\s*(en|uk)\s*:\s*(.+?)\s*$') { throw "changes.txt: not 'en: ...' or 'uk: ...': $line" }
+    $lang, $text = $Matches[1], $Matches[2]
+    # The service passes at most 8 points of up to 200 characters on.
+    if ($text.Length -gt 200) { throw "changes.txt: longer than 200 characters: $text" }
+    if (++$points[$lang] -gt 8) { throw "changes.txt: more than 8 '$lang' points" }
+    $manifest += "change-${lang}: $text`n"
+}
+# The service reads at most 8 KB of it (UpdateChecker.cpp, HttpsGet).
+$bytes = [Text.Encoding]::UTF8.GetByteCount($manifest)
+if ($bytes -gt 8000) { throw "version.txt would be $bytes bytes - the service reads 8 KB, shorten changes.txt" }
 [IO.File]::WriteAllText((Join-Path $here 'out\version.txt'), $manifest, [Text.UTF8Encoding]::new($false))

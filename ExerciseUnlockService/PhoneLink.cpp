@@ -4,23 +4,20 @@
 #include "MiniJson.h"
 #include "Paths.h"
 #include "PersistentState.h"
+#include "PhoneCounter.h"
+#include "RelayClient.h"
 #include "State.h"
 #include "Version.h"
 #include "WebcamProbe.h"
 
-#include <bcrypt.h>
-#include <winhttp.h>
-
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string>
 #include <thread>
 #include <vector>
-
-#pragma comment(lib, "winhttp.lib")
-#pragma comment(lib, "bcrypt.lib")
 
 // Relay protocol (relay/server.js), JSON text messages:
 //   PC -> relay   {t:hello, pc, key, v}   {t:offer, token}   {t:to, sid, msg}
@@ -30,11 +27,20 @@
 //   PC -> phone   {t:config, aspect, exercises:[{id, seconds, params}]}
 //                 {t:status, counts, earned, min, enough, active, why}
 //                 {t:reject, why}  {t:bye, reason}
-//   phone -> PC   {t:hello, lang, ua}  {t:rep, ex, n, q, dur}
+//   PC -> phone   {t:result, ex, ok, why}   (a rep counted here, or why not)
+//   phone -> PC   {t:hello, lang, ua}
+//                 {t:pose, ts, w, h, k:[x, y, c] x 17}   every frame: x, y in
+//                     1/10000 of the w x h frame, c in percent, ts its clock (ms)
 //                 {t:diag, kind, ...}   (logged only)
+//
+// The reps are counted here from the poses (PhoneCounter), with the webcam's
+// detectors; the phone counts too, but only for its own screen. A page that
+// sends {t:rep} instead (before poses) gets {t:reject, why:"update"}.
 
 namespace ExerciseUnlock::Svc
 {
+    using namespace Relay;
+
     namespace
     {
         constexpr DWORD    kTickMs        = 1000;
@@ -45,49 +51,6 @@ namespace ExerciseUnlock::Svc
         constexpr uint64_t kDeadAfterMs   = 15 * 1000;        // nothing from the relay -> reconnect
         constexpr uint64_t kRotateTokenMs = 15 * 60 * 1000;   // an unused QR code expires
         constexpr uint64_t kStatusEveryMs = 10 * 1000;
-        constexpr size_t   kMaxMessage    = 64 * 1024;
-
-        std::string ToUtf8(const std::wstring& w)
-        {
-            if (w.empty()) return {};
-            const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
-            std::string s(static_cast<size_t>(n), '\0');
-            WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), n, nullptr, nullptr);
-            return s;
-        }
-
-        std::wstring ToWide(const std::string& s)
-        {
-            if (s.empty()) return {};
-            const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-            std::wstring w(static_cast<size_t>(n), L'\0');
-            MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
-            return w;
-        }
-
-        // Base32 (RFC 4648 alphabet, no padding) of `bytes` random bytes.
-        // 10 bytes -> 16 characters, all valid in a QR alphanumeric segment.
-        std::string RandomBase32(size_t bytes)
-        {
-            std::vector<uint8_t> buf(bytes);
-            BCryptGenRandom(nullptr, buf.data(), static_cast<ULONG>(buf.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
-            static constexpr char kAbc[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-            std::string out;
-            uint32_t acc = 0;
-            int bits = 0;
-            for (const uint8_t b : buf)
-            {
-                acc = (acc << 8) | b;
-                bits += 8;
-                while (bits >= 5)
-                {
-                    out += kAbc[(acc >> (bits - 5)) & 31];
-                    bits -= 5;
-                }
-            }
-            if (bits > 0) out += kAbc[(acc << (5 - bits)) & 31];
-            return out;
-        }
 
         bool IsBase32(const std::string& s, size_t minLen, size_t maxLen)
         {
@@ -139,145 +102,6 @@ namespace ExerciseUnlock::Svc
             return true;
         }
 
-        struct RelayUrl
-        {
-            bool          secure = true;
-            std::wstring  host;
-            INTERNET_PORT port = 0;
-            std::string   qrBase;   // "HTTPS://HOST/S/"
-        };
-
-        bool ParseRelay(const std::wstring& url, RelayUrl& out)
-        {
-            wchar_t host[256]{};
-            URL_COMPONENTS uc{};
-            uc.dwStructSize     = sizeof(uc);
-            uc.lpszHostName     = host;
-            uc.dwHostNameLength = static_cast<DWORD>(std::size(host));
-            if (!WinHttpCrackUrl(url.c_str(), 0, 0, &uc)) return false;
-            if (uc.nScheme != INTERNET_SCHEME_HTTPS && uc.nScheme != INTERNET_SCHEME_HTTP) return false;
-            out.secure = uc.nScheme == INTERNET_SCHEME_HTTPS;
-            out.host.assign(host, uc.dwHostNameLength);
-            out.port = uc.nPort;
-            if (out.host.empty()) return false;
-
-            // Upper case: the whole URL then fits a QR alphanumeric
-            // segment, which makes the code smaller and easier to scan.
-            std::string base = out.secure ? "HTTPS://" : "HTTP://";
-            for (const char c : ToUtf8(out.host))
-                base += static_cast<char>((c >= 'a' && c <= 'z') ? c - 32 : c);
-            const bool defaultPort = (out.secure && out.port == INTERNET_DEFAULT_HTTPS_PORT) ||
-                                     (!out.secure && out.port == INTERNET_DEFAULT_HTTP_PORT);
-            if (!defaultPort) base += ":" + std::to_string(out.port);
-            base += "/S/";
-            out.qrBase = base;
-            return true;
-        }
-
-        // One WebSocket to /ws/pc. Send is thread-safe; Receive runs on
-        // its own thread; Shutdown / Abort make a blocked Receive return.
-        class Socket
-        {
-        public:
-            ~Socket() { Close(); }
-
-            bool Open(const RelayUrl& u, DWORD& err)
-            {
-                const std::wstring agent = std::wstring(L"ExerciseUnlock/") + kVersionString;
-                m_session = WinHttpOpen(agent.c_str(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                                        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-                if (!m_session) { err = GetLastError(); return false; }
-                // Receive timeout > ping interval: a silent connection is dead.
-                WinHttpSetTimeouts(m_session, 10000, 10000, 10000, 60000);
-                m_connect = WinHttpConnect(m_session, u.host.c_str(), u.port, 0);
-                if (!m_connect) { err = GetLastError(); return false; }
-
-                HINTERNET req = WinHttpOpenRequest(m_connect, L"GET", L"/ws/pc", nullptr, WINHTTP_NO_REFERER,
-                                                   WINHTTP_DEFAULT_ACCEPT_TYPES, u.secure ? WINHTTP_FLAG_SECURE : 0);
-                if (!req) { err = GetLastError(); return false; }
-                bool ok = WinHttpSetOption(req, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) &&
-                          WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
-                          WinHttpReceiveResponse(req, nullptr);
-                if (!ok)
-                {
-                    err = GetLastError();
-                    WinHttpCloseHandle(req);
-                    return false;
-                }
-                DWORD status = 0, size = sizeof(status);
-                WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                                    WINHTTP_HEADER_NAME_BY_INDEX, &status, &size, WINHTTP_NO_HEADER_INDEX);
-                if (status != 101)
-                {
-                    err = status;   // e.g. 404 / 502: wrong URL or relay down behind the proxy
-                    WinHttpCloseHandle(req);
-                    return false;
-                }
-                HINTERNET ws = WinHttpWebSocketCompleteUpgrade(req, 0);
-                err = ws ? NO_ERROR : GetLastError();
-                WinHttpCloseHandle(req);
-                m_ws.store(ws);
-                return ws != nullptr;
-            }
-
-            bool Send(const std::string& text)
-            {
-                std::lock_guard<std::mutex> lk(m_sendMx);
-                HINTERNET ws = m_ws.load();
-                return ws && WinHttpWebSocketSend(ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
-                                                  const_cast<char*>(text.data()),
-                                                  static_cast<DWORD>(text.size())) == NO_ERROR;
-            }
-
-            // Whole text message, false once the socket is closed / broken.
-            bool Receive(std::string& out)
-            {
-                out.clear();
-                char buf[4096];
-                for (;;)
-                {
-                    HINTERNET ws = m_ws.load();
-                    if (!ws) return false;
-                    DWORD got = 0;
-                    WINHTTP_WEB_SOCKET_BUFFER_TYPE type{};
-                    if (WinHttpWebSocketReceive(ws, buf, sizeof(buf), &got, &type) != NO_ERROR) return false;
-                    if (type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE &&
-                        type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE)
-                        return false;   // close frame, or binary the relay never sends
-                    out.append(buf, got);
-                    if (out.size() > kMaxMessage) return false;
-                    if (type == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE) return true;
-                }
-            }
-
-            // Polite close: the relay answers and Receive returns.
-            void Shutdown()
-            {
-                std::lock_guard<std::mutex> lk(m_sendMx);
-                if (HINTERNET ws = m_ws.load())
-                    WinHttpWebSocketShutdown(ws, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
-            }
-
-            // Hard close for a dead connection.
-            void Abort()
-            {
-                if (HINTERNET ws = m_ws.exchange(nullptr)) WinHttpCloseHandle(ws);
-            }
-
-            void Close()
-            {
-                Abort();
-                if (m_connect) { WinHttpCloseHandle(m_connect); m_connect = nullptr; }
-                if (m_session) { WinHttpCloseHandle(m_session); m_session = nullptr; }
-            }
-
-        private:
-            HINTERNET              m_session = nullptr;
-            HINTERNET              m_connect = nullptr;
-            std::atomic<HINTERNET> m_ws{ nullptr };
-            std::mutex             m_sendMx;
-        };
-
         // One relay connection. Shared with its receive thread.
         struct Session
         {
@@ -293,6 +117,9 @@ namespace ExerciseUnlock::Svc
             uint64_t              diagRefillMs = 0;
             std::string           lastStatus;
             uint64_t              lastStatusMs = 0;
+            // Each phone's reps, counted here from its poses (join .. leave).
+            std::map<std::string, std::unique_ptr<PhoneCounter>> counters;
+            uint64_t              repWarnMs = 0;   // last "rep without poses" log line
             std::atomic<uint64_t> lastRxMs{ 0 };
             std::atomic<bool>     closed{ false };
         };
@@ -343,54 +170,78 @@ namespace ExerciseUnlock::Svc
             return 16.0 / 9.0;
         }
 
-        // Exercises + the thresholds the webcam detectors use (config.ini
-        // [squat] / [pushup] / [situp], tuned by the calibration).
-        std::string ConfigJson()
+        // What a phone counts with: the phone's own calibration when there
+        // is one, else the webcam's thresholds on the webcam's frame.
+        struct PhoneSetup
+        {
+            SquatParams  squat;
+            PushupParams pushup;
+            SitupParams  situp;
+            bool         phoneSpace = false;
+            double       aspect = 16.0 / 9.0;
+        };
+
+        PhoneSetup CurrentSetup()
+        {
+            PhoneSetup s;
+            s.phoneSpace = Config::PhoneProfile(s.squat, s.pushup, s.situp);
+            s.aspect = CalibrationAspect();
+            return s;
+        }
+
+        // Exercises + their thresholds (config.ini [squat] / [pushup] /
+        // [situp], or [phone_*], tuned by the calibration). poses: stream
+        // them, the reps are counted here; space "phone": the thresholds are
+        // in the phone's own frame, "pc": map the poses onto the webcam's
+        // (aspect).
+        std::string ConfigJson(const PhoneSetup& s)
         {
             Json::Writer w;
             w.BeginObject().Key("t").String("config").Key("v").Int(1)
-             .Key("aspect").Number(CalibrationAspect())
+             .Key("aspect").Number(s.aspect)
+             .Key("poses").Int(1)
+             .Key("space").String(s.phoneSpace ? "phone" : "pc")
              .Key("exercises").BeginArray();
 
             w.BeginObject().Key("id").String("squat").Key("seconds").Int(Config::SquatSeconds())
              .Key("params").BeginObject()
-                .Key("standing").Number(Config::SquatStandingAngle())
-                .Key("down").Number(Config::SquatDownAngle())
-                .Key("goingDown").Number(Config::SquatGoingDownAngle())
-                .Key("goingUp").Number(Config::SquatGoingUpAngle())
-                .Key("minRepMs").Int(Config::SquatMinRepMs())
-                .Key("maxRepMs").Int(Config::SquatMaxRepMs())
-                .Key("qualityMin").Number(Config::SquatQualityMin())
-                .Key("maxHipDrift").Number(Config::SquatMaxHipDrift())
-                .Key("minHipDrop").Number(Config::SquatMinHipDrop())
-                .Key("mode").Int(Config::SquatDetectorMode())
-                .Key("standingHipFrac").Number(Config::SquatStandingHipFrac())
-                .Key("downHipFrac").Number(Config::SquatDownHipFrac())
-                .Key("goingDownHipFrac").Number(Config::SquatGoingDownHipFrac())
-                .Key("goingUpHipFrac").Number(Config::SquatGoingUpHipFrac())
+                .Key("standing").Number(s.squat.standing)
+                .Key("down").Number(s.squat.down)
+                .Key("goingDown").Number(s.squat.goingDown)
+                .Key("goingUp").Number(s.squat.goingUp)
+                .Key("minRepMs").Int(s.squat.minRepMs)
+                .Key("maxRepMs").Int(s.squat.maxRepMs)
+                .Key("qualityMin").Number(s.squat.qualityMin)
+                .Key("maxHipDrift").Number(s.squat.maxHipDrift)
+                .Key("minHipDrop").Number(s.squat.minHipDrop)
+                .Key("mode").Int(s.squat.mode)
+                .Key("standingHipFrac").Number(s.squat.standingHipFrac)
+                .Key("downHipFrac").Number(s.squat.downHipFrac)
+                .Key("goingDownHipFrac").Number(s.squat.goingDownHipFrac)
+                .Key("goingUpHipFrac").Number(s.squat.goingUpHipFrac)
              .EndObject().EndObject();
 
             w.BeginObject().Key("id").String("pushup").Key("seconds").Int(Config::PushupSeconds())
              .Key("params").BeginObject()
-                .Key("up").Number(Config::PushupUpAngle())
-                .Key("down").Number(Config::PushupDownAngle())
-                .Key("goingDown").Number(Config::PushupGoingDownAngle())
-                .Key("goingUp").Number(Config::PushupGoingUpAngle())
-                .Key("plankMin").Number(Config::PushupPlankMinAngle())
-                .Key("minRepMs").Int(Config::PushupMinRepMs())
-                .Key("maxRepMs").Int(Config::PushupMaxRepMs())
-                .Key("qualityMin").Number(Config::PushupQualityMin())
+                .Key("up").Number(s.pushup.up)
+                .Key("down").Number(s.pushup.down)
+                .Key("goingDown").Number(s.pushup.goingDown)
+                .Key("goingUp").Number(s.pushup.goingUp)
+                .Key("plankMin").Number(s.pushup.plankMin)
+                .Key("minRepMs").Int(s.pushup.minRepMs)
+                .Key("maxRepMs").Int(s.pushup.maxRepMs)
+                .Key("qualityMin").Number(s.pushup.qualityMin)
              .EndObject().EndObject();
 
             w.BeginObject().Key("id").String("situp").Key("seconds").Int(Config::SitupSeconds())
              .Key("params").BeginObject()
-                .Key("lying").Number(Config::SitupLyingAngle())
-                .Key("rising").Number(Config::SitupRisingAngle())
-                .Key("lowering").Number(Config::SitupLoweringAngle())
-                .Key("sitting").Number(Config::SitupSittingAngle())
-                .Key("minRepMs").Int(Config::SitupMinRepMs())
-                .Key("maxRepMs").Int(Config::SitupMaxRepMs())
-                .Key("qualityMin").Number(Config::SitupQualityMin())
+                .Key("lying").Number(s.situp.lying)
+                .Key("rising").Number(s.situp.rising)
+                .Key("lowering").Number(s.situp.lowering)
+                .Key("sitting").Number(s.situp.sitting)
+                .Key("minRepMs").Int(s.situp.minRepMs)
+                .Key("maxRepMs").Int(s.situp.maxRepMs)
+                .Key("qualityMin").Number(s.situp.qualityMin)
              .EndObject().EndObject();
 
             w.EndArray().EndObject();
@@ -516,9 +367,53 @@ namespace ExerciseUnlock::Svc
             return out;
         }
 
+        // A rep counted here from the phone's poses - or not, and why:
+        // credited under the webcam's rules, and the phone told (its sound
+        // and counter follow this, not its own detectors).
+        void OnAttempt(Session& s, const std::string& sid, const PhoneCounter::Attempt& a)
+        {
+            const std::string ex = PhoneCounter::Name(a.ex);
+            const RepResult& r = a.rep;
+            std::string why;
+            bool ok = false;
+            if (r.counted)
+            {
+                ok = CreditRep(s, ex, why);
+                if (!ok) LogF(L"phone: %hs refused (%hs)", ex.c_str(), why.c_str());
+            }
+            else
+            {
+                why = (r.tooFast || r.tooSlow) ? "timing" : r.shallow ? "depth" : r.moved ? "drift"
+                    : r.hipsStayed ? "hip" : r.wobbled ? "shaky" : "other";
+                LogF(L"phone: %hs not counted (%hs, %u ms)", ex.c_str(), why.c_str(), r.durMs);
+            }
+            Json::Writer w;
+            w.BeginObject().Key("t").String("result").Key("ex").String(ex).Key("ok").Bool(ok)
+             .Key("why").String(why).EndObject();
+            s.sock.Send(ToPhone(sid, w.Str()));
+            if (ok)
+            {
+                s.lastStatus = StatusJson();
+                s.lastStatusMs = GetTickCount64();
+                Broadcast(s, s.lastStatus);
+            }
+        }
+
         void OnPhoneMessage(Session& s, const std::string& sid, const Json::Value& msg)
         {
             const std::string t = msg.Str("t");
+            if (t == "pose")
+            {
+                const auto it = s.counters.find(sid);
+                BodyPose pose;
+                uint32_t w = 0, h = 0;
+                uint64_t ts = 0;
+                if (it == s.counters.end() || !PhoneCounter::ParsePose(msg, pose, w, h, ts)) return;
+                std::vector<PhoneCounter::Attempt> attempts;
+                it->second->Feed(pose, w, h, ts, GetTickCount64(), attempts);
+                for (const auto& a : attempts) OnAttempt(s, sid, a);
+                return;
+            }
             if (t == "diag")
             {
                 // What the phone's detectors saw (posture changes, dropped
@@ -535,18 +430,15 @@ namespace ExerciseUnlock::Svc
             }
             if (t == "rep")
             {
-                std::string why;
-                if (CreditRep(s, msg.Str("ex"), why))
+                // A page that counts by itself and doesn't stream its poses:
+                // an old cached copy - or a hand-made one. Not counted.
+                const uint64_t now = GetTickCount64();
+                if (now - s.repWarnMs >= 60000)
                 {
-                    s.lastStatus = StatusJson();
-                    s.lastStatusMs = GetTickCount64();
-                    Broadcast(s, s.lastStatus);
+                    s.repWarnMs = now;
+                    LogF(L"phone %hs: a rep without poses - not counted (old page?)", sid.c_str());
                 }
-                else
-                {
-                    LogF(L"phone: %hs refused (%hs)", msg.Str("ex").substr(0, 16).c_str(), why.c_str());
-                    s.sock.Send(ToPhone(sid, Simple("reject", "why", why)));
-                }
+                s.sock.Send(ToPhone(sid, Simple("reject", "why", "update")));
             }
             else if (t == "hello")
             {
@@ -572,12 +464,16 @@ namespace ExerciseUnlock::Svc
                 const std::string sid = m.Str("sid");
                 s.phones.insert(sid);
                 PublishState(s);
-                s.sock.Send(ToPhone(sid, ConfigJson()));
+                const PhoneSetup setup = CurrentSetup();
+                s.counters[sid] = std::make_unique<PhoneCounter>(setup.squat, setup.pushup, setup.situp,
+                                                                 setup.phoneSpace, setup.aspect);
+                s.sock.Send(ToPhone(sid, ConfigJson(setup)));
                 s.sock.Send(ToPhone(sid, StatusJson()));
             }
             else if (t == "leave")
             {
                 s.phones.erase(m.Str("sid"));
+                s.counters.erase(m.Str("sid"));
                 PublishState(s);
             }
             else if (t == "from")

@@ -60,6 +60,7 @@ namespace ExerciseUnlock::Svc
         m_hipFilter.Reset();
         m_lastRep        = RepResult{};
 
+        if (!m_publish) return;
         auto& st = GetState();
         st.sitUpCount.store(0);
         st.sitUpPhase.store(static_cast<uint8_t>(SitUpPhase::Unknown));
@@ -83,10 +84,20 @@ namespace ExerciseUnlock::Svc
         // Only while the classifier has latched SitUp (on the back, knees
         // up). Skip rather than reset — its unlatch hysteresis carries a
         // real rep through confidence dips.
-        if (st.postureKind.load() != static_cast<uint8_t>(PostureKind::SitUp))
-        {
-            return;
-        }
+        const bool postureOk = st.postureKind.load() == static_cast<uint8_t>(PostureKind::SitUp);
+        Step(pose, GetTickCount64(), postureOk, Config::Situp(), offHours);
+    }
+
+    void SitUpDetector::Update(const BodyPose& pose, uint64_t nowMs, bool postureOk, const SitupParams& p)
+    {
+        // The session and the schedule are PhoneLink's to check (CreditRep).
+        Step(pose, nowMs, postureOk, p, false);
+    }
+
+    void SitUpDetector::Step(const BodyPose& pose, uint64_t now, bool postureOk, const SitupParams& p, bool offHours)
+    {
+        State* const st = m_publish ? &GetState() : nullptr;
+        if (!postureOk) return;
 
         // Hip angle: average of the confident sides.
         float sum = 0.0f;
@@ -109,7 +120,7 @@ namespace ExerciseUnlock::Svc
                 m_phase = SitUpPhase::Unknown;
                 m_smoothedInit = false;
                 m_repStartTickMs = 0;
-                st.sitUpPhase.store(static_cast<uint8_t>(SitUpPhase::Unknown));
+                if (st) st->sitUpPhase.store(static_cast<uint8_t>(SitUpPhase::Unknown));
             }
             return;
         }
@@ -127,7 +138,7 @@ namespace ExerciseUnlock::Svc
             m_smoothedHip = kEmaAlpha * raw + (1.0f - kEmaAlpha) * m_smoothedHip;
         }
         const float hip = m_smoothedHip;
-        st.sitUpHipAngle.store(hip);
+        if (st) st->sitUpHipAngle.store(hip);
 
         if (m_phase == SitUpPhase::Rising || m_phase == SitUpPhase::Up ||
             m_phase == SitUpPhase::Lowering)
@@ -135,15 +146,14 @@ namespace ExerciseUnlock::Svc
             if (hip < m_repMinHip) m_repMinHip = hip;
         }
 
-        const uint64_t now = GetTickCount64();
-        const float kLying    = Config::SitupLyingAngle();
-        const float kRising   = Config::SitupRisingAngle();
-        const float kLowering = Config::SitupLoweringAngle();
-        const float kSitting  = Config::SitupSittingAngle();
-        const uint64_t kMinRepMs = static_cast<uint64_t>(Config::SitupMinRepMs());
-        const uint64_t kMaxRepMs = static_cast<uint64_t>(Config::SitupMaxRepMs());
+        const float kLying    = p.lying;
+        const float kRising   = p.rising;
+        const float kLowering = p.lowering;
+        const float kSitting  = p.sitting;
+        const uint64_t kMinRepMs = static_cast<uint64_t>(p.minRepMs);
+        const uint64_t kMaxRepMs = static_cast<uint64_t>(p.maxRepMs);
 
-        if (now - m_lastDebugLogMs >= 1000)
+        if (st && now - m_lastDebugLogMs >= 1000)
         {
             m_lastDebugLogMs = now;
             LogF(L"situp DBG smooth=%.1f raw=%.1f sides=%d phase=%u",
@@ -163,7 +173,7 @@ namespace ExerciseUnlock::Svc
                 m_phase = SitUpPhase::Up;
                 m_repStartTickMs = now;
             }
-            st.sitUpPhase.store(static_cast<uint8_t>(m_phase));
+            if (st) st->sitUpPhase.store(static_cast<uint8_t>(m_phase));
             return;
         }
 
@@ -214,7 +224,7 @@ namespace ExerciseUnlock::Svc
                 float quality = (span > 1.0f) ? (depth / span) : 1.0f;
                 if (quality < 0.0f) quality = 0.0f;
                 if (quality > 1.0f) quality = 1.0f;
-                const float qMin = Config::SitupQualityMin();
+                const float qMin = p.qualityMin;
                 const bool timingOk  = (dur >= kMinRepMs && dur <= kMaxRepMs);
                 const bool qualityOk = (qMin <= 0.0f) || (quality >= qMin);
                 const bool counted   = timingOk && qualityOk;
@@ -227,20 +237,20 @@ namespace ExerciseUnlock::Svc
                 r.tooSlow = !timingOk && dur > kMaxRepMs;
                 r.shallow = !qualityOk;
                 m_lastRep = r;
-                if (counted && offHours)
+                if (st && counted && offHours)
                 {
-                    st.offHoursReps.fetch_add(1);
+                    st->offHoursReps.fetch_add(1);
                     LogF(L"situp outside the schedule - not credited  dur=%llums", dur);
                 }
-                else if (counted)
+                else if (counted && st)
                 {
                     // Shared total (phone reps land here too) — see SquatDetector.
-                    const uint32_t total = st.sitUpCount.fetch_add(1) + 1;
+                    const uint32_t total = st->sitUpCount.fetch_add(1) + 1;
                     LogF(L"situp +1  total=%u  hip=%.1f  top=%.1f  dur=%llums  q=%.2f",
                          total, hip, m_repMinHip, dur, quality);
                     PersistentState::Save();
                 }
-                else
+                else if (!counted && st)
                 {
                     LogF(L"situp DROP dur=%llums q=%.2f (window %llu..%llu, qMin=%.2f)",
                          dur, quality, kMinRepMs, kMaxRepMs, qMin);
@@ -259,6 +269,6 @@ namespace ExerciseUnlock::Svc
             break;
         }
 
-        st.sitUpPhase.store(static_cast<uint8_t>(m_phase));
+        if (st) st->sitUpPhase.store(static_cast<uint8_t>(m_phase));
     }
 }
