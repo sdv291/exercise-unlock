@@ -130,28 +130,28 @@ namespace
         L"Exercise Unlock - calibration", L"Camera:", L"Back", L"Next", L"Take photo", L"Retake", L"Skip", L"Save", L"Close",
         L"Step %d of %d",
         L"Camera",
-        L"Put the camera where the child will exercise and pick it in the list above.\n\n"
-        L"The child must be fully visible from the side - from head to feet. For push-ups and sit-ups the camera has to stand on the floor.\n\n"
+        L"Put the camera where the user will exercise and pick it in the list above.\n\n"
+        L"The user must be fully visible from the side - from head to feet. For push-ups and sit-ups the camera has to stand on the floor.\n\n"
         L"Next you will take 6 photos: standing and squatting, push-up with straight arms and at the bottom, lying and sitting up for sit-ups. "
-        L"Exercise Unlock measures the child's angles and tunes the rep counting to them; after each exercise "
-        L"the child does 5 test reps to check it.\n\n"
+        L"Exercise Unlock measures the user's angles and tunes the rep counting to them; after each exercise "
+        L"the user does 5 test reps to check it.\n\n"
         L"The seconds per rep, the schedule and everything else are under \"Settings\".",
         L"Standing, side view",
-        L"The child stands sideways to the camera at full height: legs straight, arms down.\n\n"
+        L"The user stands sideways to the camera at full height: legs straight, arms down.\n\n"
         L"Press \"Take photo\" - the photo is taken right away.",
         L"Squat, side view",
-        L"The child squats as deep as in a normal rep and holds still, still sideways to the camera.\n\n"
+        L"The user squats as deep as in a normal rep and holds still, still sideways to the camera.\n\n"
         L"Press \"Take photo\" and keep the squat until the photo appears.",
         L"Push-up, arms straight",
-        L"Put the camera on the floor, 2-3 m away. The child takes the plank position sideways to the camera, arms straight.\n\n"
+        L"Put the camera on the floor, 2-3 m away. The user takes the plank position sideways to the camera, arms straight.\n\n"
         L"Press \"Take photo\".",
         L"Push-up, bottom",
-        L"The child lowers down as in a normal push-up - elbows bent - and holds still.\n\n"
+        L"The user lowers down as in a normal push-up - elbows bent - and holds still.\n\n"
         L"Press \"Take photo\".",
         L"Result",
         L"These thresholds will be written to config.ini. Exercises whose photos were skipped keep their current settings.",
         L"Standing", L"Squat", L"Push-up up", L"Push-up down", L"knee %d\x00B0", L"elbow %d\x00B0", L"skipped", L"-",
-        L"The child is not fully visible: hips, knees and ankles must be in the frame. Check the camera and take the photo again.",
+        L"The user is not fully visible: hips, knees and ankles must be in the frame. Check the camera and take the photo again.",
         L"No push-up position recognized: shoulders, elbows, wrists, hips and ankles must be visible and the hands on the floor. Put the camera on the floor and try again.",
         L"Standing and squat differ by only %d\x00B0 - squat deeper or check the camera angle. Squat settings were not changed.",
         L"Straight and bent arms differ by only %d\x00B0 - lower deeper or check the camera angle. Push-up settings were not changed.",
@@ -171,11 +171,11 @@ namespace
         L"Example - what the camera should see:",
         L"2-3 m",
         L"Squat check",
-        L"The child does 5 squats at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
+        L"The user does 5 squats at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
         L"The reps are counted with the new settings exactly the way the lock screen will count them. "
         L"If a rep is not counted, the reason is shown below.",
         L"Push-up check",
-        L"The child does 5 push-ups at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
+        L"The user does 5 push-ups at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
         L"The reps are counted with the new settings exactly the way the lock screen will count them. "
         L"If a rep is not counted, the reason is shown below.",
         L"Start over",
@@ -188,17 +188,17 @@ namespace
         L"Last rep not counted: too fast (%.1f s, at least %.1f s needed).",
         L"Last rep not counted: too slow (%.1f s, at most %.1f s).",
         L"Last rep not counted: not deep enough.",
-        L"Last rep not counted: the child moved from the spot.",
+        L"Last rep not counted: the user moved from the spot.",
         L"Last rep not counted: the movement went down again on the way up - stand up in one go.",
         L"Last rep not counted: the hips did not go down - squat, don't just lift a knee.",
-        L"No squat position recognized: the child must be fully visible, from head to feet.",
+        L"No squat position recognized: the user must be fully visible, from head to feet.",
         L"No push-up position recognized: the whole body must be visible, hands on the floor.",
         L"Keep the body straight, as in a plank.",
         L"\x2714 Check passed: %d of %d reps counted",
         L"\x26A0 Check not finished (%d of %d) - reps may not count. Retake the photos or run the check again.",
         L"Check skipped",
         L"Retake",
-        L"The thresholds were adjusted to the child's test reps: %s. Do 5 reps again.",
+        L"The thresholds were adjusted to the user's test reps: %s. Do 5 reps again.",
         L"down %d\x00B0 \x2192 %d\x00B0",
         L"standing %d\x00B0 \x2192 %d\x00B0",
         L"up %d\x00B0 \x2192 %d\x00B0",
@@ -207,34 +207,34 @@ namespace
         L"The reps were not counted because of the movement (see the reason above). Do 5 reps again.",
         L"The test reps differ too much from the photos (only %d\x00B0 between top and bottom).",
         L"The check failed several times in a row.",
-        L"The hips hardly move in the picture - the camera probably sees the child from a bad angle.",
+        L"The hips hardly move in the picture - the camera probably sees the user from a bad angle.",
         L"Calibrate this exercise again: press \"Retake\" and take its photos once more.",
         L"Thresholds adjusted to the test reps",
         L"Sit-up, lying",
-        L"The child lies on the back sideways to the camera: knees bent, feet flat on the floor, arms crossed on the chest. "
+        L"The user lies on the back sideways to the camera: knees bent, feet flat on the floor, arms crossed on the chest. "
         L"The camera stays on the floor, 2-3 m away.\n\n"
         L"Press \"Take photo\".",
         L"Sit-up, top",
-        L"The child sits up as in a normal rep - as high as usual - and holds still.\n\n"
+        L"The user sits up as in a normal rep - as high as usual - and holds still.\n\n"
         L"Press \"Take photo\" and keep the position until the photo appears.",
         L"Sit-up check",
-        L"The child does 5 sit-ups at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
+        L"The user does 5 sit-ups at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
         L"The reps are counted with the new settings exactly the way the lock screen will count them. "
         L"If a rep is not counted, the reason is shown below.",
         L"Sit-up lying", L"Sit-up top", L"hip %d\x00B0",
-        L"No sit-up position recognized: shoulders, hips, knees and ankles must be visible, the child on the back with the knees bent. Put the camera on the floor and try again.",
+        L"No sit-up position recognized: shoulders, hips, knees and ankles must be visible, the user on the back with the knees bent. Put the camera on the floor and try again.",
         L"Lying and sitting up differ by only %d\x00B0 - sit up higher or check the camera angle. Sit-up settings were not changed.",
         L"Sit-ups (hip angle)\n  lying %s \x2192 %d, rising %s \x2192 %d\n  lowering %s \x2192 %d, top %s \x2192 %d",
         L"A rep counts when the hip angle closes to %d\x00B0 or less and opens back to %d\x00B0 or more.",
         L"Last rep not counted: not high enough - the hip angle closed to %d\x00B0, it needs %d\x00B0 or less.",
-        L"No sit-up position recognized: the child lies on the back sideways to the camera, knees bent, the whole body visible.",
+        L"No sit-up position recognized: the user lies on the back sideways to the camera, knees bent, the whole body visible.",
         L"lying %d\x00B0 \x2192 %d\x00B0",
         L"top %d\x00B0 \x2192 %d\x00B0",
         L"Settings",
         L"Settings saved.",
         L"Phone (QR code)",
         L"Scan this code with the phone camera and press \"Start\" on the phone. Then put the phone where it will stand "
-        L"during the exercises - on the floor 2-3 m away, the child fully visible from the side. The address below can also be typed in.",
+        L"during the exercises - on the floor 2-3 m away, the user fully visible from the side. The address below can also be typed in.",
         L"Connecting to the server...",
         L"No connection to the server %s - the phone needs the internet on this computer. Pick a webcam or check the connection, "
         L"then pick the phone again.",
@@ -249,28 +249,28 @@ namespace
         L"Exercise Unlock - калібрування", L"Камера:", L"Назад", L"Далі", L"Зробити фото", L"Перезняти", L"Пропустити", L"Зберегти", L"Закрити",
         L"Крок %d з %d",
         L"Камера",
-        L"Поставте камеру там, де дитина виконуватиме вправи, і виберіть її у списку вище.\n\n"
-        L"Дитину має бути видно збоку повністю - від голови до ніг. Для віджимань і преса камера має стояти на підлозі.\n\n"
+        L"Поставте камеру там, де користувач виконуватиме вправи, і виберіть її у списку вище.\n\n"
+        L"Користувача має бути видно збоку повністю - від голови до ніг. Для віджимань і преса камера має стояти на підлозі.\n\n"
         L"Далі ви зробите 6 фото: стоячи й у присіді, віджимання з прямими руками й унизу, лежачи й угорі для преса. "
-        L"Exercise Unlock виміряє кути дитини й налаштує під них підрахунок повторів, а після кожної вправи "
-        L"дитина зробить 5 пробних повторів для перевірки.\n\n"
+        L"Exercise Unlock виміряє кути користувача й налаштує під них підрахунок повторів, а після кожної вправи "
+        L"користувач зробить 5 пробних повторів для перевірки.\n\n"
         L"Секунди за повтор, розклад та все інше - у «Налаштуваннях».",
         L"Стоячи, у профіль",
-        L"Дитина стоїть боком до камери на повний зріст: ноги прямі, руки опущені.\n\n"
+        L"Користувач стоїть боком до камери на повний зріст: ноги прямі, руки опущені.\n\n"
         L"Натисніть «Зробити фото» - знімок буде зроблено одразу.",
         L"Присід, у профіль",
-        L"Дитина присідає так глибоко, як у звичайному повторенні, і завмирає - так само боком до камери.\n\n"
+        L"Користувач присідає так глибоко, як у звичайному повторенні, і завмирає - так само боком до камери.\n\n"
         L"Натисніть «Зробити фото» й тримайте присід, доки не з'явиться знімок.",
         L"Віджимання, руки прямі",
-        L"Поставте камеру на підлогу за 2-3 м. Дитина стає в планку боком до камери, руки прямі.\n\n"
+        L"Поставте камеру на підлогу за 2-3 м. Користувач стає в планку боком до камери, руки прямі.\n\n"
         L"Натисніть «Зробити фото».",
         L"Віджимання, внизу",
-        L"Дитина опускається, як у звичайному віджиманні, - лікті зігнуті - і завмирає.\n\n"
+        L"Користувач опускається, як у звичайному віджиманні, - лікті зігнуті - і завмирає.\n\n"
         L"Натисніть «Зробити фото».",
         L"Результат",
         L"Ці пороги буде записано в config.ini. Вправи, фото яких пропущено, зберігають поточні налаштування.",
         L"Стоячи", L"Присід", L"Віджимання вгорі", L"Віджимання внизу", L"коліно %d\x00B0", L"лікоть %d\x00B0", L"пропущено", L"-",
-        L"Дитину видно не повністю: стегна, коліна й щиколотки мають бути в кадрі. Перевірте камеру й зробіть фото ще раз.",
+        L"Користувача видно не повністю: стегна, коліна й щиколотки мають бути в кадрі. Перевірте камеру й зробіть фото ще раз.",
         L"Положення віджимання не розпізнано: мають бути видні плечі, лікті, кисті, стегна й щиколотки, а руки - на підлозі. Поставте камеру на підлогу й спробуйте ще раз.",
         L"Стійка й присід відрізняються лише на %d\x00B0 - присядьте глибше або перевірте ракурс камери. Налаштування присідань не змінено.",
         L"Прямі й зігнуті руки відрізняються лише на %d\x00B0 - опустіться нижче або перевірте ракурс камери. Налаштування віджимань не змінено.",
@@ -290,11 +290,11 @@ namespace
         L"Приклад - так має бачити камера:",
         L"2-3 м",
         L"Перевірка присідань",
-        L"Дитина робить 5 присідань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
+        L"Користувач робить 5 присідань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
         L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
         L"Якщо повтор не зараховано, нижче буде вказано причину.",
         L"Перевірка віджимань",
-        L"Дитина робить 5 віджимань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
+        L"Користувач робить 5 віджимань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
         L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
         L"Якщо повтор не зараховано, нижче буде вказано причину.",
         L"Почати знову",
@@ -307,17 +307,17 @@ namespace
         L"Останній повтор не зараховано: занадто швидко (%.1f с, потрібно щонайменше %.1f с).",
         L"Останній повтор не зараховано: занадто повільно (%.1f с, максимум %.1f с).",
         L"Останній повтор не зараховано: замало глибоко.",
-        L"Останній повтор не зараховано: дитина зрушила з місця.",
+        L"Останній повтор не зараховано: користувач зрушив з місця.",
         L"Останній повтор не зараховано: на підйомі рух знову пішов униз - вставайте за один рух.",
         L"Останній повтор не зараховано: стегна не опустилися - треба присідати, а не піднімати коліно.",
-        L"Присід не розпізнано: дитину має бути видно повністю, від голови до ніг.",
+        L"Присід не розпізнано: користувача має бути видно повністю, від голови до ніг.",
         L"Віджимання не розпізнано: має бути видно все тіло, руки - на підлозі.",
         L"Тримайте тіло рівно, як у планці.",
         L"\x2714 Перевірку пройдено: зараховано %d з %d",
         L"\x26A0 Перевірку не завершено (%d з %d) - повтори можуть не зараховуватися. Перезніміть фото або повторіть перевірку.",
         L"Перевірку пропущено",
         L"Перезняти",
-        L"Пороги скориговано за пробними повторами дитини: %s. Зробіть 5 повторів ще раз.",
+        L"Пороги скориговано за пробними повторами користувача: %s. Зробіть 5 повторів ще раз.",
         L"низ %d\x00B0 \x2192 %d\x00B0",
         L"стійка %d\x00B0 \x2192 %d\x00B0",
         L"угорі %d\x00B0 \x2192 %d\x00B0",
@@ -326,34 +326,34 @@ namespace
         L"Повтори не зараховано через рух (причину вказано вище). Зробіть 5 повторів ще раз.",
         L"Пробні повтори надто відрізняються від фото (між верхом і низом лише %d\x00B0).",
         L"Перевірка кілька разів поспіль не вдалася.",
-        L"Стегна майже не рухаються в кадрі - мабуть, камера бачить дитину під невдалим кутом.",
+        L"Стегна майже не рухаються в кадрі - мабуть, камера бачить користувача під невдалим кутом.",
         L"Відкалібруйте цю вправу заново: натисніть «Перезняти» й зробіть її фото ще раз.",
         L"Пороги скориговано за пробними повторами",
         L"Прес, лежачи",
-        L"Дитина лежить на спині боком до камери: коліна зігнуті, стопи на підлозі, руки схрещені на грудях. "
+        L"Користувач лежить на спині боком до камери: коліна зігнуті, стопи на підлозі, руки схрещені на грудях. "
         L"Камера так само на підлозі за 2-3 м.\n\n"
         L"Натисніть «Зробити фото».",
         L"Прес, угорі",
-        L"Дитина піднімає корпус, як у звичайному повторенні, - так само високо - і завмирає.\n\n"
+        L"Користувач піднімає корпус, як у звичайному повторенні, - так само високо - і завмирає.\n\n"
         L"Натисніть «Зробити фото» й тримайте положення, доки не з'явиться знімок.",
         L"Перевірка преса",
-        L"Дитина робить 5 підйомів корпусу у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
+        L"Користувач робить 5 підйомів корпусу у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
         L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
         L"Якщо повтор не зараховано, нижче буде вказано причину.",
         L"Прес лежачи", L"Прес угорі", L"стегно %d\x00B0",
-        L"Положення для преса не розпізнано: мають бути видні плечі, стегна, коліна й щиколотки, дитина - на спині із зігнутими колінами. Поставте камеру на підлогу й спробуйте ще раз.",
+        L"Положення для преса не розпізнано: мають бути видні плечі, стегна, коліна й щиколотки, користувач - на спині із зігнутими колінами. Поставте камеру на підлогу й спробуйте ще раз.",
         L"Лежачи й угорі кут відрізняється лише на %d\x00B0 - підніміться вище або перевірте ракурс камери. Налаштування преса не змінено.",
         L"Прес (кут у стегні)\n  лежачи %s \x2192 %d, підйом %s \x2192 %d\n  опускання %s \x2192 %d, угорі %s \x2192 %d",
         L"Повтор зараховується, коли кут у стегні зменшується до %d\x00B0 або менше й повертається до %d\x00B0 або більше.",
         L"Останній повтор не зараховано: замало високо - кут у стегні зменшився до %d\x00B0, потрібно %d\x00B0 або менше.",
-        L"Положення для преса не розпізнано: дитина лежить на спині боком до камери, коліна зігнуті, усе тіло в кадрі.",
+        L"Положення для преса не розпізнано: користувач лежить на спині боком до камери, коліна зігнуті, усе тіло в кадрі.",
         L"лежачи %d\x00B0 \x2192 %d\x00B0",
         L"угорі %d\x00B0 \x2192 %d\x00B0",
         L"Налаштування",
         L"Налаштування збережено.",
         L"Телефон (QR-код)",
         L"Відскануйте цей код камерою телефона й натисніть на телефоні «Почати». Потім поставте телефон туди, де він стоятиме "
-        L"під час вправ, - на підлогу за 2-3 м, дитину має бути видно збоку повністю. Адресу нижче можна також ввести вручну.",
+        L"під час вправ, - на підлогу за 2-3 м, користувача має бути видно збоку повністю. Адресу нижче можна також ввести вручну.",
         L"Підключення до сервера...",
         L"Немає зв'язку з сервером %s - телефону потрібен інтернет на цьому комп'ютері. Виберіть вебкамеру або перевірте з'єднання, "
         L"а потім виберіть телефон ще раз.",

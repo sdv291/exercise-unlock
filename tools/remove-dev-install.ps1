@@ -14,7 +14,7 @@
 #>
 
 param(
-    [Parameter(Mandatory = $true, HelpMessage = 'Account lock-user.ps1 was applied to (the child account)')]
+    [Parameter(Mandatory = $true, HelpMessage = 'Account lock-user.ps1 was applied to (the account that unlocks with exercises)')]
     [ValidateNotNullOrEmpty()]
     [string]$User,
     [switch]$KeepData

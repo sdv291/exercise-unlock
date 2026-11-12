@@ -17,6 +17,15 @@
 //                                    # stop / pause / delete it
 //   ExerciseUnlockAdmin secure-data  # resets <DataDir> and everything in
 //                                    # it to SYSTEM + Administrators only
+//   ExerciseUnlockAdmin create-user --user U --password-env VAR
+//                                    # setup's "Create account" when the PC
+//                                    # has only one: a standard local
+//                                    # account whose password never expires
+//   ExerciseUnlockAdmin make-standard --user U
+//                                    # setup's "Remove administrator rights":
+//                                    # U leaves Administrators, joins Users;
+//                                    # refused if no other administrator
+//                                    # would be left
 //
 // Must be run elevated (writes to <DataDir> with
 // an ACL that only SYSTEM / Administrators can access; SCM DACLs need
@@ -27,6 +36,7 @@
 
 #include <windows.h>
 #include <aclapi.h>
+#include <lm.h>
 #include <sddl.h>
 #include <cstdarg>
 #include <cstdio>
@@ -36,6 +46,7 @@
 #include <vector>
 
 #pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "netapi32.lib")
 
 using namespace ExerciseUnlock;
 
@@ -126,6 +137,9 @@ static void PrintUsage()
         L"  clear                     delete the vault entirely\n"
         L"  harden                    lock service DACL so non-admins can't stop it\n"
         L"  secure-data               reset data folder ACLs to SYSTEM + Administrators\n"
+        L"  create-user --user U --password-env VAR\n"
+        L"                            create a standard local account (setup)\n"
+        L"  make-standard --user U    take U out of Administrators (setup)\n"
         L"\n"
         L"Vault path: %ls\n"
         L"Run elevated. Domain '.' or empty means the local machine.\n",
@@ -384,7 +398,7 @@ static int CmdHarden()
     AdminLog(L"harden: ok");
     fwprintf(stdout,
         L"service DACL set. Only SYSTEM and Administrators can stop it.\n"
-        L"Verify from the child's account: 'sc stop ExerciseUnlockService'\n"
+        L"Verify from the user's account: 'sc stop ExerciseUnlockService'\n"
         L"should return Access is denied.\n");
     return 0;
 }
@@ -489,6 +503,160 @@ static int CmdSecureData()
     return 0;
 }
 
+// Setup's "Create account", offered when the PC has only one account (the
+// parent's): a standard local account for the child. Its password never
+// expires - an expired one would leave the tile unable to sign in, and the
+// child doesn't know it to change it. Runs before setup has installed
+// anything, so no admin.log (it would create the data folder too early):
+// setup logs the exit code. 0, or the NET_API_STATUS: 2224 = the name is
+// taken, 2245 = the password breaks this PC's password policy.
+static int CmdCreateUser(const std::wstring& user, std::wstring pass)
+{
+    if (user.empty() || pass.empty())
+    {
+        fwprintf(stderr, L"create-user requires --user U --password-env VAR\n");
+        return 2;
+    }
+    USER_INFO_1 ui{};
+    ui.usri1_name = const_cast<LPWSTR>(user.c_str());
+    ui.usri1_password = pass.data();
+    ui.usri1_priv = USER_PRIV_USER;
+    ui.usri1_flags = UF_SCRIPT | UF_NORMAL_ACCOUNT | UF_DONT_EXPIRE_PASSWD;
+    DWORD badParam = 0;
+    const NET_API_STATUS st = NetUserAdd(nullptr, 1, reinterpret_cast<LPBYTE>(&ui), &badParam);
+    SecureZeroMemory(pass.data(), pass.size() * sizeof(wchar_t));
+    if (st != NERR_Success)
+    {
+        fwprintf(stderr, L"NetUserAdd '%ls' failed: %lu (parameter %lu)\n", user.c_str(), st, badParam);
+        return static_cast<int>(st);
+    }
+
+    // A standard account belongs to Users (BUILTIN\Users, S-1-5-32-545;
+    // the group's name is localized). NetUserAdd usually puts it there.
+    PSID usersSid = nullptr;
+    wchar_t group[256]{}, domain[256]{};
+    DWORD cchGroup = static_cast<DWORD>(std::size(group)), cchDomain = static_cast<DWORD>(std::size(domain));
+    SID_NAME_USE use{};
+    if (ConvertStringSidToSidW(L"S-1-5-32-545", &usersSid) &&
+        LookupAccountSidW(nullptr, usersSid, group, &cchGroup, domain, &cchDomain, &use))
+    {
+        LOCALGROUP_MEMBERS_INFO_3 member{ const_cast<LPWSTR>(user.c_str()) };
+        const NET_API_STATUS g = NetLocalGroupAddMembers(nullptr, group, 3, reinterpret_cast<LPBYTE>(&member), 1);
+        if (g != NERR_Success && g != ERROR_MEMBER_IN_ALIAS)
+            fwprintf(stderr, L"adding '%ls' to %ls failed: %lu\n", user.c_str(), group, g);
+    }
+    if (usersSid) LocalFree(usersSid);
+    fwprintf(stdout, L"created standard account %ls\n", user.c_str());
+    return 0;
+}
+
+// The localized name of a built-in group (Administrators S-1-5-32-544,
+// Users S-1-5-32-545), "" if Windows can't tell.
+static std::wstring BuiltinGroupName(const wchar_t* sidText)
+{
+    PSID sid = nullptr;
+    std::wstring name;
+    wchar_t group[256]{}, domain[256]{};
+    DWORD cchGroup = static_cast<DWORD>(std::size(group)), cchDomain = static_cast<DWORD>(std::size(domain));
+    SID_NAME_USE use{};
+    if (ConvertStringSidToSidW(sidText, &sid) &&
+        LookupAccountSidW(nullptr, sid, group, &cchGroup, domain, &cchDomain, &use))
+        name = group;
+    if (sid) LocalFree(sid);
+    return name;
+}
+
+// Setup's "Remove administrator rights" for the account that unlocks with
+// exercises: an administrator can switch Exercise Unlock off. U leaves
+// Administrators and is in Users. Refused (exit 3) when no other enabled
+// administrator would be left - a PC without one can't be managed. 0, or
+// the NET_API_STATUS / Win32 code. Runs from the installed copy, so it logs.
+static int CmdMakeStandard(const std::wstring& user)
+{
+    if (user.empty()) { fwprintf(stderr, L"make-standard requires --user U\n"); return 2; }
+    const std::wstring admins = BuiltinGroupName(L"S-1-5-32-544");
+    const std::wstring users = BuiltinGroupName(L"S-1-5-32-545");
+    if (admins.empty())
+    {
+        AdminLog(L"make-standard: Administrators group not found (%lu)", GetLastError());
+        return static_cast<int>(ERROR_NO_SUCH_ALIAS);
+    }
+
+    // U's SID, to tell U apart from the others in the group.
+    BYTE userSid[SECURITY_MAX_SID_SIZE]{};
+    DWORD cbSid = sizeof(userSid);
+    wchar_t refDomain[256]{};
+    DWORD cchRef = static_cast<DWORD>(std::size(refDomain));
+    SID_NAME_USE use{};
+    if (!LookupAccountNameW(nullptr, user.c_str(), userSid, &cbSid, refDomain, &cchRef, &use))
+    {
+        const DWORD e = GetLastError();
+        AdminLog(L"make-standard: account '%ls' not found (%lu)", user.c_str(), e);
+        return static_cast<int>(e);
+    }
+
+    wchar_t computer[MAX_COMPUTERNAME_LENGTH + 1]{};
+    DWORD cchComputer = static_cast<DWORD>(std::size(computer));
+    GetComputerNameW(computer, &cchComputer);
+
+    // Another administrator: an enabled local account, or anything from a
+    // domain (a domain account or group - those can't be checked here).
+    LOCALGROUP_MEMBERS_INFO_2* members = nullptr;
+    DWORD read = 0, total = 0;
+    NET_API_STATUS st = NetLocalGroupGetMembers(nullptr, admins.c_str(), 2, reinterpret_cast<LPBYTE*>(&members),
+                                                MAX_PREFERRED_LENGTH, &read, &total, nullptr);
+    if (st != NERR_Success)
+    {
+        AdminLog(L"make-standard: listing %ls failed (%lu)", admins.c_str(), st);
+        return static_cast<int>(st);
+    }
+    int others = 0;
+    for (DWORD i = 0; i < read; ++i)
+    {
+        const LOCALGROUP_MEMBERS_INFO_2& m = members[i];
+        if (EqualSid(m.lgrmi2_sid, userSid)) continue;
+        std::wstring full = m.lgrmi2_domainandname ? m.lgrmi2_domainandname : L"";
+        const size_t slash = full.find(L'\\');
+        const std::wstring dom = slash == std::wstring::npos ? L"" : full.substr(0, slash);
+        const std::wstring name = slash == std::wstring::npos ? full : full.substr(slash + 1);
+        if (m.lgrmi2_sidusage == SidTypeUser && _wcsicmp(dom.c_str(), computer) == 0)
+        {
+            USER_INFO_1* ui = nullptr;
+            if (NetUserGetInfo(nullptr, name.c_str(), 1, reinterpret_cast<LPBYTE*>(&ui)) == NERR_Success)
+            {
+                if (!(ui->usri1_flags & UF_ACCOUNTDISABLE)) ++others;
+                NetApiBufferFree(ui);
+            }
+        }
+        else if (m.lgrmi2_sidusage == SidTypeUser || m.lgrmi2_sidusage == SidTypeGroup)
+            ++others;   // a domain account or group
+    }
+    NetApiBufferFree(members);
+    if (others == 0)
+    {
+        AdminLog(L"make-standard: '%ls' is the only enabled administrator - left as is", user.c_str());
+        fwprintf(stderr, L"%ls is the only enabled administrator\n", user.c_str());
+        return 3;
+    }
+
+    LOCALGROUP_MEMBERS_INFO_3 member{ const_cast<LPWSTR>(user.c_str()) };
+    st = NetLocalGroupDelMembers(nullptr, admins.c_str(), 3, reinterpret_cast<LPBYTE>(&member), 1);
+    if (st != NERR_Success && st != ERROR_MEMBER_NOT_IN_ALIAS)
+    {
+        AdminLog(L"make-standard: removing '%ls' from %ls failed (%lu)", user.c_str(), admins.c_str(), st);
+        return static_cast<int>(st);
+    }
+    if (!users.empty())
+    {
+        const NET_API_STATUS g = NetLocalGroupAddMembers(nullptr, users.c_str(), 3, reinterpret_cast<LPBYTE>(&member), 1);
+        if (g != NERR_Success && g != ERROR_MEMBER_IN_ALIAS)
+            AdminLog(L"make-standard: adding '%ls' to %ls failed (%lu)", user.c_str(), users.c_str(), g);
+    }
+    AdminLog(L"make-standard: '%ls' is a standard account now", user.c_str());
+    fwprintf(stdout, L"%ls is a standard account now\n", user.c_str());
+    return 0;
+}
+
 int wmain(int argc, wchar_t** argv)
 {
     if (argc < 2 || ArgMatches(argv[1], L"help", L"--help"))
@@ -538,6 +706,8 @@ int wmain(int argc, wchar_t** argv)
     if (ArgMatches(argv[1], L"secure-data"))     return CmdSecureData();
     if (ArgMatches(argv[1], L"remove"))          return CmdRemove(optUser);
     if (ArgMatches(argv[1], L"set"))             return CmdSetInteractive(optDomain, optUser, optPass);
+    if (ArgMatches(argv[1], L"create-user"))     return CmdCreateUser(optUser, optPass);
+    if (ArgMatches(argv[1], L"make-standard"))   return CmdMakeStandard(optUser);
 
     fwprintf(stderr, L"unknown command: %ls\n", argv[1]);
     PrintUsage();

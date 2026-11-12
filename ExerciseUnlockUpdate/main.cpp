@@ -52,7 +52,7 @@ namespace
 
     const wchar_t* const kEn[tCount] = {
         L"Exercise Unlock %s is available",
-        L"Installed: %s. The update keeps the child's account, password and calibration.",
+        L"Installed: %s. The update keeps the user's account, password and calibration.",
         L"Download and install\nWindows will ask for an administrator's permission.",
         L"Later",
         L"Downloading Exercise Unlock %s",
@@ -65,20 +65,20 @@ namespace
         L"Couldn't download the update: the server answered %lu.",
         L"Couldn't save the download (error %lu).",
         L"The downloaded file doesn't match the published one (SHA-256), so it wasn't started.",
-        L"Setup needs an administrator's permission. Ask a parent to enter the administrator password and try again.",
+        L"Setup needs an administrator's permission. Ask an administrator of this computer to enter their password and try again.",
         L"Couldn't start setup (error %lu).",
         L"Try again",
         L"Cancel",
         L"Close",
         L"What's new:",
-        L"Ask a parent to update the app: only an administrator of this computer can install it.",
+        L"Ask an administrator of this computer to update the app: only they can install it.",
         L"<a href=\"install\">Install now</a> (needs an administrator's password)",
         L"Got it",
     };
 
     const wchar_t* const kUk[tCount] = {
         L"Доступна нова версія Exercise Unlock %s",
-        L"Встановлено: %s. Оновлення зберігає обліковий запис дитини, пароль і калібрування.",
+        L"Встановлено: %s. Оновлення зберігає обліковий запис користувача, пароль і калібрування.",
         L"Завантажити й встановити\nWindows попросить дозволу адміністратора.",
         L"Пізніше",
         L"Завантаження Exercise Unlock %s",
@@ -91,13 +91,13 @@ namespace
         L"Не вдалося завантажити оновлення: сервер відповів %lu.",
         L"Не вдалося зберегти файл (помилка %lu).",
         L"Завантажений файл не збігається з опублікованим (SHA-256), тому його не запущено.",
-        L"Інсталяції потрібен дозвіл адміністратора. Попросіть батьків ввести пароль адміністратора й спробуйте ще раз.",
+        L"Інсталяції потрібен дозвіл адміністратора. Попросіть адміністратора ввести його пароль і спробуйте ще раз.",
         L"Не вдалося запустити інсталяцію (помилка %lu).",
         L"Спробувати ще раз",
         L"Скасувати",
         L"Закрити",
         L"Що нового:",
-        L"Попроси батьків оновити програму: встановити її може лише адміністратор цього комп'ютера.",
+        L"Попросіть адміністратора цього комп'ютера оновити програму: встановити її може лише він.",
         L"<a href=\"install\">Встановити зараз</a> (потрібен пароль адміністратора)",
         L"Зрозуміло",
     };

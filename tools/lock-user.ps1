@@ -48,7 +48,7 @@
 #>
 
 param(
-    [Parameter(Mandatory = $true, HelpMessage = 'Local account to restrict (the child account)')]
+    [Parameter(Mandatory = $true, HelpMessage = 'Local account to restrict (the account that unlocks with exercises)')]
     [ValidateNotNullOrEmpty()]
     [string]$User,
     [switch]$Undo
