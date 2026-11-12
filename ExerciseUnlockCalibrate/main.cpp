@@ -5,6 +5,7 @@
 // the new (not yet saved) thresholds.
 //
 //   ExerciseUnlockCalibrate.exe [/lang en|uk] [/setup] [/settings] [/phone]
+//   (no /lang: the language setup ran in, HKLM\SOFTWARE\ExerciseUnlock\Language)
 //
 //   /setup     after saving, don't restart the service (a run before it is
 //              installed or started).
@@ -121,6 +122,7 @@ namespace
         tTestNoSitup, tAdjLying, tAdjSitTop,
         tSettings, tSettingsSaved,
         tPhone, tPhoneScan, tPhoneServer, tPhoneNoServer, tPhoneWaiting, tPhoneReset, tSumPhone,
+        tFewFrames,
         tCount
     };
 
@@ -239,6 +241,8 @@ namespace
         L"The phone is connected - waiting for its camera. Press \"Start\" on the phone.",
         L"The phone and the webcam are calibrated separately: the photos so far were reset.",
         L"Saved as the phone's own settings ([phone_squat], [phone_pushup], [phone_situp] in config.ini); the webcam's stay as they are.",
+        L"Too few frames came from the phone (%d in %d s): it may be too slow, or its page is not on the screen. "
+        L"Keep the page open, close other apps on the phone and take the photo again.",
     };
 
     const wchar_t* const kUk[] = {
@@ -356,6 +360,8 @@ namespace
         L"Телефон підключено - чекаємо на його камеру. Натисніть на телефоні «Почати».",
         L"Телефон і вебкамера калібруються окремо: зроблені досі фото скинуто.",
         L"Зберігається як власні налаштування телефона ([phone_squat], [phone_pushup], [phone_situp] у config.ini); налаштування вебкамери не змінюються.",
+        L"Від телефона прийшло замало кадрів (%d за %d с): можливо, він надто повільний або його сторінку згорнуто. "
+        L"Тримайте сторінку відкритою, закрийте інші програми на телефоні й зробіть фото ще раз.",
     };
 
     static_assert(std::size(kEn) == tCount && std::size(kUk) == tCount, "string tables out of sync");
@@ -503,9 +509,11 @@ namespace
 
     struct CameraInfo { std::wstring name, link; };
 
-    // "Take photo" measures straight away: the parent presses it while the
-    // child holds the pose, so there is no countdown.
-    enum class Phase { Live, Collecting };
+    // "Take photo" here measures straight away: the parent presses it while
+    // the child holds the pose. "Take photo" on the phone counts down first:
+    // whoever pressed it is standing at the phone - in the picture, the
+    // camera shaken - and needs a moment to step away.
+    enum class Phase { Live, Countdown, Collecting };
 
     // Each exercise: its photos, then a test with the new thresholds. A new
     // exercise adds its rows here, an ExerciseInfo, and its Plan / Save
@@ -566,7 +574,9 @@ namespace
     constexpr UINT WM_APP_FRAME  = WM_APP + 1;
     constexpr UINT WM_APP_CAMERR = WM_APP + 2;
     constexpr UINT_PTR kTimerId  = 1;
-    constexpr DWORD kCollectMs   = 5000;
+    constexpr DWORD kCollectMs   = 5000;    // a photo: up to 12 measured frames in this time...
+    constexpr DWORD kCollectMaxMs = 10000;  // ...or longer, until 12 frames came (a slow phone)
+    constexpr DWORD kCountdownMs = 5000;    // "Take photo" on the phone
     constexpr size_t kSamples    = 12;
 
     enum CtlId { idCamera = 100, idBack, idTake, idSkip, idNext, idUrl };
@@ -613,6 +623,7 @@ namespace
     int g_step = 0;
     Phase g_phase = Phase::Live;
     ULONGLONG g_phaseStart = 0;
+    size_t g_collectFrames = 0;   // frames that came while collecting, measurable or not
     std::vector<float> g_samples, g_hipSamples;
     Shot g_shots[kShotCount];
     std::wstring g_status;            // error / info line under the instructions
@@ -1137,9 +1148,26 @@ namespace
                     PostMessageW(g_wnd, WM_APP_PHONETAP, 0, 0);
                 else if (mt == "hello")
                     LogF(L"calibrate: phone %hs", msg->Str("ua").substr(0, 100).c_str());
-                else if (mt == "diag" && (msg->Str("kind") == "start" || msg->Str("kind") == "startfail" ||
-                                          msg->Str("kind") == "error"))
-                    LogF(L"calibrate: phone %hs %hs", msg->Str("kind").c_str(), msg->Str("msg").substr(0, 100).c_str());
+                else if (mt == "diag")
+                {
+                    // The phone's camera, model and speed (every 10 s), and
+                    // how sure the model is of the legs: why a photo fails.
+                    const std::string kind = msg->Str("kind");
+                    if (kind == "start" || kind == "tick")
+                    {
+                        const Json::Value* c = msg->Get("conf");
+                        const auto conf = [&](const char* j) {
+                            return c && c->IsObject() ? static_cast<int>(std::lround(c->Num(j, -0.01) * 100.0)) : -1;
+                        };
+                        LogF(L"calibrate: phone %hs %hs %dx%d %hs fps=%.1f hips %d/%d knees %d/%d ankles %d/%d",
+                             kind.c_str(), msg->Str("backend").substr(0, 20).c_str(),
+                             static_cast<int>(msg->Num("w", 0.0)), static_cast<int>(msg->Num("h", 0.0)),
+                             msg->Str("facing").substr(0, 20).c_str(), msg->Num("fps", 0.0),
+                             conf("lhip"), conf("rhip"), conf("lknee"), conf("rknee"), conf("lankle"), conf("rankle"));
+                    }
+                    else if (kind == "startfail" || kind == "error")
+                        LogF(L"calibrate: phone %hs %hs", kind.c_str(), msg->Str("msg").substr(0, 100).c_str());
+                }
             }
         }
         if (!s->stop.load())
@@ -1806,13 +1834,35 @@ namespace
     }
 
     // ------------------------------------------------------------ capture
+    // Why a photo failed, for the log: how sure the model was of the joints
+    // the step measures, on the last frame.
+    void LogCaptureFailure()
+    {
+        BodyPose pose;
+        {
+            std::lock_guard<std::mutex> lk(g_frameMx);
+            pose = g_latest.pose;
+        }
+        const auto c = [&](int j) { return static_cast<int>(std::lround(pose.joints[j].confidence * 100.0f)); };
+        LogF(L"calibrate: photo %d failed: %zu of %zu frames measurable in %llu ms (%s); last frame "
+             L"hips %d/%d knees %d/%d ankles %d/%d shoulders %d/%d elbows %d/%d wrists %d/%d",
+             Cur().shot, g_samples.size(), g_collectFrames, GetTickCount64() - g_phaseStart,
+             g_phoneMode ? L"phone" : L"webcam",
+             c(kLHip), c(kRHip), c(kLKn), c(kRKn), c(kLAn), c(kRAn), c(kLSh), c(kRSh), c(kLEl), c(kREl), c(kLWr), c(kRWr));
+    }
+
     void FinishCapture()
     {
         Shot& shot = g_shots[Cur().shot];
         g_phase = Phase::Live;
         if (g_samples.size() < kSamples / 2)
         {
-            g_status = T(kExercises[Cur().exercise].notSeen);
+            LogCaptureFailure();
+            // Hardly any frames: not the child's position but the phone.
+            const ULONGLONG secs = (GetTickCount64() - g_phaseStart + 500) / 1000;
+            g_status = g_collectFrames < kSamples / 2
+                ? Fmt(T(tFewFrames), static_cast<int>(g_collectFrames), static_cast<int>(secs))
+                : std::wstring(T(kExercises[Cur().exercise].notSeen));
             g_statusIsError = true;
             return;
         }
@@ -1835,6 +1885,40 @@ namespace
         UpdateControls();
     }
 
+    void StartCollecting()
+    {
+        g_samples.clear();
+        g_hipSamples.clear();
+        g_collectFrames = 0;
+        g_phase = Phase::Collecting;   // the next ~12 frames give the angle (median)
+        g_phaseStart = GetTickCount64();
+    }
+
+    // "Take photo": from the phone after a countdown (Phase::Countdown,
+    // OnTimer starts collecting), from here straight away.
+    void TakePhoto(bool countdown)
+    {
+        g_shots[Cur().shot].done = false;
+        ResetExercise(Cur().exercise);
+        if (countdown)
+        {
+            g_phase = Phase::Countdown;
+            g_phaseStart = GetTickCount64();
+            LogF(L"calibrate: photo %d from the phone, countdown", Cur().shot);
+        }
+        else
+            StartCollecting();
+        UpdateControls();
+    }
+
+    // Whole seconds left of the countdown (5, 4 ... 1), 0 when there is none.
+    int CountdownLeft()
+    {
+        if (g_phase != Phase::Countdown) return 0;
+        const ULONGLONG gone = GetTickCount64() - g_phaseStart;
+        return gone >= kCountdownMs ? 0 : static_cast<int>((kCountdownMs - gone + 999) / 1000);
+    }
+
     void OnFrame()
     {
         g_framePending = false;
@@ -1848,6 +1932,7 @@ namespace
             }
             const bool squat = Cur().exercise == kSquat;
             const float v = kExercises[Cur().exercise].measure(pose);
+            ++g_collectFrames;
             if (v > 0.0f)
             {
                 g_samples.push_back(v);
@@ -1880,6 +1965,8 @@ namespace
          .Key("text").String(Relay::ToUtf8(T(s.text)))
          .Key("photo").Bool(s.kind == StepKind::Photo)
          .Key("busy").Bool(g_phase != Phase::Live || !SourceReady())
+         .Key("count").Int(CountdownLeft())
+         .Key("measuring").Bool(g_phase == Phase::Collecting)
          .Key("shot").Int(s.kind == StepKind::Photo ? s.shot : 0)
          .Key("test").String(s.kind == StepKind::Test ? Relay::ToUtf8(kExercises[s.exercise].logName) : std::string())
          .EndObject();
@@ -2069,6 +2156,13 @@ namespace
                           f.bgra.data(), &bi, DIB_RGB_COLORS, SRCCOPY);
         }
         DrawSkeleton(dc, v, f.pose);
+
+        // "Take photo" on the phone: the seconds until it is taken.
+        if (const int left = CountdownLeft())
+        {
+            SelectObject(dc, g_fontBig);
+            DrawShadowText(dc, std::to_wstring(left), v, DT_CENTER | DT_VCENTER | DT_SINGLELINE, RGB(255, 230, 90));
+        }
 
         // Live measurement badge for the current step.
         if (s.kind == StepKind::Photo)
@@ -2497,13 +2591,7 @@ namespace
                 }
                 break;
             }
-            g_samples.clear();
-            g_hipSamples.clear();
-            g_shots[Cur().shot].done = false;
-            ResetExercise(Cur().exercise);
-            g_phase = Phase::Collecting;   // the next ~12 frames give the angle (median)
-            g_phaseStart = GetTickCount64();
-            UpdateControls();
+            TakePhoto(false);
             break;
         case idSkip:
             if (Cur().kind == StepKind::Camera || Cur().kind == StepKind::Summary)
@@ -2533,7 +2621,21 @@ namespace
 
     void OnTimer()
     {
-        if (g_phase == Phase::Collecting && GetTickCount64() - g_phaseStart >= kCollectMs)
+        if (g_phase == Phase::Countdown)
+        {
+            if (CountdownLeft() == 0)
+            {
+                StartCollecting();
+                UpdateControls();
+            }
+            else
+                SendCalibStep();   // the phone shows the seconds left
+        }
+        // A slow phone gets more time, until 12 frames came: "not visible"
+        // should mean the child, not a few frames in 5 s.
+        const ULONGLONG collecting = GetTickCount64() - g_phaseStart;
+        if (g_phase == Phase::Collecting && collecting >= kCollectMs &&
+            (g_collectFrames >= kSamples || collecting >= kCollectMaxMs))
         {
             EndCapture();
         }
@@ -2713,8 +2815,12 @@ namespace
             UpdateControls();
             return 0;
         case WM_APP_PHONETAP:
-            // "Take photo" on the phone does what the button here does.
-            if (Cur().kind == StepKind::Photo && IsWindowEnabled(g_take)) OnCommand(idTake, BN_CLICKED);
+            // "Take photo" on the phone: the same photo, after a countdown.
+            if (Cur().kind == StepKind::Photo && IsWindowEnabled(g_take))
+            {
+                g_status.clear();
+                TakePhoto(true);
+            }
             return 0;
         case WM_CTLCOLORSTATIC:
             if (reinterpret_cast<HWND>(lp) == g_url)
@@ -2759,7 +2865,23 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     g_inst = inst;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-    g_uk = PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_UKRAINIAN;
+    // The language: /lang, else the one setup ran in (like the update
+    // window), else Windows'. Started without /lang - pinned to the taskbar,
+    // from the search or Explorer - it used to follow Windows only, and an
+    // English Windows showed English after a Ukrainian setup.
+    const wchar_t* langFrom = L"windows";
+    {
+        wchar_t lang[16]{};
+        DWORD cb = sizeof(lang);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\ExerciseUnlock", L"Language", RRF_RT_REG_SZ,
+                         nullptr, lang, &cb) == ERROR_SUCCESS)
+        {
+            g_uk = _wcsicmp(lang, L"uk") == 0;
+            langFrom = L"setup";
+        }
+        else
+            g_uk = PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_UKRAINIAN;
+    }
     bool settingsOnly = false;
     int argc = 0;
     if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc))
@@ -2769,7 +2891,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
             if (_wcsicmp(argv[i], L"/setup") == 0) g_setupMode = true;
             else if (_wcsicmp(argv[i], L"/settings") == 0) settingsOnly = true;
             else if (_wcsicmp(argv[i], L"/phone") == 0) g_startPhone = true;
-            else if (_wcsicmp(argv[i], L"/lang") == 0 && i + 1 < argc) g_uk = _wcsicmp(argv[++i], L"uk") == 0;
+            else if (_wcsicmp(argv[i], L"/lang") == 0 && i + 1 < argc)
+            {
+                g_uk = _wcsicmp(argv[++i], L"uk") == 0;
+                langFrom = L"/lang";
+            }
             else if (_wcsicmp(argv[i], L"/snapshot") == 0 && i + 1 < argc) g_snapshotPath = argv[++i];
             else if (_wcsicmp(argv[i], L"/step") == 0 && i + 1 < argc) g_snapshotStep = _wtoi(argv[++i]);
         }
@@ -2810,7 +2936,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     ULONG_PTR gdipToken = 0;
     Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);   // example pictures
     g_poseOk = SUCCEEDED(g_pose.Load(g_exeDir + L"\\movenet_lightning.onnx"));
-    LogF(L"calibrate: start lang=%s setup=%d pose=%d", g_uk ? L"uk" : L"en", g_setupMode ? 1 : 0, g_poseOk ? 1 : 0);
+    LogF(L"calibrate: start lang=%s (%s) setup=%d pose=%d", g_uk ? L"uk" : L"en", langFrom, g_setupMode ? 1 : 0, g_poseOk ? 1 : 0);
 
     WNDCLASSEXW wc{ sizeof(wc) };
     wc.lpfnWndProc = WndProc;

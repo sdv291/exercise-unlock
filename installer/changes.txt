@@ -2,15 +2,11 @@
 # lists it to a parent. build-installer.ps1 copies it into version.txt.
 # Rewrite it for every release: one point per line, "en:" or "uk:" first,
 # up to 8 short points per language.
-en: The phone can be calibrated on its own: "Phone (QR code)" in the calibration
-en: Phone reps are counted by the computer from the phone's poses, not taken on trust
-en: Updates download and install from the app's own window
-en: The calibration starts right after setup
-en: The service restarts itself after a failure
-en: Standard accounts can't change the time zone to shift the allowed hours
-uk: Телефон можна відкалібрувати окремо: «Телефон (QR-код)» у калібруванні
-uk: Повтори з телефона рахує комп'ютер за позами з телефона, а не на слово
-uk: Оновлення завантажуються й встановлюються з вікна програми
-uk: Калібрування запускається одразу після інсталяції
-uk: Служба сама перезапускається після збою
-uk: Звичайні облікові записи не можуть змінити часовий пояс, щоб зсунути дозволені години
+en: The calibration starts after setup again, without the error 740
+en: "Take photo" on the phone counts down 5 seconds, so you can step out of the picture
+en: The calibration always opens in the language chosen in setup
+en: After removing the app, PIN and Windows Hello sign-in options are no longer "managed by your organization"
+uk: Калібрування знову запускається після інсталяції, без помилки 740
+uk: «Зробити фото» на телефоні відлічує 5 секунд, щоб ви встигли відійти з кадру
+uk: Калібрування завжди відкривається мовою, вибраною під час інсталяції
+uk: Після видалення програми вхід через PIN і Windows Hello більше не «керується вашою організацією»

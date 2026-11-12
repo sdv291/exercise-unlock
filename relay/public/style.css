@@ -35,6 +35,9 @@ button { font: inherit; border: 0; border-radius: 12px; cursor: pointer; }
 button.primary { background: var(--accent); color: #0b2a18; font-weight: 700; padding: 14px 40px; font-size: 19px; }
 button.primary:disabled { opacity: .5; }
 button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--bar); padding: 8px 14px; }
+/* Front <-> back camera: the icon says what the word alone didn't. */
+button.flip { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink); }
+button.flip svg { flex: none; }
 
 /* Live screen: video on top, counters below (side by side in landscape). */
 .live { display: flex; flex-direction: column; gap: 10px; padding: 0; }
@@ -57,6 +60,15 @@ button.ghost { background: transparent; color: var(--muted); border: 1px solid v
   padding: 8px 16px; border-radius: 10px; background: rgba(170, 30, 50, .9); font-weight: 600;
   max-width: 92%; text-align: center;
 }
+
+/* Calibration: seconds until the photo, after "Take photo" here. */
+.count {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 132px; height: 132px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0, 0, 0, .55); color: #ffe65a; font-size: 84px; font-weight: 800;
+  pointer-events: none;
+}
+.count[hidden] { display: none; }
 
 /* Diagnostics, toggled by tapping the video. */
 .debug {

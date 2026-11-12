@@ -25,6 +25,7 @@
         <canvas id="overlay"></canvas>
         <div id="banner" class="banner"></div>
         <div id="toast" class="toast" hidden></div>
+        <div id="count" class="count" hidden></div>
         <pre id="debug" class="debug" hidden></pre>
       </div>
       <div class="panel">
@@ -34,7 +35,18 @@
           <p id="calib-text"></p>
           <button id="btn-photo" class="primary" hidden></button>
         </div>
-        <button id="btn-flip" class="ghost"></button>
+        <button id="btn-flip" class="ghost flip">
+          <!-- a camera with two arrows going round: front <-> back -->
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7h3l2-2.2h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/>
+            <path d="M8.6 12.4a3.5 3.5 0 0 1 6.1-1.9"/>
+            <path d="M15 8.7l-.3 1.8-1.8-.3"/>
+            <path d="M15.4 13.6a3.5 3.5 0 0 1-6.1 1.9"/>
+            <path d="M9 17.3l.3-1.8 1.8.3"/>
+          </svg>
+          <span id="flip-text"></span>
+        </button>
       </div>
     </section>
 

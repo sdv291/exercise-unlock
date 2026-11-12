@@ -53,7 +53,9 @@
       unlocked: 'Комп\'ютер розблоковано. Молодець!',
       endedTitle: 'Сеанс завершено',
       ended: 'Щоб продовжити, відскануй QR-код на екрані блокування ще раз.',
-      flip: 'Камера',
+      flip: 'Повернути',
+      flipTitle: 'Перемкнути передню й задню камери',
+      holdStill: 'Не рухайся — знімаю…',
       drop_timing: 'Не зараховано: занадто швидко або повільно',
       drop_depth: 'Не зараховано: глибше!',
       drop_drift: 'Не зараховано: стій на місці',
@@ -96,7 +98,9 @@
       unlocked: 'The computer is unlocked. Well done!',
       endedTitle: 'Session ended',
       ended: 'To continue, scan the QR code on the lock screen again.',
-      flip: 'Camera',
+      flip: 'Flip',
+      flipTitle: 'Switch between the front and back cameras',
+      holdStill: 'Hold still - taking the photo…',
       drop_timing: 'Not counted: too fast or too slow',
       drop_depth: 'Not counted: go deeper!',
       drop_drift: 'Not counted: stay in place',
@@ -130,12 +134,14 @@
     startMsg: $('start-msg'), startBtn: $('btn-start'), hint: $('place-hint'),
     video: $('video'), canvas: $('overlay'), banner: $('banner'), toast: $('toast'), debug: $('debug'),
     counters: $('counters'), progress: $('progress'), barFill: $('bar-fill'), earned: $('earned-text'),
-    calib: $('calib'), calibText: $('calib-text'), photo: $('btn-photo'),
+    calib: $('calib'), calibText: $('calib-text'), photo: $('btn-photo'), count: $('count'),
     flip: $('btn-flip'), endTitle: $('end-title'), endMsg: $('end-msg'),
   };
   ui.hint.textContent = T('placeHint');
   ui.startBtn.textContent = T('start');
-  ui.flip.textContent = T('flip');
+  $('flip-text').textContent = T('flip');
+  ui.flip.title = T('flipTitle');
+  ui.flip.setAttribute('aria-label', T('flipTitle'));
   ui.photo.textContent = T('photo');
   ui.startMsg.textContent = T('connecting');
 
@@ -323,14 +329,23 @@
     sounds.drop();
   }
 
-  // The wizard's current step, from the PC; "Take photo" here does what it
-  // does there.
+  // The wizard's current step, from the PC. "Take photo" here takes it
+  // after a countdown (count: seconds left), so whoever pressed it can step
+  // out of the picture; then the PC measures (measuring) for a few seconds.
+  let shownCount = 0, shownMeasuring = false;
   function renderCalib() {
     if (!calibStep || !running) return;
-    banner(calibStep.title || '', 'go');
+    const count = calibStep.count || 0, measuring = !!calibStep.measuring;
+    banner(measuring ? T('holdStill') : (calibStep.title || ''), 'go');
     ui.calibText.textContent = calibStep.text || '';
     ui.photo.hidden = !calibStep.photo;
     ui.photo.disabled = !!calibStep.busy;
+    ui.count.hidden = !count;
+    ui.count.textContent = count ? String(count) : '';
+    if (count && count !== shownCount) beep(660, 120);
+    if (measuring && !shownMeasuring) beep(1320, 260);
+    shownCount = count;
+    shownMeasuring = measuring;
   }
 
   // Count up right away; the PC's next status has the authoritative total.
@@ -595,7 +610,7 @@
       const [lo, hi] = range();
       sendMsg({
         t: 'diag', kind: 'tick', fps: Math.round(diag.fps * 10) / 10,
-        backend: typeof tf !== 'undefined' ? tf.getBackend() : 'demo', w: frame.W, h: frame.H,
+        backend: typeof tf !== 'undefined' ? tf.getBackend() : 'demo', w: frame.W, h: frame.H, facing,
         posture, raw: coach.posture.raw || '', counting: countingActive(),
         ex: active ? active.id : '', phase: active ? PHASES[active.detector.phase] : '',
         angle: active ? Math.round(active.detector.angle) : 0, lo, hi,

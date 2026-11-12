@@ -124,6 +124,23 @@ function Remove-RegValue($path, $name)
     }
 }
 
+# A policy key the lock created and -Undo emptied: gone too, when nothing
+# else (a real policy) is in it.
+function Remove-EmptyKey($path)
+{
+    if (-not (Test-Path $path)) { return }
+    $key = Get-Item -Path $path
+    if ($key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0) {
+        Remove-Item -Path $path -ErrorAction SilentlyContinue
+    }
+}
+
+# Windows' own default for the "Sign-in options" page (value 1 = allowed),
+# with the policy's other fields next to it. Step 1 sets it to 0; -Undo
+# puts 1 back - deleting it (1.4.0 and older) left that page "managed by
+# your organization" for every account after the uninstall.
+$signInOptionsKey = 'HKLM:\SOFTWARE\Microsoft\PolicyManager\default\Settings\AllowSignInOptions'
+
 # --- Step 4: the time zone right of BUILTIN\Users ---
 # -Undo gives it back only when this script took it (the marker value):
 # a PC where a policy had already removed it stays that way.
@@ -260,8 +277,7 @@ if (-not $Undo)
     # see other methods were available.
     Set-RegDword 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' `
                  'BlockDomainPicturePassword' 1
-    Set-RegDword 'HKLM:\SOFTWARE\Microsoft\PolicyManager\default\Settings\AllowSignInOptions' `
-                 'value' 0
+    Set-RegDword $signInOptionsKey 'value' 0
 
     # 2. Disable non-password credential providers at the sign-in
     #    screen. The filters live under
@@ -316,8 +332,14 @@ else
                     'Enabled'
     Remove-RegValue 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' `
                     'BlockDomainPicturePassword'
-    Remove-RegValue 'HKLM:\SOFTWARE\Microsoft\PolicyManager\default\Settings\AllowSignInOptions' `
-                    'value'
+    Remove-EmptyKey 'HKLM:\SOFTWARE\Policies\Microsoft\PassportForWork'
+    try {
+        if (Test-Path $signInOptionsKey) {
+            Set-ItemProperty -Path $signInOptionsKey -Name 'value' -Value 1 -Type DWord
+        }
+    } catch {
+        Write-Host "        warning: sign-in options: $($_.Exception.Message.Trim())"
+    }
 
     Write-Host "  [2/4] Re-enabling alternative sign-in tiles..."
     foreach ($name in $providersToDisable.Keys)

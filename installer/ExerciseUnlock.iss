@@ -130,8 +130,11 @@ Name: "{group}\{cm:CalibratePhoneShortcut}"; Filename: "{app}\ExerciseUnlockCali
 ; offered unticked on an update). The service is running by then: on the
 ; desktop it leaves the camera alone ([camera] lock_screen_only), and
 ; without /setup the calibrator restarts it after saving.
-Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; Description: "{cm:RunCalibrate}"; Flags: postinstall nowait skipifsilent; Check: not KeepSettings
-Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; Description: "{cm:RunCalibrate}"; Flags: postinstall nowait skipifsilent unchecked; Check: KeepSettings
+; runascurrentuser: a postinstall entry otherwise runs as the user who
+; started setup, not elevated, and the calibrator needs administrator
+; rights (its manifest) - CreateProcess failed with 740 (1.4.1 and older).
+Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; Description: "{cm:RunCalibrate}"; Flags: postinstall nowait skipifsilent runascurrentuser; Check: not KeepSettings
+Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; Description: "{cm:RunCalibrate}"; Flags: postinstall nowait skipifsilent unchecked runascurrentuser; Check: KeepSettings
 
 [InstallDelete]
 ; renamed to lock-user.ps1 in 1.1.1
@@ -918,6 +921,22 @@ begin
   RunHidden(SysExe('WindowsPowerShell\v1.0\powershell.exe'), Params);
 end;
 
+{ Windows' default policy for the "Sign-in options" page. The lockdown sets
+  it to 0, and lock-user.ps1 -Undo of 1.4.0 and older deleted it instead of
+  putting 1 back: the page stayed "managed by your organization" for every
+  account after the uninstall. Put back on install and uninstall. }
+procedure RepairSignInOptions;
+var
+  Key: String;
+begin
+  Key := 'SOFTWARE\Microsoft\PolicyManager\default\Settings\AllowSignInOptions';
+  if RegKeyExists(HKLM64, Key) and not RegValueExists(HKLM64, Key, 'value') then
+  begin
+    Log('AllowSignInOptions had no value - set back to 1');
+    RegWriteDWordValue(HKLM64, Key, 'value', 1);
+  end;
+end;
+
 { Earlier builds kept their data in C:\ProgramData\ExerciseUnlock and
   debug files in C:\Users\Public. Carry over the counters and the unlock
   history, then remove the old folder - including its copy of the vault. }
@@ -1041,6 +1060,7 @@ begin
   { 3. Optional lockdown of PIN / Hello / password change. Undo it for a
        previously configured account when it changes or is unticked. }
   WantLock := WizardIsTaskSelected('lockdown');
+  RepairSignInOptions;
   if (PrevLock = 1) and ((not WantLock) or (CompareText(PrevUser, ChildUser) <> 0)) and (PrevUser <> '') then
     RunLockUser(PrevUser, True);
   if WantLock then
@@ -1098,6 +1118,7 @@ begin
     if RegQueryDWordValue(HKLM, REG_KEY, 'Lockdown', Lock) and (Lock = 1) and
        RegQueryStringValue(HKLM, REG_KEY, 'ChildUser', User) then
       RunLockUser(User, True);
+    RepairSignInOptions;
     { Wipe the stored password before the folder goes away. }
     RunHidden(ExpandConstant('{app}\ExerciseUnlockAdmin.exe'), 'clear');
   end;
