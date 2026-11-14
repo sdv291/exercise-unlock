@@ -135,7 +135,11 @@ namespace ExerciseUnlock
     // read the local SAM, so no credential handshake is needed.
     // If users.allow is present and non-empty, only accounts whose
     // name appears in it get a tile.
-    static HRESULT EnumerateLocalUserSids(std::vector<std::wstring>& out)
+    // Each tile: the account's SID (for LogonUI) and its name (the vault
+    // entry and the service's per-account counters go by name).
+    struct LocalUser { std::wstring sid, name; };
+
+    static HRESULT EnumerateLocalUserSids(std::vector<LocalUser>& out)
     {
         out.clear();
         const auto allow = ReadAllowedUserNames();
@@ -200,7 +204,7 @@ namespace ExerciseUnlock
                 LogF(L"ConvertSidToStringSid failed: %lu", GetLastError());
                 continue;
             }
-            out.emplace_back(sidStr);
+            out.push_back({ sidStr, u.usri1_name });
             LogF(L"local user: %s  sid=%s", u.usri1_name, sidStr);
             LocalFree(sidStr);
         }
@@ -239,7 +243,7 @@ namespace ExerciseUnlock
 
     HRESULT Provider::CreateCredentialsForLocalUsers()
     {
-        std::vector<std::wstring> sids;
+        std::vector<LocalUser> sids;
         HRESULT hr = EnumerateLocalUserSids(sids);
         if (FAILED(hr))
         {
@@ -251,14 +255,14 @@ namespace ExerciseUnlock
             return S_OK;
         }
 
-        for (const auto& sid : sids)
+        for (const LocalUser& user : sids)
         {
             Credential* c = new (std::nothrow) Credential();
             if (!c)
             {
                 return E_OUTOFMEMORY;
             }
-            HRESULT h = c->Initialize(s_fieldDescriptors, FIELD_COUNT, sid.c_str());
+            HRESULT h = c->Initialize(s_fieldDescriptors, FIELD_COUNT, user.sid.c_str(), user.name.c_str());
             if (FAILED(h))
             {
                 c->Release();

@@ -38,6 +38,9 @@ namespace ExerciseUnlock::Svc
 
         std::atomic<bool>     m_stop{ false };
         std::mutex            m_clientsMx;
+        // One tile switch at a time: pause the old account's session, then
+        // make the new account the active one.
+        std::mutex            m_userSwitchMx;
         std::vector<HANDLE>   m_clientThreads;
     };
 }

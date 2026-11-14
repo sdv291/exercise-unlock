@@ -49,8 +49,9 @@ namespace ExerciseUnlock::Svc
     // the local day.
     static int64_t EndOfActiveWindowUnix()
     {
-        const int from = Config::ScheduleFromMinutesToday();
-        const int to   = Config::ScheduleToMinutesToday();
+        const UserRules rules = ActiveRules();   // a session is the active account's
+        const int from = rules.FromToday();
+        const int to   = rules.ToToday();
         if (from == to) return EndOfLocalDayUnix();
 
         time_t nowT = time(nullptr);
@@ -217,7 +218,7 @@ namespace ExerciseUnlock::Svc
         // in one unlock. Prevents a hoarded 20-pushup/50-squat
         // workout from unlocking the PC for the whole evening — the
         // child has to come back and re-earn after the cap.
-        const uint32_t cap = Config::MaxSessionSeconds();
+        const uint32_t cap = static_cast<uint32_t>(ActiveRules().maxSessionSec);
         if (cap > 0 && seconds > cap)
         {
             LogF(L"session: clamped %u -> %u (max_session_seconds)", seconds, cap);
@@ -275,7 +276,7 @@ namespace ExerciseUnlock::Svc
         {
             uint32_t paused = st.pausedSessionSeconds.load() +
                               static_cast<uint32_t>(remaining);
-            const int cap = Config::MaxSessionSeconds();
+            const int cap = ActiveRules().maxSessionSec;
             if (cap > 0 && paused > static_cast<uint32_t>(cap))
                 paused = static_cast<uint32_t>(cap);
             st.pausedSessionSeconds.store(paused);

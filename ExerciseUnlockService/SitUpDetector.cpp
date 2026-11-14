@@ -79,7 +79,7 @@ namespace ExerciseUnlock::Svc
             st.sitUpPhase.store(static_cast<uint8_t>(SitUpPhase::Unknown));
             return;
         }
-        const bool offHours = !Config::IsWithinActiveWindowNow();
+        const bool offHours = !IsWithinHoursNow();
 
         // Only while the classifier has latched SitUp (on the back, knees
         // up). Skip rather than reset — its unlatch hysteresis carries a

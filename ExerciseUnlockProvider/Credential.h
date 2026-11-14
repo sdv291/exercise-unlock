@@ -24,7 +24,8 @@ namespace ExerciseUnlock
 
         HRESULT Initialize(const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* fields,
                            DWORD fieldCount,
-                           PCWSTR userSid);
+                           PCWSTR userSid,
+                           PCWSTR userName);
 
         // IUnknown
         IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -73,6 +74,9 @@ namespace ExerciseUnlock
         std::vector<CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> m_fields;
         std::vector<std::wstring> m_values;
         std::wstring m_userSid;
+        // The account's name: its vault entry, and the service keeps its
+        // counters and rules under it.
+        std::wstring m_userName;
         // Mutex guards m_events + m_values access from the poll timer
         // thread pool vs. the LogonUI thread that calls Advise/UnAdvise
         // and SetSelected/SetDeselected.

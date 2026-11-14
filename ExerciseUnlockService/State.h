@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Protocol.h"
+#include "Config.h"
 
 #include <atomic>
 #include <mutex>
+#include <string>
 #include <vector>
 
 // v0.2 has no real exercise state yet — the state block is stubbed and
@@ -82,7 +84,9 @@ namespace ExerciseUnlock::Svc
 
         // v0.9 session — set by SessionManager when an unlock session
         // is running. SnapshotInto derives sessionActive /
-        // sessionRemainingSeconds from these.
+        // sessionRemainingSeconds from these. A session always belongs
+        // to the active account (ActiveUser): picking another tile
+        // pauses it first.
         std::atomic<int64_t> sessionExpiresAtUnix{ 0 };  // 0 = no session
         // Unix seconds when the most recent session actually ended
         // (by expiring or being banked). Used by the grace window:
@@ -157,6 +161,41 @@ namespace ExerciseUnlock::Svc
     bool IsSessionActive();
 
     State& GetState();
+
+    // ------------------------------------------------------------ users
+    // Several accounts share the PC, each with its own reps, earned time
+    // and session. State's per-user fields (the rep counts, earned bank,
+    // paused session, grace trigger, day) always belong to the ACTIVE
+    // account: the one whose tile is selected on the lock / sign-in
+    // screen. The others wait in their records until their tile is picked.
+    struct UserRecord
+    {
+        uint32_t squats = 0, pushups = 0, situps = 0;
+        uint32_t bankSeconds = 0, pausedSeconds = 0;
+        int64_t  lastSessionEndedUnix = 0;
+        int32_t  dayKey = 0;
+    };
+    struct UserEntry
+    {
+        std::wstring name;
+        UserRecord   record;
+    };
+
+    // The active account, "" before any tile asked.
+    std::wstring ActiveUser();
+    // Its rules (Config::Rules), and whether its allowed hours are now -
+    // what the detectors check before crediting a rep.
+    UserRules ActiveRules();
+    bool IsWithinHoursNow();
+    // Make `user` the active account: State's per-user fields go into the
+    // previous account's record and come from `user`'s. A running session
+    // must be paused first (SessionManager::PauseOnLock). False when it
+    // already was the active one (or `user` is empty).
+    bool SelectUser(const std::wstring& user);
+    // Every account's record, the active one's taken from State (for
+    // state.dat), and putting them back at service start.
+    std::vector<UserEntry> SnapshotUsers(std::wstring& active);
+    void RestoreUsers(const std::wstring& active, std::vector<UserEntry> users);
 
     // Zero reps, bank and paused session time if the local date has
     // changed since State::dayKey. Cheap; called on every snapshot

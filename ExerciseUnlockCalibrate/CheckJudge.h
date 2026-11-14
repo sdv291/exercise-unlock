@@ -1,12 +1,9 @@
 #pragma once
 
-// The calibration check's verdict, kept apart from the UI so it can be
-// tested on its own. After reps that did not count, the reps themselves
-// say what to do: loosen the thresholds to what they really reach, blame
-// the pace or the movement, or - when no thresholds would fit - ask for
-// new photos.
-
-#include "RepResult.h"
+// Calibration by reps (1.6), kept apart from the UI so it can be tested on
+// its own: the child does a few reps, the turning points of the angle the
+// service's own detector sees in them (standing / squatting, arms straight /
+// the bottom of the push-up, lying / sitting up) give the thresholds.
 
 #include <algorithm>
 #include <cmath>
@@ -14,36 +11,39 @@
 
 namespace ExerciseUnlock::Calib
 {
-    using Svc::RepResult;
-
     // Turning points of the angle the detector sees (its smoothed value),
     // whatever the thresholds: how far the child's reps really go. A turn
-    // counts once the angle has come back `hyst` degrees from it.
+    // counts once the angle has come back `hyst` degrees from it. Each turn
+    // also keeps a second value seen at that moment (the hips' height for
+    // squats): peakAux[i] / valleyAux[i] belong to peaks[i] / valleys[i].
+    // A rep is a valley: peaks[i] is the top before valleys[i].
     struct Swing
     {
         float hyst = 15.0f;
         bool  init = false, falling = false;
-        float lo = 0.0f, hi = 0.0f;
-        std::vector<float> peaks, valleys;
+        float lo = 0.0f, hi = 0.0f, loAux = 0.0f, hiAux = 0.0f;
+        std::vector<float> peaks, valleys, peakAux, valleyAux;
 
         void Reset()
         {
             init = falling = false;
             peaks.clear();
             valleys.clear();
+            peakAux.clear();
+            valleyAux.clear();
         }
-        void Push(float a)
+        void Push(float a, float aux = 0.0f)
         {
-            if (!init) { init = true; lo = hi = a; return; }
+            if (!init) { init = true; lo = hi = a; loAux = hiAux = aux; return; }
             if (!falling)
             {
-                hi = (std::max)(hi, a);
-                if (hi - a >= hyst) { peaks.push_back(hi); falling = true; lo = a; }
+                if (a >= hi) { hi = a; hiAux = aux; }
+                if (hi - a >= hyst) { peaks.push_back(hi); peakAux.push_back(hiAux); falling = true; lo = a; loAux = aux; }
             }
             else
             {
-                lo = (std::min)(lo, a);
-                if (a - lo >= hyst) { valleys.push_back(lo); falling = false; hi = a; }
+                if (a <= lo) { lo = a; loAux = aux; }
+                if (a - lo >= hyst) { valleys.push_back(lo); valleyAux.push_back(loAux); falling = false; hi = a; hiAux = aux; }
             }
         }
     };
@@ -73,119 +73,96 @@ namespace ExerciseUnlock::Calib
         float hipDrop = 0.0f;
     };
 
-    enum class Verdict
-    {
-        Adjust,              // new thresholds in Judgement::t, check again
-        Pace,                // reps too fast / too slow: check again
-        Form,                // moved / went down again on the way up: check again
-        Retry,               // no clear reason: check again (counts as a round)
-        NewPhotosRange,      // too little movement / no room for thresholds (Judgement::range)
-        NewPhotosHips,       // the hips hardly move in the picture
-        NewPhotosRepeated,   // too many rounds already
-    };
-
-    struct Judgement
-    {
-        Verdict    verdict = Verdict::Retry;
-        Thresholds t{};
-        int        range = 0;             // NewPhotosRange: the degrees there were
-        int        bottom = 0, top = 0;   // what the reps reach (for the log)
-    };
-
-    constexpr int kMaxRounds = 2;          // adjustments / unexplained rounds before new photos
-
     // What differs between exercises: the smallest movement that is still
-    // a rep, the room kept between neighbouring thresholds, and whether
-    // the detector has a hip-drop gate (squats).
+    // a rep, the room kept between neighbouring thresholds, whether the
+    // detector has a hip-drop gate (squats), and the bottom the reps must
+    // reach at least (0: any) - so shallow calibration reps cannot become
+    // the standard.
     struct Rules
     {
         int  minRange;
         int  gap;
         bool hipGate;
+        int  deepest;
     };
-    constexpr Rules kSquatRules  { 20, 4, true };
-    constexpr Rules kPushupRules { 10, 2, false };   // MoveNet reads elbows with a small span
-    constexpr Rules kSitupRules  { 20, 4, false };
+    constexpr Rules kSquatRules  { 20, 4, true, 130 };
+    constexpr Rules kPushupRules { 10, 2, false, 0 };   // MoveNet reads elbows with a small span
+    constexpr Rules kSitupRules  { 20, 4, false, 0 };
 
-    // attempts: the detector's finished attempts; peaks / valleys: the
-    // Swing of the same reps; rounds: Adjust / Retry verdicts so far.
-    inline Judgement Judge(const std::vector<RepResult>& attempts, const std::vector<float>& peaks,
-                           const std::vector<float>& valleys, const Thresholds& cur, const Rules& rules, int rounds)
+    enum class RepFault
     {
-        const int minRange = rules.minRange, gap = rules.gap;
-        Judgement j;
-        j.t = cur;
+        None,
+        Shallow,   // the reps did not reach Rules::deepest (RepPlan::bottom says how far they went)
+        Range,     // too little movement / no room for thresholds (RepPlan::range)
+        Hips,      // squats: the hips hardly move in the picture
+    };
 
-        int timing = 0, fast = 0, form = 0, hips = 0;
-        std::vector<float> drops;
-        for (const RepResult& r : attempts)
+    struct RepPlan
+    {
+        RepFault   fault = RepFault::None;
+        Thresholds t{};
+        int        top = 0, bottom = 0;   // what the reps reach
+        int        range = 0;             // Range: the degrees there were
+    };
+
+    // A typical rep (the medians of the turns) with a quarter of its range
+    // kept free on each side, so a rep a little short of the calibration ones
+    // still counts - MoveNet's elbows and hips wander by several degrees from
+    // rep to rep, more so on a phone. Four of the five calibration reps clear
+    // both thresholds by 3 degrees at least. (1.6.0 put them 10% inside the
+    // band of four reps of five: push-ups and sit-ups then went uncounted.)
+    // "Going down" sits near the top: the rep timer starts there, and a late
+    // start would make normal reps "too fast". The hip-drop gate asks for
+    // half of what the smaller reps dropped (4 of 5 drop more), within
+    // 0.02..0.08 of the frame height.
+    constexpr float kKeepFree = 0.25f;   // of the range, at the top and at the bottom
+
+    inline RepPlan PlanFromReps(const std::vector<float>& peaks, const std::vector<float>& valleys,
+                                const std::vector<float>& peakHips, const std::vector<float>& valleyHips,
+                                const Rules& rules)
+    {
+        RepPlan r;
+        if (peaks.empty() || valleys.empty())
         {
-            if (r.hipDrop > 0.0f) drops.push_back(r.hipDrop);
-            if (r.counted || !r.reachedDown) continue;
-            if (r.tooFast || r.tooSlow) { ++timing; if (r.tooFast) ++fast; }
-            else if (r.hipsStayed) ++hips;
-            else if (r.moved || r.wobbled) ++form;
+            r.fault = RepFault::Range;
+            return r;
         }
-
-        // The band four of five reps cover - one odd rep may still miss.
-        j.bottom = valleys.empty() ? cur.down : static_cast<int>(std::lround(Quantile(valleys, 0.8)));
-        j.top = peaks.empty() ? cur.top : static_cast<int>(std::lround(Quantile(peaks, 0.2)));
-        const int band = j.top - j.bottom;
-
-        // Thresholds laid out inside that band. It is the detector's own
-        // smoothed angle, so small margins do (the photos are held poses
-        // and needed wide ones). "Down" never asks for deeper reps than
-        // the photos did. "Going down" sits near the top: the rep timer
-        // starts there, and a late start makes normal reps "too fast".
-        const int margin = (std::max)(3, static_cast<int>(std::lround(0.10 * band)));
-        const int st = j.top - margin;
-        const int dn = (std::max)(cur.down, j.bottom + margin);
-        int gd = st - (std::max)(gap, static_cast<int>(std::lround(0.15 * (st - dn))));
-        int gu = dn + (std::max)(gap, static_cast<int>(std::lround(0.30 * (st - dn))));
-        KeepOrder(gd, gu, gap);
-
-        const bool notDeep = j.bottom + margin > cur.down;   // some reps stop above "down"
-        const bool notUp = st < cur.top;                     // some reps stop below "standing"
-        const bool lateTimer = fast > 0 && gd > cur.goingDown + 2;
-        float hip = cur.hipDrop;
-        if (rules.hipGate && hips >= 2 && cur.hipDrop > 0.0f)
+        const float top = Quantile(peaks, 0.5), bottom = Quantile(valleys, 0.5);
+        r.top = static_cast<int>(std::lround(top));
+        r.bottom = static_cast<int>(std::lround(bottom));
+        if (rules.deepest > 0 && r.bottom > rules.deepest)
         {
-            if (drops.empty() || *(std::max_element)(drops.begin(), drops.end()) < 0.02f)
+            r.fault = RepFault::Shallow;
+            return r;
+        }
+        const float band = top - bottom;
+        const int st = static_cast<int>(std::lround((std::min)(top - kKeepFree * band, Quantile(peaks, 0.2) - 3.0f)));
+        const int dn = static_cast<int>(std::lround((std::max)(bottom + kKeepFree * band, Quantile(valleys, 0.8) + 3.0f)));
+        if (band < rules.minRange || st - dn < 3 * rules.gap)
+        {
+            r.fault = RepFault::Range;
+            r.range = (std::max)(0, static_cast<int>(std::lround(band)));
+            return r;
+        }
+        int gd = st - (std::max)(rules.gap, static_cast<int>(std::lround(0.15 * (st - dn))));
+        int gu = dn + (std::max)(rules.gap, static_cast<int>(std::lround(0.30 * (st - dn))));
+        KeepOrder(gd, gu, rules.gap);
+        r.t = { st, gd, gu, dn, 0.0f };
+
+        if (rules.hipGate)
+        {
+            // Image y grows down: the hips are lower (larger y) at the bottom of a squat.
+            std::vector<float> drops;
+            const size_t n = (std::min)({ peaks.size(), valleys.size(), peakHips.size(), valleyHips.size() });
+            for (size_t i = 0; i < n; ++i)
+                if (peakHips[i] > 0.0f && valleyHips[i] > 0.0f) drops.push_back(valleyHips[i] - peakHips[i]);
+            if (drops.empty() || Quantile(drops, 0.5) < 0.02f)
             {
-                j.verdict = Verdict::NewPhotosHips;
-                return j;
+                r.fault = RepFault::Hips;
+                return r;
             }
-            hip = std::clamp(std::round(0.7f * Quantile(drops, 0.2f) * 100.0f) / 100.0f, 0.02f, cur.hipDrop);
+            r.t.hipDrop = std::clamp(std::round(0.5f * Quantile(drops, 0.2) * 100.0f) / 100.0f, 0.02f, 0.08f);
         }
-
-        if (!notDeep && !notUp && !lateTimer && hip >= cur.hipDrop)
-        {
-            // The angles are reached: it is the pace or the movement.
-            if (timing > 0 && timing >= form) j.verdict = Verdict::Pace;
-            else if (form > 0) j.verdict = Verdict::Form;
-            else j.verdict = rounds >= kMaxRounds ? Verdict::NewPhotosRepeated : Verdict::Retry;
-            return j;
-        }
-        if (rounds >= kMaxRounds)
-        {
-            j.verdict = Verdict::NewPhotosRepeated;
-            return j;
-        }
-        // Too little movement to tell a rep from standing still, or
-        // thresholds with no room left between them.
-        j.range = band < minRange ? band : st - dn;
-        if (band < minRange || st - dn < 3 * gap)
-        {
-            j.verdict = Verdict::NewPhotosRange;
-            return j;
-        }
-
-        j.t.top = st;
-        j.t.goingDown = gd;
-        j.t.goingUp = gu;
-        j.t.down = dn;
-        j.t.hipDrop = hip;
-        j.verdict = Verdict::Adjust;
-        return j;
+        return r;
     }
 }

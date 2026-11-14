@@ -15,6 +15,9 @@ namespace ExerciseUnlock::Svc
     // No unlock session in the calibration tool: the detectors always run.
     bool IsSessionActive() { return false; }
 
+    // The test screen ignores the schedule (Config::SetIgnoreSchedule).
+    bool IsWithinHoursNow() { return Config::Rules(L"").InWindowNow(); }
+
     // The service's state.dat holds the child's earned reps; test reps
     // must not overwrite it.
     void PersistentState::Load() {}

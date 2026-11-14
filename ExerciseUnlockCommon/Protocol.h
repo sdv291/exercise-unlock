@@ -14,7 +14,11 @@ namespace ExerciseUnlock::Ipc
     // read + one write per connection). Anything richer waits until we
     // actually need streaming updates.
     inline constexpr uint32_t kMagic   = 0x4B4C5545; // 'EULK' little-endian
-    inline constexpr uint16_t kVersion = 1;
+    // 2 (1.5.0): every request names the account whose tile asks - each
+    // account has its own counters, earned time and rules.
+    inline constexpr uint16_t kVersion = 2;
+    // Room for a local account name (Windows allows 20 characters).
+    inline constexpr int kUserChars = 64;
 
     enum class Op : uint16_t
     {
@@ -143,6 +147,10 @@ namespace ExerciseUnlock::Ipc
         uint32_t magic;
         uint16_t version;
         uint16_t op;      // Op
+        // The account of the tile that asks (NUL-terminated). The service
+        // makes it the active one: its reps, earned time and session.
+        // Empty: whoever is active already (tools).
+        wchar_t  user[kUserChars];
     };
 
     // Wire copy of one skeletal joint. Coordinates are model-normalized
@@ -264,7 +272,7 @@ namespace ExerciseUnlock::Ipc
 
     #pragma pack(pop)
 
-    static_assert(sizeof(Request)  == 8,   "wire format changed");
+    static_assert(sizeof(Request)  == 8 + kUserChars * sizeof(wchar_t), "wire format changed");   // = 136
     static_assert(sizeof(Response) == 340 + 128 * sizeof(wchar_t) + 4 + 80 * sizeof(wchar_t) + 12,
                   "wire format changed");   // = 772
 }

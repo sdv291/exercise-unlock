@@ -18,6 +18,9 @@ namespace ExerciseUnlock::Calib
         bool      uk = false;
         std::wstring configPath, soundsPath;
         std::vector<std::wstring> cameras;  // suggestions for the preferred camera
+        // The "Users" page: the accounts that unlock with exercises
+        // (users.allow), and the tool that keeps their passwords.
+        std::wstring usersPath, adminToolPath;
 
         // Developer option: render this page to a .bmp and close.
         std::wstring snapshotPath;

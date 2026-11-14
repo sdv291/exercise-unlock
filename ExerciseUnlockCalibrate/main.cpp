@@ -1,8 +1,8 @@
-// ExerciseUnlockCalibrate — measures the child's knee / elbow angles from
-// four photos (standing, squat, push-up up, push-up down) and writes the
-// rep-detection thresholds into config.ini. After each exercise's photos
-// the child does 5 test reps, counted by the service's own detectors with
-// the new (not yet saved) thresholds.
+// ExerciseUnlockCalibrate — the child does 5 reps of each exercise (squats,
+// push-ups, sit-ups) in front of the webcam or the phone. The turning points
+// of the angle the service's own detectors see in them (standing / squatting,
+// arms straight / the bottom of the push-up, lying / sitting up) give the
+// rep-detection thresholds, written into config.ini (CheckJudge.h).
 //
 //   ExerciseUnlockCalibrate.exe [/lang en|uk] [/setup] [/settings] [/phone]
 //   (no /lang: the language setup ran in, HKLM\SOFTWARE\ExerciseUnlock\Language)
@@ -16,7 +16,8 @@
 // "Phone (QR code)" in the camera list calibrates the phone camera instead:
 // the phone page streams its poses through the relay, the same steps run on
 // them, and the result goes into the phone's own sections ([phone_squat]
-// ...) - the webcam's stay as they are.
+// ...) - the webcam's stay as they are. The phone shows each step and the
+// wizard's buttons, so the whole calibration can be done from it.
 //
 // Angles are measured exactly the way SquatDetector / PushUpDetector see
 // them: same MoveNet model (PoseEstimator.cpp), same camera format (RGB32
@@ -87,10 +88,8 @@ using ExerciseUnlock::Svc::LogF;
 using ExerciseUnlock::Svc::PoseEstimator;
 using ExerciseUnlock::Svc::PostureClassifier;
 using ExerciseUnlock::Svc::PushUpDetector;
-using ExerciseUnlock::Svc::RepResult;
 using ExerciseUnlock::Svc::SitUpDetector;
 using ExerciseUnlock::Svc::SquatDetector;
-using ExerciseUnlock::Calib::KeepOrder;
 using ExerciseUnlock::Calib::Swing;
 namespace Ipc = ExerciseUnlock::Ipc;
 namespace Json = ExerciseUnlock::Svc::Json;
@@ -102,66 +101,44 @@ namespace
     // ------------------------------------------------------------ text
     enum Txt
     {
-        tWindow, tCamera, tBack, tNext, tTake, tRetake, tSkip, tSave, tClose, tStepOf,
-        tTitle0, tText0, tTitle1, tText1, tTitle2, tText2, tTitle3, tText3, tTitle4, tText4,
-        tTitle5, tText5,
-        tRow1, tRow2, tRow3, tRow4, tKnee, tElbow, tSkipped, tNotYet,
-        tLegsNotSeen, tPushNotSeen, tSmallSquat, tSmallPush, tNoCamera, tCamBusy, tNoFrames, tNoModel,
-        tSaved, tRestarted, tRestartFailed, tSaveFailed, tNothingToSave,
-        tSumSquat, tSumPush, tSumHip, tSumKept, tSumCamera,
-        tExampleSetup, tExampleView, tDistance,
-        tTitleTestSquat, tTextTestSquat, tTitleTestPush, tTextTestPush, tRestart,
-        tTestThrSquat, tTestThrPush, tTestCounted, tTestPassed,
-        tTestNotDeepSquat, tTestNotDeepPush, tTestTooFast, tTestTooSlow, tTestShallow, tTestMoved, tTestWobble, tTestHips,
-        tTestNoSquat, tTestNoPlank, tTestStraight,
-        tSumTestOk, tSumTestWarn, tSumTestSkipped,
-        tRetakePhotos, tTestAdjusted, tAdjDown, tAdjStand, tAdjUp, tAdjHip, tTestPace, tTestForm,
-        tRestartRange, tRestartStill, tRestartHips, tRestartAsk, tSumAdjusted,
-        tTitleSitLying, tTextSitLying, tTitleSitUp, tTextSitUp, tTitleTestSitup, tTextTestSitup,
-        tRow5, tRow6, tHip, tSitNotSeen, tSmallSitup, tSumSitup, tTestThrSitup, tTestNotDeepSitup,
-        tTestNoSitup, tAdjLying, tAdjSitTop,
-        tSettings, tSettingsSaved,
-        tPhone, tPhoneScan, tPhoneServer, tPhoneNoServer, tPhoneWaiting, tPhoneReset, tSumPhone,
-        tFewFrames,
-        tCount
+        tWindow, tCamera, tBack, tNext, tSkip, tSave, tClose, tStepOf, tTitle0, tText0, tTitle5, tText5, tKnee,
+        tElbow, tSkipped, tNotYet, tNoCamera, tCamBusy, tNoFrames, tNoModel, tSaved, tRestarted, tRestartFailed,
+        tSaveFailed, tNothingToSave, tSumSquat, tSumPush, tSumHip, tSumKept, tSumCamera, tExampleSetup, tExampleView,
+        tDistance, tRestart, tTestThrSquat, tTestThrPush, tTestNoSquat, tTestNoPlank, tHip, tSumSitup, tTestThrSitup,
+        tTestNoSitup, tSettings, tSettingsSaved, tPhone, tPhoneScan, tPhoneServer, tPhoneNoServer, tPhoneWaiting,
+        tPhoneReset, tSumPhone, tPhoneStep0, tTitleRepsSquat, tTextRepsSquat, tTitleRepsPush, tTextRepsPush,
+        tTitleRepsSit, tTextRepsSit, tRepsCount, tRepsDone, tRepsNext, tRepsShallow, tRepsRange, tRepsHips, tSumReps, tCount
     };
 
     const wchar_t* const kEn[] = {
-        L"Exercise Unlock - calibration", L"Camera:", L"Back", L"Next", L"Take photo", L"Retake", L"Skip", L"Save", L"Close",
+        L"Exercise Unlock - calibration",
+        L"Camera:",
+        L"Back",
+        L"Next",
+        L"Skip",
+        L"Save",
+        L"Close",
         L"Step %d of %d",
         L"Camera",
         L"Put the camera where the user will exercise and pick it in the list above.\n\n"
         L"The user must be fully visible from the side - from head to feet. For push-ups and sit-ups the camera has to stand on the floor.\n\n"
-        L"Next you will take 6 photos: standing and squatting, push-up with straight arms and at the bottom, lying and sitting up for sit-ups. "
-        L"Exercise Unlock measures the user's angles and tunes the rep counting to them; after each exercise "
-        L"the user does 5 test reps to check it.\n\n"
+        L"Next the user does 5 reps of each exercise at the usual pace: squats, push-ups and sit-ups. Exercise Unlock takes the top and the bottom position from them and tunes the rep counting to them.\n\n"
         L"The seconds per rep, the schedule and everything else are under \"Settings\".",
-        L"Standing, side view",
-        L"The user stands sideways to the camera at full height: legs straight, arms down.\n\n"
-        L"Press \"Take photo\" - the photo is taken right away.",
-        L"Squat, side view",
-        L"The user squats as deep as in a normal rep and holds still, still sideways to the camera.\n\n"
-        L"Press \"Take photo\" and keep the squat until the photo appears.",
-        L"Push-up, arms straight",
-        L"Put the camera on the floor, 2-3 m away. The user takes the plank position sideways to the camera, arms straight.\n\n"
-        L"Press \"Take photo\".",
-        L"Push-up, bottom",
-        L"The user lowers down as in a normal push-up - elbows bent - and holds still.\n\n"
-        L"Press \"Take photo\".",
         L"Result",
-        L"These thresholds will be written to config.ini. Exercises whose photos were skipped keep their current settings.",
-        L"Standing", L"Squat", L"Push-up up", L"Push-up down", L"knee %d\x00B0", L"elbow %d\x00B0", L"skipped", L"-",
-        L"The user is not fully visible: hips, knees and ankles must be in the frame. Check the camera and take the photo again.",
-        L"No push-up position recognized: shoulders, elbows, wrists, hips and ankles must be visible and the hands on the floor. Put the camera on the floor and try again.",
-        L"Standing and squat differ by only %d\x00B0 - squat deeper or check the camera angle. Squat settings were not changed.",
-        L"Straight and bent arms differ by only %d\x00B0 - lower deeper or check the camera angle. Push-up settings were not changed.",
+        L"These thresholds will be written to config.ini. Skipped exercises keep their current settings.",
+        L"knee %d\x00B0",
+        L"elbow %d\x00B0",
+        L"skipped",
+        L"-",
         L"No camera found. Connect a camera and start the calibration again.",
         L"The camera is busy or unavailable. Close other apps that use it and pick the camera again.",
         L"The camera is not sending a picture. Pick another camera in the list above, or close other apps that use it.",
         L"The pose model could not be loaded - is the installation complete?",
-        L"Saved to config.ini.", L" The service was restarted.", L" Restart the service (or the computer) to apply.",
+        L"Saved to config.ini.",
+        L" The service was restarted.",
+        L" Restart the service (or the computer) to apply.",
         L"Could not write config.ini (error %lu). Run the calibration as administrator.",
-        L"Nothing to save - all photos were skipped.",
+        L"Nothing to save - all exercises were skipped.",
         L"Squats (knee angle)\n  standing %s \x2192 %d, going down %s \x2192 %d\n  going up %s \x2192 %d, down %s \x2192 %d",
         L"Push-ups (elbow angle)\n  up %s \x2192 %d, going down %s \x2192 %d\n  going up %s \x2192 %d, down %s \x2192 %d",
         L"Minimum hip drop %s \x2192 %.2f",
@@ -170,66 +147,15 @@ namespace
         L"Example - where to put the camera:",
         L"Example - what the camera should see:",
         L"2-3 m",
-        L"Squat check",
-        L"The user does 5 squats at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
-        L"The reps are counted with the new settings exactly the way the lock screen will count them. "
-        L"If a rep is not counted, the reason is shown below.",
-        L"Push-up check",
-        L"The user does 5 push-ups at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
-        L"The reps are counted with the new settings exactly the way the lock screen will count them. "
-        L"If a rep is not counted, the reason is shown below.",
         L"Start over",
         L"A rep counts when the knee bends to %d\x00B0 or less and straightens back to %d\x00B0 or more.",
         L"A rep counts when the elbow bends to %d\x00B0 or less and straightens back to %d\x00B0 or more.",
-        L"Counted: %d of %d.",
-        L"Check passed: %d of %d reps counted. Press \"Next\".",
-        L"Last rep not counted: not deep enough - the knee bent to %d\x00B0, it needs %d\x00B0 or less.",
-        L"Last rep not counted: not low enough - the elbow bent to %d\x00B0, it needs %d\x00B0 or less.",
-        L"Last rep not counted: too fast (%.1f s, at least %.1f s needed).",
-        L"Last rep not counted: too slow (%.1f s, at most %.1f s).",
-        L"Last rep not counted: not deep enough.",
-        L"Last rep not counted: the user moved from the spot.",
-        L"Last rep not counted: the movement went down again on the way up - stand up in one go.",
-        L"Last rep not counted: the hips did not go down - squat, don't just lift a knee.",
         L"No squat position recognized: the user must be fully visible, from head to feet.",
         L"No push-up position recognized: the whole body must be visible, hands on the floor.",
-        L"Keep the body straight, as in a plank.",
-        L"\x2714 Check passed: %d of %d reps counted",
-        L"\x26A0 Check not finished (%d of %d) - reps may not count. Retake the photos or run the check again.",
-        L"Check skipped",
-        L"Retake",
-        L"The thresholds were adjusted to the user's test reps: %s. Do 5 reps again.",
-        L"down %d\x00B0 \x2192 %d\x00B0",
-        L"standing %d\x00B0 \x2192 %d\x00B0",
-        L"up %d\x00B0 \x2192 %d\x00B0",
-        L"hip drop %.2f \x2192 %.2f",
-        L"The reps were not counted because of the pace: one rep should take %.1f-%.1f s. Do 5 reps again at a steady pace.",
-        L"The reps were not counted because of the movement (see the reason above). Do 5 reps again.",
-        L"The test reps differ too much from the photos (only %d\x00B0 between top and bottom).",
-        L"The check failed several times in a row.",
-        L"The hips hardly move in the picture - the camera probably sees the user from a bad angle.",
-        L"Calibrate this exercise again: press \"Retake\" and take its photos once more.",
-        L"Thresholds adjusted to the test reps",
-        L"Sit-up, lying",
-        L"The user lies on the back sideways to the camera: knees bent, feet flat on the floor, arms crossed on the chest. "
-        L"The camera stays on the floor, 2-3 m away.\n\n"
-        L"Press \"Take photo\".",
-        L"Sit-up, top",
-        L"The user sits up as in a normal rep - as high as usual - and holds still.\n\n"
-        L"Press \"Take photo\" and keep the position until the photo appears.",
-        L"Sit-up check",
-        L"The user does 5 sit-ups at the usual pace, sideways to the camera - just like on the lock screen.\n\n"
-        L"The reps are counted with the new settings exactly the way the lock screen will count them. "
-        L"If a rep is not counted, the reason is shown below.",
-        L"Sit-up lying", L"Sit-up top", L"hip %d\x00B0",
-        L"No sit-up position recognized: shoulders, hips, knees and ankles must be visible, the user on the back with the knees bent. Put the camera on the floor and try again.",
-        L"Lying and sitting up differ by only %d\x00B0 - sit up higher or check the camera angle. Sit-up settings were not changed.",
+        L"hip %d\x00B0",
         L"Sit-ups (hip angle)\n  lying %s \x2192 %d, rising %s \x2192 %d\n  lowering %s \x2192 %d, top %s \x2192 %d",
         L"A rep counts when the hip angle closes to %d\x00B0 or less and opens back to %d\x00B0 or more.",
-        L"Last rep not counted: not high enough - the hip angle closed to %d\x00B0, it needs %d\x00B0 or less.",
         L"No sit-up position recognized: the user lies on the back sideways to the camera, knees bent, the whole body visible.",
-        L"lying %d\x00B0 \x2192 %d\x00B0",
-        L"top %d\x00B0 \x2192 %d\x00B0",
         L"Settings",
         L"Settings saved.",
         L"Phone (QR code)",
@@ -239,48 +165,60 @@ namespace
         L"No connection to the server %s - the phone needs the internet on this computer. Pick a webcam or check the connection, "
         L"then pick the phone again.",
         L"The phone is connected - waiting for its camera. Press \"Start\" on the phone.",
-        L"The phone and the webcam are calibrated separately: the photos so far were reset.",
+        L"The phone and the webcam are calibrated separately: the reps so far were reset.",
         L"Saved as the phone's own settings ([phone_squat], [phone_pushup], [phone_situp] in config.ini); the webcam's stay as they are.",
-        L"Too few frames came from the phone (%d in %d s): it may be too slow, or its page is not on the screen. "
-        L"Keep the page open, close other apps on the phone and take the photo again.",
+        L"The phone is connected. Put it where it will stand during the exercises: on the floor, 2-3 m away, side-on to the user, "
+        L"so the whole body from head to feet is in the picture.\n\n"
+        L"Then press \"Next\": 5 reps of each exercise at the usual pace, and Exercise Unlock takes the positions from them by itself. "
+        L"Everything can be done from this phone.",
+        L"Squats",
+        L"The user stands sideways to the camera, the whole body in the picture, and does 5 squats at the usual pace - the way they will squat every day. Exercise Unlock takes the highest and the lowest position from them by itself.\n\n"
+        L"Squat for real, thighs about level with the floor: squats like these are what will count.",
+        L"Push-ups",
+        L"The camera stands on the floor. Sideways to it the user does 5 push-ups at the usual pace: arms all the way straight, chest down to the floor. Exercise Unlock takes the top and the bottom from them by itself.",
+        L"Sit-ups",
+        L"The camera stands on the floor. The user lies on the back sideways to it, knees bent, and does 5 sit-ups at the usual pace. Exercise Unlock takes the lying and the top position from them by itself.",
+        L"%d of %d reps done",
+        L"Done: up %s, down %s.",
+        L"On to the next step...",
+        L"The squats were too shallow: the knee bent only to %d\x00B0, and it has to reach %d\x00B0 at least. "
+        L"Squat deeper and do 5 squats again.",
+        L"Too little movement: only %d\x00B0 between the top and the bottom position. Do 5 reps again, all the way, "
+        L"sideways to the camera.",
+        L"The hips hardly go down in the picture: the camera probably sees the user at a poor angle. Put it side-on to the "
+        L"user and do 5 squats again.",
+        L"%s: up %s, down %s",
     };
 
     const wchar_t* const kUk[] = {
-        L"Exercise Unlock - калібрування", L"Камера:", L"Назад", L"Далі", L"Зробити фото", L"Перезняти", L"Пропустити", L"Зберегти", L"Закрити",
+        L"Exercise Unlock - калібрування",
+        L"Камера:",
+        L"Назад",
+        L"Далі",
+        L"Пропустити",
+        L"Зберегти",
+        L"Закрити",
         L"Крок %d з %d",
         L"Камера",
         L"Поставте камеру там, де користувач виконуватиме вправи, і виберіть її у списку вище.\n\n"
         L"Користувача має бути видно збоку повністю - від голови до ніг. Для віджимань і преса камера має стояти на підлозі.\n\n"
-        L"Далі ви зробите 6 фото: стоячи й у присіді, віджимання з прямими руками й унизу, лежачи й угорі для преса. "
-        L"Exercise Unlock виміряє кути користувача й налаштує під них підрахунок повторів, а після кожної вправи "
-        L"користувач зробить 5 пробних повторів для перевірки.\n\n"
+        L"Далі користувач робить по 5 повторів кожної вправи у звичному темпі: присідання, віджимання й прес. Exercise Unlock сам візьме з них верхнє й нижнє положення та налаштує під них підрахунок повторів.\n\n"
         L"Секунди за повтор, розклад та все інше - у «Налаштуваннях».",
-        L"Стоячи, у профіль",
-        L"Користувач стоїть боком до камери на повний зріст: ноги прямі, руки опущені.\n\n"
-        L"Натисніть «Зробити фото» - знімок буде зроблено одразу.",
-        L"Присід, у профіль",
-        L"Користувач присідає так глибоко, як у звичайному повторенні, і завмирає - так само боком до камери.\n\n"
-        L"Натисніть «Зробити фото» й тримайте присід, доки не з'явиться знімок.",
-        L"Віджимання, руки прямі",
-        L"Поставте камеру на підлогу за 2-3 м. Користувач стає в планку боком до камери, руки прямі.\n\n"
-        L"Натисніть «Зробити фото».",
-        L"Віджимання, внизу",
-        L"Користувач опускається, як у звичайному віджиманні, - лікті зігнуті - і завмирає.\n\n"
-        L"Натисніть «Зробити фото».",
         L"Результат",
-        L"Ці пороги буде записано в config.ini. Вправи, фото яких пропущено, зберігають поточні налаштування.",
-        L"Стоячи", L"Присід", L"Віджимання вгорі", L"Віджимання внизу", L"коліно %d\x00B0", L"лікоть %d\x00B0", L"пропущено", L"-",
-        L"Користувача видно не повністю: стегна, коліна й щиколотки мають бути в кадрі. Перевірте камеру й зробіть фото ще раз.",
-        L"Положення віджимання не розпізнано: мають бути видні плечі, лікті, кисті, стегна й щиколотки, а руки - на підлозі. Поставте камеру на підлогу й спробуйте ще раз.",
-        L"Стійка й присід відрізняються лише на %d\x00B0 - присядьте глибше або перевірте ракурс камери. Налаштування присідань не змінено.",
-        L"Прямі й зігнуті руки відрізняються лише на %d\x00B0 - опустіться нижче або перевірте ракурс камери. Налаштування віджимань не змінено.",
+        L"Ці пороги буде записано в config.ini. Пропущені вправи зберігають поточні налаштування.",
+        L"коліно %d\x00B0",
+        L"лікоть %d\x00B0",
+        L"пропущено",
+        L"-",
         L"Камеру не знайдено. Підключіть камеру й запустіть калібрування знову.",
         L"Камера зайнята або недоступна. Закрийте інші програми, що її використовують, і виберіть камеру ще раз.",
         L"Камера не передає зображення. Виберіть іншу камеру у списку вище або закрийте інші програми, що її використовують.",
         L"Не вдалося завантажити модель пози - чи завершено встановлення?",
-        L"Збережено в config.ini.", L" Службу перезапущено.", L" Перезапустіть службу (або комп'ютер), щоб застосувати.",
+        L"Збережено в config.ini.",
+        L" Службу перезапущено.",
+        L" Перезапустіть службу (або комп'ютер), щоб застосувати.",
         L"Не вдалося записати config.ini (помилка %lu). Запустіть калібрування від імені адміністратора.",
-        L"Нічого зберігати - усі фото пропущено.",
+        L"Нічого зберігати - усі вправи пропущено.",
         L"Присідання (кут коліна)\n  стійка %s \x2192 %d, спуск %s \x2192 %d\n  підйом %s \x2192 %d, низ %s \x2192 %d",
         L"Віджимання (кут ліктя)\n  угорі %s \x2192 %d, спуск %s \x2192 %d\n  підйом %s \x2192 %d, низ %s \x2192 %d",
         L"Мінімальне опускання стегон %s \x2192 %.2f",
@@ -289,66 +227,15 @@ namespace
         L"Приклад - куди поставити камеру:",
         L"Приклад - так має бачити камера:",
         L"2-3 м",
-        L"Перевірка присідань",
-        L"Користувач робить 5 присідань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
-        L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
-        L"Якщо повтор не зараховано, нижче буде вказано причину.",
-        L"Перевірка віджимань",
-        L"Користувач робить 5 віджимань у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
-        L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
-        L"Якщо повтор не зараховано, нижче буде вказано причину.",
         L"Почати знову",
         L"Повтор зараховується, коли коліно згинається до %d\x00B0 або менше й випрямляється до %d\x00B0 або більше.",
         L"Повтор зараховується, коли лікоть згинається до %d\x00B0 або менше й випрямляється до %d\x00B0 або більше.",
-        L"Зараховано: %d з %d.",
-        L"Перевірку пройдено: зараховано %d з %d повторів. Натисніть «Далі».",
-        L"Останній повтор не зараховано: замало глибоко - коліно зігнулося до %d\x00B0, потрібно %d\x00B0 або менше.",
-        L"Останній повтор не зараховано: замало низько - лікоть зігнувся до %d\x00B0, потрібно %d\x00B0 або менше.",
-        L"Останній повтор не зараховано: занадто швидко (%.1f с, потрібно щонайменше %.1f с).",
-        L"Останній повтор не зараховано: занадто повільно (%.1f с, максимум %.1f с).",
-        L"Останній повтор не зараховано: замало глибоко.",
-        L"Останній повтор не зараховано: користувач зрушив з місця.",
-        L"Останній повтор не зараховано: на підйомі рух знову пішов униз - вставайте за один рух.",
-        L"Останній повтор не зараховано: стегна не опустилися - треба присідати, а не піднімати коліно.",
         L"Присід не розпізнано: користувача має бути видно повністю, від голови до ніг.",
         L"Віджимання не розпізнано: має бути видно все тіло, руки - на підлозі.",
-        L"Тримайте тіло рівно, як у планці.",
-        L"\x2714 Перевірку пройдено: зараховано %d з %d",
-        L"\x26A0 Перевірку не завершено (%d з %d) - повтори можуть не зараховуватися. Перезніміть фото або повторіть перевірку.",
-        L"Перевірку пропущено",
-        L"Перезняти",
-        L"Пороги скориговано за пробними повторами користувача: %s. Зробіть 5 повторів ще раз.",
-        L"низ %d\x00B0 \x2192 %d\x00B0",
-        L"стійка %d\x00B0 \x2192 %d\x00B0",
-        L"угорі %d\x00B0 \x2192 %d\x00B0",
-        L"опускання стегон %.2f \x2192 %.2f",
-        L"Повтори не зараховано через темп: один повтор має тривати %.1f-%.1f с. Зробіть 5 повторів ще раз у рівному темпі.",
-        L"Повтори не зараховано через рух (причину вказано вище). Зробіть 5 повторів ще раз.",
-        L"Пробні повтори надто відрізняються від фото (між верхом і низом лише %d\x00B0).",
-        L"Перевірка кілька разів поспіль не вдалася.",
-        L"Стегна майже не рухаються в кадрі - мабуть, камера бачить користувача під невдалим кутом.",
-        L"Відкалібруйте цю вправу заново: натисніть «Перезняти» й зробіть її фото ще раз.",
-        L"Пороги скориговано за пробними повторами",
-        L"Прес, лежачи",
-        L"Користувач лежить на спині боком до камери: коліна зігнуті, стопи на підлозі, руки схрещені на грудях. "
-        L"Камера так само на підлозі за 2-3 м.\n\n"
-        L"Натисніть «Зробити фото».",
-        L"Прес, угорі",
-        L"Користувач піднімає корпус, як у звичайному повторенні, - так само високо - і завмирає.\n\n"
-        L"Натисніть «Зробити фото» й тримайте положення, доки не з'явиться знімок.",
-        L"Перевірка преса",
-        L"Користувач робить 5 підйомів корпусу у звичному темпі, боком до камери, - так само, як на екрані блокування.\n\n"
-        L"Повтори рахуються з новими налаштуваннями точно так, як їх рахуватиме екран блокування. "
-        L"Якщо повтор не зараховано, нижче буде вказано причину.",
-        L"Прес лежачи", L"Прес угорі", L"стегно %d\x00B0",
-        L"Положення для преса не розпізнано: мають бути видні плечі, стегна, коліна й щиколотки, користувач - на спині із зігнутими колінами. Поставте камеру на підлогу й спробуйте ще раз.",
-        L"Лежачи й угорі кут відрізняється лише на %d\x00B0 - підніміться вище або перевірте ракурс камери. Налаштування преса не змінено.",
+        L"стегно %d\x00B0",
         L"Прес (кут у стегні)\n  лежачи %s \x2192 %d, підйом %s \x2192 %d\n  опускання %s \x2192 %d, угорі %s \x2192 %d",
         L"Повтор зараховується, коли кут у стегні зменшується до %d\x00B0 або менше й повертається до %d\x00B0 або більше.",
-        L"Останній повтор не зараховано: замало високо - кут у стегні зменшився до %d\x00B0, потрібно %d\x00B0 або менше.",
         L"Положення для преса не розпізнано: користувач лежить на спині боком до камери, коліна зігнуті, усе тіло в кадрі.",
-        L"лежачи %d\x00B0 \x2192 %d\x00B0",
-        L"угорі %d\x00B0 \x2192 %d\x00B0",
         L"Налаштування",
         L"Налаштування збережено.",
         L"Телефон (QR-код)",
@@ -358,10 +245,29 @@ namespace
         L"Немає зв'язку з сервером %s - телефону потрібен інтернет на цьому комп'ютері. Виберіть вебкамеру або перевірте з'єднання, "
         L"а потім виберіть телефон ще раз.",
         L"Телефон підключено - чекаємо на його камеру. Натисніть на телефоні «Почати».",
-        L"Телефон і вебкамера калібруються окремо: зроблені досі фото скинуто.",
+        L"Телефон і вебкамера калібруються окремо: зроблені досі повтори скинуто.",
         L"Зберігається як власні налаштування телефона ([phone_squat], [phone_pushup], [phone_situp] у config.ini); налаштування вебкамери не змінюються.",
-        L"Від телефона прийшло замало кадрів (%d за %d с): можливо, він надто повільний або його сторінку згорнуто. "
-        L"Тримайте сторінку відкритою, закрийте інші програми на телефоні й зробіть фото ще раз.",
+        L"Телефон підключено. Поставте його туди, де він стоятиме під час вправ: на підлогу за 2-3 м, боком до користувача, "
+        L"щоб у кадрі було все тіло від голови до ніг.\n\n"
+        L"Потім натисніть «Далі»: по 5 повторів кожної вправи у звичному темпі, а Exercise Unlock сам візьме з них положення. "
+        L"Усе можна робити з цього телефона.",
+        L"Присідання",
+        L"Користувач стає боком до камери, усе тіло в кадрі, і робить 5 присідань у звичному темпі - так, як присідатиме щодня. Exercise Unlock сам візьме з них найвище й найнижче положення.\n\n"
+        L"Присідайте по-справжньому, стегна приблизно паралельно підлозі: саме такі присідання й зараховуватимуться.",
+        L"Віджимання",
+        L"Камера стоїть на підлозі. Користувач боком до неї робить 5 віджимань у звичному темпі: руки випрямляються повністю, груди опускаються до підлоги. Exercise Unlock сам візьме з них верхнє й нижнє положення.",
+        L"Прес",
+        L"Камера стоїть на підлозі. Користувач лягає на спину боком до неї, коліна зігнуті, і робить 5 підйомів корпусу у звичному темпі. Exercise Unlock сам візьме з них положення лежачи й угорі.",
+        L"Зроблено повторів: %d із %d",
+        L"Готово: угорі %s, унизу %s.",
+        L"Переходимо до наступного кроку...",
+        L"Присідання надто неглибокі: коліно згиналося лише до %d\x00B0, а має хоча б до %d\x00B0. "
+        L"Присідайте глибше й зробіть 5 присідань ще раз.",
+        L"Замало руху: між верхнім і нижнім положенням лише %d\x00B0. Зробіть 5 повторів ще раз, з повною амплітудою, "
+        L"боком до камери.",
+        L"Стегна майже не опускаються в кадрі: мабуть, камера бачить користувача під невдалим кутом. Поставте її боком до "
+        L"користувача й зробіть 5 присідань ще раз.",
+        L"%s: угорі %s, унизу %s",
     };
 
     static_assert(std::size(kEn) == tCount && std::size(kUk) == tCount, "string tables out of sync");
@@ -384,34 +290,9 @@ namespace
     constexpr int kLSh = 5, kRSh = 6, kLEl = 7, kREl = 8, kLWr = 9, kRWr = 10;
     constexpr int kLHip = 11, kRHip = 12, kLKn = 13, kRKn = 14, kLAn = 15, kRAn = 16;
     constexpr float kSquatConf = 0.22f;   // SquatDetector::kJointConfMin
-    constexpr float kPushConf  = 0.18f;   // PushUpDetector::kJointConfMin
 
-    float AngleAt(const Joint& a, const Joint& b, const Joint& c)
-    {
-        const float ax = a.x - b.x, ay = a.y - b.y;
-        const float cx = c.x - b.x, cy = c.y - b.y;
-        const float mag = std::sqrt(ax * ax + ay * ay) * std::sqrt(cx * cx + cy * cy);
-        if (mag < 1e-6f) return 0.0f;
-        const float cosine = std::clamp((ax * cx + ay * cy) / mag, -1.0f, 1.0f);
-        return std::acos(cosine) * (180.0f / 3.14159265358979323846f);
-    }
-
-    bool Conf3(const Joint& a, const Joint& b, const Joint& c, float minConf)
-    {
-        return a.confidence >= minConf && b.confidence >= minConf && c.confidence >= minConf;
-    }
-
-    // Knee angle the way SquatDetector sees it: max over confident legs.
-    float KneeAngle(const BodyPose& p)
-    {
-        float best = -1.0f;
-        if (Conf3(p.joints[kLHip], p.joints[kLKn], p.joints[kLAn], kSquatConf))
-            best = std::max(best, AngleAt(p.joints[kLHip], p.joints[kLKn], p.joints[kLAn]));
-        if (Conf3(p.joints[kRHip], p.joints[kRKn], p.joints[kRAn], kSquatConf))
-            best = std::max(best, AngleAt(p.joints[kRHip], p.joints[kRKn], p.joints[kRAn]));
-        return best;
-    }
-
+    // The hips' height in the frame (0 top .. 1 bottom), the way SquatDetector
+    // reads it: the squat's hip-drop gate is calibrated from it.
     float HipY(const BodyPose& p)
     {
         float sum = 0.0f;
@@ -419,76 +300,6 @@ namespace
         for (int i : { kLHip, kRHip })
             if (p.joints[i].confidence >= kSquatConf) { sum += p.joints[i].y; ++n; }
         return n ? sum / static_cast<float>(n) : -1.0f;
-    }
-
-    // Elbow angle the way PushUpDetector sees it (average of confident
-    // arms), or -1 when its hard gate (elbow + plank triplet + hands near
-    // ankle height) would skip this frame.
-    float PushUpElbow(const BodyPose& p)
-    {
-        float sum = 0.0f;
-        int n = 0;
-        if (Conf3(p.joints[kLSh], p.joints[kLEl], p.joints[kLWr], kPushConf))
-        { sum += AngleAt(p.joints[kLSh], p.joints[kLEl], p.joints[kLWr]); ++n; }
-        if (Conf3(p.joints[kRSh], p.joints[kREl], p.joints[kRWr], kPushConf))
-        { sum += AngleAt(p.joints[kRSh], p.joints[kREl], p.joints[kRWr]); ++n; }
-        if (n == 0) return -1.0f;
-
-        const bool plank = Conf3(p.joints[kLSh], p.joints[kLHip], p.joints[kLAn], kPushConf) ||
-                           Conf3(p.joints[kRSh], p.joints[kRHip], p.joints[kRAn], kPushConf);
-        if (!plank) return -1.0f;
-
-        auto wristY = [&](int sh, int wr) -> float {
-            if (p.joints[wr].confidence >= kPushConf) return p.joints[wr].y;
-            if (p.joints[sh].confidence >= kPushConf) return p.joints[sh].y;
-            return -1.0f;
-        };
-        auto pick = [](float a, float b) { return (a >= 0 && b >= 0) ? (a + b) * 0.5f : (a >= 0 ? a : b); };
-        const float wrist = pick(wristY(kLSh, kLWr), wristY(kRSh, kRWr));
-        const float ankle = pick(p.joints[kLAn].confidence >= kPushConf ? p.joints[kLAn].y : -1.0f,
-                                 p.joints[kRAn].confidence >= kPushConf ? p.joints[kRAn].y : -1.0f);
-        if (wrist < 0 || ankle < 0 || std::fabs(wrist - ankle) >= 0.25f) return -1.0f;
-        return sum / static_cast<float>(n);
-    }
-
-    // Hip angle (shoulder-hip-knee) the way SitUpDetector sees it: average
-    // of the confident sides - or -1 unless the legs are in the sit-up
-    // shape PostureClassifier latches on (knees above hips and feet, feet
-    // level with the hips and out in front).
-    constexpr float kSitupConf = 0.20f;   // SitUpDetector / PostureClassifier
-    float SitupHip(const BodyPose& p)
-    {
-        float sum = 0.0f;
-        int n = 0;
-        if (Conf3(p.joints[kLSh], p.joints[kLHip], p.joints[kLKn], kSitupConf))
-        { sum += AngleAt(p.joints[kLSh], p.joints[kLHip], p.joints[kLKn]); ++n; }
-        if (Conf3(p.joints[kRSh], p.joints[kRHip], p.joints[kRKn], kSitupConf))
-        { sum += AngleAt(p.joints[kRSh], p.joints[kRHip], p.joints[kRKn]); ++n; }
-        if (n == 0) return -1.0f;
-
-        auto avg = [&](int l, int r, float& x, float& y) {
-            int k = 0;
-            x = y = 0.0f;
-            for (int i : { l, r })
-                if (p.joints[i].confidence >= kSitupConf) { x += p.joints[i].x; y += p.joints[i].y; ++k; }
-            if (k) { x /= static_cast<float>(k); y /= static_cast<float>(k); }
-            return k > 0;
-        };
-        float hx, hy, kx, ky, ax, ay;
-        if (!avg(kLHip, kRHip, hx, hy) || !avg(kLKn, kRKn, kx, ky) || !avg(kLAn, kRAn, ax, ay)) return -1.0f;
-        const float thigh = std::hypot(hx - kx, hy - ky);
-        if (thigh <= 0.03f) return -1.0f;
-        const bool shape = std::min(hy, ay) - ky >= 0.30f * thigh &&
-                           std::fabs(ay - hy) <= 0.45f * thigh &&
-                           std::fabs(ax - hx) >= 0.50f * thigh;
-        return shape ? sum / static_cast<float>(n) : -1.0f;
-    }
-
-    float Median(std::vector<float> v)
-    {
-        if (v.empty()) return -1.0f;
-        std::sort(v.begin(), v.end());
-        return v[v.size() / 2];
     }
 
     // ------------------------------------------------------------ state
@@ -499,85 +310,50 @@ namespace
         BodyPose pose{};
     };
 
-    struct Shot
-    {
-        bool done = false, skipped = false;
-        float angle = -1.0f;   // knee (photos 1-2), elbow (3-4) or hip (5-6)
-        float hipY  = -1.0f;   // photos 1-2
-        Frame photo;
-    };
-
     struct CameraInfo { std::wstring name, link; };
 
-    // "Take photo" here measures straight away: the parent presses it while
-    // the child holds the pose. "Take photo" on the phone counts down first:
-    // whoever pressed it is standing at the phone - in the picture, the
-    // camera shaken - and needs a moment to step away.
-    enum class Phase { Live, Countdown, Collecting };
-
-    // Each exercise: its photos, then a test with the new thresholds. A new
-    // exercise adds its rows here, an ExerciseInfo, and its Plan / Save
-    // lines and detector.
-    enum class StepKind { Camera, Photo, Test, Summary };
+    // Each exercise: one step of 5 reps; their turning points give its
+    // thresholds (CheckJudge.h). A new exercise adds its step here, an
+    // ExerciseInfo, its Rules, its Plan / Save lines and detector.
+    enum class StepKind { Camera, Reps, Summary };
     enum Exercise { kSquat = 0, kPushUp = 1, kSitUp = 2, kExerciseCount };
     struct StepDef
     {
         StepKind kind;
-        int      exercise;   // Photo / Test: an Exercise, else -1
-        int      shot;       // Photo: index into g_shots (1..6), else 0
+        int      exercise;   // Reps: an Exercise, else -1
         int      example;    // example picture: 0 camera scene, 1..6 a figure, -1 none
         Txt      title, text;
     };
     constexpr StepDef kStepDefs[] = {
-        { StepKind::Camera,  -1,      0,  0, tTitle0,         tText0 },
-        { StepKind::Photo,   kSquat,  1,  1, tTitle1,         tText1 },
-        { StepKind::Photo,   kSquat,  2,  2, tTitle2,         tText2 },
-        { StepKind::Test,    kSquat,  0, -1, tTitleTestSquat, tTextTestSquat },
-        { StepKind::Photo,   kPushUp, 3,  3, tTitle3,         tText3 },
-        { StepKind::Photo,   kPushUp, 4,  4, tTitle4,         tText4 },
-        { StepKind::Test,    kPushUp, 0, -1, tTitleTestPush,  tTextTestPush },
-        { StepKind::Photo,   kSitUp,  5,  5, tTitleSitLying,  tTextSitLying },
-        { StepKind::Photo,   kSitUp,  6,  6, tTitleSitUp,     tTextSitUp },
-        { StepKind::Test,    kSitUp,  0, -1, tTitleTestSitup, tTextTestSitup },
-        { StepKind::Summary, -1,      0, -1, tTitle5,         tText5 },
+        { StepKind::Camera,  -1,       0, tTitle0,         tText0 },
+        { StepKind::Reps,    kSquat,   2, tTitleRepsSquat, tTextRepsSquat },
+        { StepKind::Reps,    kPushUp,  4, tTitleRepsPush,  tTextRepsPush },
+        { StepKind::Reps,    kSitUp,   6, tTitleRepsSit,   tTextRepsSit },
+        { StepKind::Summary, -1,      -1, tTitle5,         tText5 },
     };
-    constexpr int kShotCount = 7;   // g_shots[1..6]
 
-    // Per-exercise texts, measurement and detector bits.
+    // Per-exercise texts and detector bits.
     struct ExerciseInfo
     {
         const wchar_t* logName;
-        Txt   rowTop, rowDown;   // checklist labels of its two photos
         Txt   angle;             // "knee %d°" ...
-        Txt   notSeen;           // a photo found no such pose
-        Txt   tooClose;          // the two photos too close
         Txt   summary;           // summary block
-        Txt   threshold;         // test: "a rep counts when ..."
-        Txt   notDeep;           // test: last rep didn't reach "down"
-        Txt   noPose;            // test: pose not recognized
-        Txt   adjTop, adjDown;   // adjustment note pieces
+        Txt   threshold;         // "a rep counts when ..."
+        Txt   noPose;            // the exercise's pose not recognized
         Ipc::PostureKind posture;
         const wchar_t* nameEn;
         const wchar_t* nameUk;
-        float (*measure)(const BodyPose&);
     };
     const ExerciseInfo kExercises[kExerciseCount] = {
-        { L"squat",  tRow1, tRow2, tKnee,  tLegsNotSeen, tSmallSquat, tSumSquat, tTestThrSquat, tTestNotDeepSquat,
-          tTestNoSquat, tAdjStand, tAdjDown, Ipc::PostureKind::Squat, L"Squats", L"Присідання", KneeAngle },
-        { L"pushup", tRow3, tRow4, tElbow, tPushNotSeen, tSmallPush, tSumPush, tTestThrPush, tTestNotDeepPush,
-          tTestNoPlank, tAdjUp, tAdjDown, Ipc::PostureKind::PushUp, L"Push-ups", L"Віджимання", PushUpElbow },
-        { L"situp",  tRow5, tRow6, tHip,   tSitNotSeen, tSmallSitup, tSumSitup, tTestThrSitup, tTestNotDeepSitup,
-          tTestNoSitup, tAdjLying, tAdjSitTop, Ipc::PostureKind::SitUp, L"Sit-ups", L"Прес", SitupHip },
+        { L"squat",  tKnee,  tSumSquat, tTestThrSquat, tTestNoSquat, Ipc::PostureKind::Squat,  L"Squats",   L"Присідання" },
+        { L"pushup", tElbow, tSumPush,  tTestThrPush,  tTestNoPlank, Ipc::PostureKind::PushUp, L"Push-ups", L"Віджимання" },
+        { L"situp",  tHip,   tSumSitup, tTestThrSitup, tTestNoSitup, Ipc::PostureKind::SitUp,  L"Sit-ups",  L"Прес" },
     };
     constexpr int kSteps = static_cast<int>(std::size(kStepDefs));
-    constexpr int kTestReps = 5;
+    constexpr int kCalibReps = 5;            // reps per exercise
     constexpr UINT WM_APP_FRAME  = WM_APP + 1;
     constexpr UINT WM_APP_CAMERR = WM_APP + 2;
     constexpr UINT_PTR kTimerId  = 1;
-    constexpr DWORD kCollectMs   = 5000;    // a photo: up to 12 measured frames in this time...
-    constexpr DWORD kCollectMaxMs = 10000;  // ...or longer, until 12 frames came (a slow phone)
-    constexpr DWORD kCountdownMs = 5000;    // "Take photo" on the phone
-    constexpr size_t kSamples    = 12;
 
     enum CtlId { idCamera = 100, idBack, idTake, idSkip, idNext, idUrl };
 
@@ -589,6 +365,7 @@ namespace
     bool g_setupMode = false;
     bool g_startPhone = false;        // /phone
     std::wstring g_snapshotPath;      // developer option: render one step to a .bmp and exit
+    std::wstring g_usersPath;         // developer option (/users): another users.allow for the settings
     int g_snapshotStep = 0;
     constexpr UINT WM_APP_SNAPSHOT = WM_APP + 3;
     constexpr UINT_PTR kSnapshotTimerId = 2;
@@ -621,102 +398,74 @@ namespace
     constexpr ULONGLONG kNoFramesMs = 10000;
 
     int g_step = 0;
-    Phase g_phase = Phase::Live;
-    ULONGLONG g_phaseStart = 0;
-    size_t g_collectFrames = 0;   // frames that came while collecting, measurable or not
-    std::vector<float> g_samples, g_hipSamples;
-    Shot g_shots[kShotCount];
     std::wstring g_status;            // error / info line under the instructions
     bool g_statusIsError = false;
+    // An exercise whose reps gave its thresholds moves on to the next step by
+    // itself, kAutoNextMs later (its result shows meanwhile), so nobody has to
+    // walk to the computer.
+    ULONGLONG g_autoNextAt = 0;       // 0: no move pending
+    constexpr ULONGLONG kAutoNextMs = 2500;
     bool g_saved = false;
 
     const StepDef& Cur() { return kStepDefs[g_step]; }
 
-    // ------------------------------------------------------------ test reps
-    // While a test step is open the camera thread runs the service's
-    // detectors on every frame (TestFrame) and publishes what they saw;
-    // the UI thread only reads that.
-
-    struct TestFeed
+    // ------------------------------------------------------------ reps
+    // While a reps step is open the camera thread runs the service's own
+    // detectors on every frame (RepsFrame): their posture latch, and the
+    // exercise's smoothed angle, whose turning points (Swing) are the
+    // child's reps. The UI thread only reads what it published.
+    struct RepsFeed
     {
-        uint32_t  gen = 0;
-        uint32_t  count[kExerciseCount]{};
-        float     angle[kExerciseCount]{};
-        uint8_t   posture = 0;
-        uint8_t   pushPhase = 0;
-        RepResult last[kExerciseCount]{};
-        std::vector<float> peaks[kExerciseCount], valleys[kExerciseCount];
+        uint32_t gen = 0;
+        float    angle = 0.0f;
+        bool     posture = false;          // the exercise's pose is latched now
+        std::vector<float> peaks, valleys, peakHips, valleyHips;
     };
-    std::atomic<int>      g_testExercise{ -1 };   // detectors run for this one; -1 = off
-    std::atomic<uint32_t> g_testGen{ 0 };         // bumped = detectors start from zero
-    std::mutex            g_testMx;
-    TestFeed              g_testFeed;             // under g_testMx
+    std::atomic<int>      g_repsExercise{ -1 };   // detectors run for this one; -1 = off
+    std::atomic<uint32_t> g_repsGen{ 0 };         // bumped = count from zero
+    std::mutex            g_repsMx;
+    RepsFeed              g_repsFeed;             // under g_repsMx
 
-    struct TestRun
+    // One exercise's calibration: the reps seen in this try, then what they gave.
+    struct Capture
     {
-        bool      passed = false, skipped = false;
-        int       counted = 0;
-        uint32_t  lastSeq = 0;
-        RepResult last{};                  // seq 0 = no finished attempt yet
-        std::vector<RepResult> attempts;   // every finished attempt of this run
-        std::vector<float> peaks, valleys; // Swing turning points of this run
-        ULONGLONG lastValleyMs = 0;
-        float     angle = 0.0f;
-        bool      notInPlank = false;
-        ULONGLONG postureOkMs = 0;         // last frame the exercise's pose was recognized
+        bool done = false, skipped = false;
+        int  reps = 0;                         // reps seen in this try
+        int  tries = 0;                        // tries that gave no thresholds
+        ExerciseUnlock::Calib::RepPlan plan;   // done: the thresholds
+        std::wstring fault;                    // why the last try gave none
+        float angle = 0.0f;                    // the detector's angle now
+        ULONGLONG postureOkMs = 0;             // last frame the exercise's pose was recognized
     };
-    TestRun g_tests[kExerciseCount];
-    float g_cfgMinHipDrop = 0.0f;          // config.ini's, for plans without a hip drop
-    float g_webcamMinHipDrop = 0.0f;       // [squat]'s, as loaded
-
-    // What a failed check changed: thresholds loosened to fit the test
-    // reps (ComputePlan uses them instead of the photo-based ones), or a
-    // request for new photos. Lasts until the exercise's photos change.
-    struct Fix
-    {
-        bool  on = false;
-        int   st = 0, gd = 0, gu = 0, dn = 0;
-        bool  hip = false;
-        float hipDrop = 0.0f;
-        int   rounds = 0;                  // adjustments made so far
-        bool  restart = false;             // new photos needed
-        std::wstring note;                 // why / what changed, shown on the test step
-    };
-    Fix g_fix[kExerciseCount];
-
-    // The exercise's photos changed (or are about to): earlier checks and
-    // adjustments no longer apply.
-    void ResetExercise(int ex)
-    {
-        g_tests[ex] = TestRun{};
-        g_fix[ex] = Fix{};
-    }
+    Capture g_caps[kExerciseCount];
+    double g_aspect = 0.0;   // w / h of the webcam's frames the reps were done in
 
     // The camera thread's own detectors; same frame order as the
     // service's StreamPose.
-    struct TestDetectors
+    struct RepsDetectors
     {
         SquatDetector     squats;
         PushUpDetector    pushups;
         SitUpDetector     situps;
         PostureClassifier posture;
-        Swing             swing[kExerciseCount];
+        Swing             swing;
         uint32_t          gen = 0;
         bool              started = false;
     };
 
-    void TestFrame(TestDetectors& d, const BodyPose& pose)
+    void RepsFrame(RepsDetectors& d, const BodyPose& pose)
     {
-        if (g_testExercise.load() < 0) return;
-        const uint32_t gen = g_testGen.load();
+        const int ex = g_repsExercise.load();
+        if (ex < 0) return;
+        const uint32_t gen = g_repsGen.load();
         if (!d.started || d.gen != gen)
         {
             d.squats.Reset();
             d.pushups.Reset();
             d.situps.Reset();
             d.posture.Reset();
-            for (Swing& s : d.swing) s.Reset();
-            d.swing[kPushUp].hyst = 8.0f;   // MoveNet reads push-up elbows with a small span
+            d.swing.Reset();
+            d.swing.hyst = ex == kPushUp ? 8.0f : 15.0f;   // MoveNet reads push-up elbows with a small span
             d.gen = gen;
             d.started = true;
         }
@@ -729,26 +478,17 @@ namespace
         const float angle[kExerciseCount] = {
             st.squatKneeAngle.load(), st.pushUpElbowAngle.load(), st.sitUpHipAngle.load() };
         // The detector's angle only moves while its posture is latched.
-        const uint8_t posture = st.postureKind.load();
-        for (int ex = 0; ex < kExerciseCount; ++ex)
-            if (posture == static_cast<uint8_t>(kExercises[ex].posture)) d.swing[ex].Push(angle[ex]);
+        const bool latched = st.postureKind.load() == static_cast<uint8_t>(kExercises[ex].posture);
+        if (latched) d.swing.Push(angle[ex], ex == kSquat ? HipY(pose) : 0.0f);
 
-        std::lock_guard<std::mutex> lk(g_testMx);
-        for (int ex = 0; ex < kExerciseCount; ++ex)
-        {
-            g_testFeed.peaks[ex] = d.swing[ex].peaks;
-            g_testFeed.valleys[ex] = d.swing[ex].valleys;
-            g_testFeed.angle[ex] = angle[ex];
-        }
-        g_testFeed.gen = gen;
-        g_testFeed.count[kSquat] = st.squatCount.load();
-        g_testFeed.count[kPushUp] = st.pushUpCount.load();
-        g_testFeed.count[kSitUp] = st.sitUpCount.load();
-        g_testFeed.posture = posture;
-        g_testFeed.pushPhase = st.pushUpPhase.load();
-        g_testFeed.last[kSquat] = d.squats.LastRep();
-        g_testFeed.last[kPushUp] = d.pushups.LastRep();
-        g_testFeed.last[kSitUp] = d.situps.LastRep();
+        std::lock_guard<std::mutex> lk(g_repsMx);
+        g_repsFeed.gen = gen;
+        g_repsFeed.angle = angle[ex];
+        g_repsFeed.posture = latched;
+        g_repsFeed.peaks = d.swing.peaks;
+        g_repsFeed.valleys = d.swing.valleys;
+        g_repsFeed.peakHips = d.swing.peakAux;
+        g_repsFeed.valleyHips = d.swing.valleyAux;
     }
 
     int Px(int v) { return MulDiv(v, static_cast<int>(g_dpi), 96); }
@@ -839,7 +579,7 @@ namespace
             PostMessageW(g_wnd, WM_APP_CAMERR, 0, 0);
 
         std::vector<uint8_t> buf;
-        TestDetectors test;
+        RepsDetectors reps;
         unsigned frames = 0, empty = 0, shown = 0, wrongSize = 0;
         ULONGLONG lastStatMs = GetTickCount64();
         while (SUCCEEDED(hr) && w && h && !s->stop.load())
@@ -913,7 +653,7 @@ namespace
                         if (shown == 0 || poseMs > 2000)
                             LogF(L"calibrate: pose took %llu ms", poseMs);
                         if (predicted && !s->stop.load())
-                            TestFrame(test, pose);
+                            RepsFrame(reps, pose);
                         if (!s->stop.load())
                         {
                             if (++shown == 1)
@@ -991,7 +731,7 @@ namespace
     // "calib") streams its poses, which take the same path as a camera's
     // frames: no picture, the skeleton only.
     constexpr UINT WM_APP_PHONE    = WM_APP + 4;   // the connection changed
-    constexpr UINT WM_APP_PHONETAP = WM_APP + 5;   // "Take photo" pressed on the phone
+    constexpr UINT WM_APP_PHONENAV = WM_APP + 6;   // a wizard button pressed on the phone: wParam = its CtlId
 
     enum class PhoneState { Connecting, NoServer, Waiting, Connected };
 
@@ -1010,7 +750,7 @@ namespace
     std::shared_ptr<PhoneSession> g_phone;
     std::thread g_phoneThread;
     int         g_phoneItem = -1;       // its row in the camera list; -1 = no relay in config.ini
-    bool        g_phoneMode = false;    // the photos and thresholds are the phone's
+    bool        g_phoneMode = false;    // the reps and thresholds are the phone's
     ULONGLONG   g_phonePingMs = 0;
     std::string g_calibSent;            // the step last shown on the phone
     bool        g_sourceReady = false;
@@ -1061,7 +801,7 @@ namespace
             s->sock.Send(w.Str());
         }
 
-        TestDetectors test;
+        RepsDetectors reps;
         std::string text;
         while (!s->stop.load() && s->sock.Receive(text))
         {
@@ -1098,7 +838,9 @@ namespace
                     s->sock.Send(w.Str());
                     continue;
                 }
-                PhoneSend(*s, R"({"t":"config","v":1,"mode":"calib","poses":1,"space":"phone","exercises":[]})");
+                // lang: the phone page speaks the wizard's language, whatever the phone is set to
+                PhoneSend(*s, g_uk ? R"({"t":"config","v":1,"mode":"calib","poses":1,"space":"phone","exercises":[],"lang":"uk"})"
+                                   : R"({"t":"config","v":1,"mode":"calib","poses":1,"space":"phone","exercises":[],"lang":"en"})");
                 LogF(L"calibrate: phone joined");
                 setState(PhoneState::Connected);
             }
@@ -1133,7 +875,7 @@ namespace
                     uint32_t w = 0, h = 0;
                     uint64_t ts = 0;
                     if (!ExerciseUnlock::Svc::PhoneCounter::ParsePose(*msg, pose, w, h, ts)) continue;
-                    TestFrame(test, pose);
+                    RepsFrame(reps, pose);
                     {
                         std::lock_guard<std::mutex> lk(g_frameMx);
                         g_latest.bgra.clear();   // the phone sends no picture
@@ -1144,14 +886,18 @@ namespace
                     g_lastFrameMs = GetTickCount64();
                     if (!g_framePending.exchange(true)) PostMessageW(g_wnd, WM_APP_FRAME, 0, 0);
                 }
-                else if (mt == "tap")
-                    PostMessageW(g_wnd, WM_APP_PHONETAP, 0, 0);
+                else if (mt == "nav")
+                {
+                    const std::string id = msg->Str("id");
+                    const int cmd = id == "back" ? idBack : id == "next" ? idNext : id == "skip" ? idSkip : id == "take" ? idTake : 0;
+                    if (cmd) PostMessageW(g_wnd, WM_APP_PHONENAV, static_cast<WPARAM>(cmd), 0);
+                }
                 else if (mt == "hello")
                     LogF(L"calibrate: phone %hs", msg->Str("ua").substr(0, 100).c_str());
                 else if (mt == "diag")
                 {
                     // The phone's camera, model and speed (every 10 s), and
-                    // how sure the model is of the legs: why a photo fails.
+                    // how sure the model is of the legs: why reps go unseen.
                     const std::string kind = msg->Str("kind");
                     if (kind == "start" || kind == "tick")
                     {
@@ -1295,12 +1041,11 @@ namespace
     {
         bool ok = false;
         int top = 0, goingDown = 0, goingUp = 0, down = 0;
-        std::wstring why;   // set when the two photos are too close
     };
     struct Plan
     {
         ExercisePlan ex[kExerciseCount];
-        bool  hip = false;       // squat: a hip-drop gate from the photos
+        bool  hip = false;       // squat: a hip-drop gate from the reps
         float hipDrop = 0.0f;
     };
 
@@ -1320,351 +1065,134 @@ namespace
         return g_phoneMode ? kPhone[ex] : kIni[ex].section;
     }
 
-    // The exercise's two photos: the rest pose first, then the other end.
-    void PhotoShots(int ex, int& topShot, int& downShot)
-    {
-        topShot = downShot = 0;
-        for (const StepDef& s : kStepDefs)
-            if (s.kind == StepKind::Photo && s.exercise == ex) (topShot ? downShot : topShot) = s.shot;
-    }
-
-    // The photos are held poses, and a held squat is deeper than a rep
-    // done at speed — on top of that the detector's median + EMA filters
-    // shave the peak off a fast rep. So the "down" thresholds sit well
-    // above the photo (45-60% of the range), the "standing" ones just
-    // below it (15-25%). First field test: standing 175 / squat 76 gave
-    // down=96, and no rep ever got that deep; the hand-tuned config that
-    // worked for that child was 158/150/135/125. Sit-ups get the same
-    // treatment (a held top is higher than a rep's). The check after the
-    // photos corrects what this guess still gets wrong (CheckJudge.h).
-    ExercisePlan PlanFromPhotos(int ex, float top, float bot)
-    {
-        ExercisePlan e;
-        const float range = top - bot;
-        // MoveNet reads elbows in profile with a small span (the hand-tuned
-        // config used 158/150/148/142), so push-ups accept ranges from 15
-        // degrees.
-        const bool push = ex == kPushUp;
-        if (range < (push ? 15.0f : 30.0f))
-        {
-            e.why = Fmt(T(kExercises[ex].tooClose), static_cast<int>(std::lround(range)));
-            return e;
-        }
-        e.ok = true;
-        if (push)
-        {
-            e.top       = static_cast<int>(std::lround(top - std::max(4.0f, 0.15f * range)));
-            e.goingDown = static_cast<int>(std::lround(top - std::max(6.0f, 0.30f * range)));
-            e.goingUp   = static_cast<int>(std::lround(bot + 0.55f * range));
-            e.down      = static_cast<int>(std::lround(bot + 0.40f * range));
-            KeepOrder(e.goingDown, e.goingUp, 2);
-            KeepOrder(e.goingUp, e.down, 2);
-        }
-        else
-        {
-            e.top       = static_cast<int>(std::lround(top - std::max(6.0f, 0.15f * range)));
-            e.goingDown = static_cast<int>(std::lround(top - std::max(10.0f, 0.25f * range)));
-            e.goingUp   = static_cast<int>(std::lround(bot + 0.60f * range));
-            e.down      = static_cast<int>(std::lround(bot + 0.45f * range));
-            KeepOrder(e.goingDown, e.goingUp, 4);
-            KeepOrder(e.goingUp, e.down, 4);
-        }
-        return e;
-    }
-
-    Plan ComputePlan()
-    {
-        Plan p;
-        for (int ex = 0; ex < kExerciseCount; ++ex)
-        {
-            int a = 0, b = 0;
-            PhotoShots(ex, a, b);
-            if (g_shots[a].done && g_shots[b].done)
-                p.ex[ex] = PlanFromPhotos(ex, g_shots[a].angle, g_shots[b].angle);
-        }
-        const Shot& s1 = g_shots[1];
-        const Shot& s2 = g_shots[2];
-        if (p.ex[kSquat].ok && s1.hipY > 0 && s2.hipY > s1.hipY)
-        {
-            // The squat detector also wants the hips to really go down;
-            // ask for ~30% of the posed drop (reps are shallower than the
-            // held photo, kids stand far from the camera).
-            p.hip = true;
-            p.hipDrop = std::clamp(std::round((s2.hipY - s1.hipY) * 0.3f * 100.0f) / 100.0f, 0.02f, 0.08f);
-        }
-
-        // Thresholds a failed check loosened to fit the test reps.
-        for (int ex = 0; ex < kExerciseCount; ++ex)
-        {
-            const Fix& f = g_fix[ex];
-            ExercisePlan& e = p.ex[ex];
-            if (!e.ok || !f.on) continue;
-            e.top = f.st; e.goingDown = f.gd; e.goingUp = f.gu; e.down = f.dn;
-            if (ex == kSquat && f.hip) { p.hip = true; p.hipDrop = f.hipDrop; }
-        }
-        return p;
-    }
-
-    bool PlanReady(const Plan& p, int ex) { return p.ex[ex].ok; }
-
-    // The squat's hip-drop gate as the test runs it: the photos' value, or
-    // config.ini's when the photos gave none.
-    float TestHipDrop(const Plan& p) { return p.hip ? p.hipDrop : g_cfgMinHipDrop; }
-
-    ExerciseUnlock::Calib::Thresholds CurrentThresholds(const Plan& p, int ex)
-    {
-        const ExercisePlan& e = p.ex[ex];
-        return { e.top, e.goingDown, e.goingUp, e.down, ex == kSquat ? TestHipDrop(p) : 0.0f };
-    }
-
     const ExerciseUnlock::Calib::Rules& RulesOf(int ex)
     {
         using namespace ExerciseUnlock::Calib;
         return ex == kSquat ? kSquatRules : ex == kPushUp ? kPushupRules : kSitupRules;
     }
 
-    void RepWindow(int ex, int& minMs, int& maxMs)
-    {
-        minMs = ex == kSquat ? Config::SquatMinRepMs() : ex == kPushUp ? Config::PushupMinRepMs() : Config::SitupMinRepMs();
-        maxMs = ex == kSquat ? Config::SquatMaxRepMs() : ex == kPushUp ? Config::PushupMaxRepMs() : Config::SitupMaxRepMs();
-    }
-
-    // A test needs all of its exercise's photos.
-    bool PhotosDone(int ex)
-    {
-        for (const StepDef& s : kStepDefs)
-            if (s.kind == StepKind::Photo && s.exercise == ex && !g_shots[s.shot].done) return false;
-        return true;
-    }
-
     const wchar_t* ExerciseName(int ex) { return kExercises[ex].logName; }
 
-    void StopTest() { g_testExercise = -1; }
-
-    // Counts from zero with this exercise's new (unsaved) thresholds.
-    void StartTest(int ex)
+    // The thresholds the finished exercises gave.
+    Plan ComputePlan()
     {
-        const Plan p = ComputePlan();
-        g_tests[ex] = TestRun{};
-        if (!PlanReady(p, ex) || g_fix[ex].restart)
+        Plan p;
+        for (int ex = 0; ex < kExerciseCount; ++ex)
         {
-            StopTest();
-            return;
+            const Capture& c = g_caps[ex];
+            if (!c.done) continue;
+            ExercisePlan& e = p.ex[ex];
+            e.ok = true;
+            e.top = c.plan.t.top;
+            e.goingDown = c.plan.t.goingDown;
+            e.goingUp = c.plan.t.goingUp;
+            e.down = c.plan.t.down;
         }
-        const ExercisePlan& e = p.ex[ex];
-        const float top = static_cast<float>(e.top), gd = static_cast<float>(e.goingDown),
-                    gu = static_cast<float>(e.goingUp), dn = static_cast<float>(e.down);
-        switch (ex)
+        if (g_caps[kSquat].done && g_caps[kSquat].plan.t.hipDrop > 0.0f)
         {
-        case kSquat:
-            Config::SetSquatAngles(top, gd, gu, dn);
-            Config::SetSquatMinHipDrop(TestHipDrop(p));
-            break;
-        case kPushUp:
-            Config::SetPushupAngles(top, gd, gu, dn);
-            break;
-        default:
-            Config::SetSitupAngles(top, gd, gu, dn);
-            break;
+            p.hip = true;
+            p.hipDrop = g_caps[kSquat].plan.t.hipDrop;
         }
-        g_tests[ex].postureOkMs = GetTickCount64();
-        ++g_testGen;
-        g_testExercise = ex;
-        LogF(L"calibrate: %s test started", ExerciseName(ex));
+        return p;
+    }
+
+    void StopReps() { g_repsExercise = -1; }
+
+    // A new try at the exercise's reps, counted from zero.
+    void StartReps(int ex)
+    {
+        Capture& c = g_caps[ex];
+        c.done = c.skipped = false;
+        c.reps = 0;
+        c.plan = {};
+        c.postureOkMs = GetTickCount64();
+        ++g_repsGen;
+        g_repsExercise = ex;
+        LogF(L"calibrate: %s reps started", kExercises[ex].logName);
+    }
+
+    std::wstring AngleText(int ex, int v) { return Fmt(T(kExercises[ex].angle), v); }
+
+    // What the reps gave, in the parent's words.
+    std::wstring RepsResult(int ex)
+    {
+        const Capture& c = g_caps[ex];
+        return Fmt(T(tRepsDone), AngleText(ex, c.plan.top).c_str(), AngleText(ex, c.plan.bottom).c_str());
     }
 
     void UpdateControls();
 
-    // ------------------------------------------------------------ check verdict
-    // Three reps that did not count end a round of the check; then
-    // Calib::Judge decides from the reps themselves: thresholds loosened to
-    // what they really reach, a word about the pace or the movement, or new
-    // photos when no thresholds would fit.
-    constexpr int kFailuresPerRound = 3;
-    constexpr ULONGLONG kSettleMs   = 2500;   // after the last bottom: that rep has finished by now
-
-    void AskRestart(int ex, const std::wstring& why)
-    {
-        g_fix[ex].restart = true;
-        g_fix[ex].note = why;
-        StopTest();
-        LogF(L"calibrate: %s check: new photos needed - %s", ExerciseName(ex), why.c_str());
-        UpdateControls();
-    }
-
-    void JudgeTest(int ex)
-    {
-        using ExerciseUnlock::Calib::Verdict;
-        const TestRun& run = g_tests[ex];
-        Fix& fix = g_fix[ex];
-        const Plan p = ComputePlan();
-        const ExerciseUnlock::Calib::Thresholds cur = CurrentThresholds(p, ex);
-        const auto j = ExerciseUnlock::Calib::Judge(run.attempts, run.peaks, run.valleys, cur, RulesOf(ex), fix.rounds);
-        LogF(L"calibrate: %s check round %d: valleys=%zu peaks=%zu attempts=%zu reps reach %d..%d -> verdict %d",
-             ExerciseName(ex), fix.rounds, run.valleys.size(), run.peaks.size(), run.attempts.size(),
-             j.bottom, j.top, static_cast<int>(j.verdict));
-
-        switch (j.verdict)
-        {
-        case Verdict::NewPhotosRange:    return AskRestart(ex, Fmt(T(tRestartRange), j.range));
-        case Verdict::NewPhotosHips:     return AskRestart(ex, T(tRestartHips));
-        case Verdict::NewPhotosRepeated: return AskRestart(ex, T(tRestartStill));
-        case Verdict::Pace:
-        {
-            int minMs = 0, maxMs = 0;
-            RepWindow(ex, minMs, maxMs);
-            fix.note = Fmt(T(tTestPace), minMs / 1000.0, maxMs / 1000.0);
-            break;
-        }
-        case Verdict::Form:
-            fix.note = T(tTestForm);
-            break;
-        case Verdict::Retry:
-            ++fix.rounds;
-            fix.note = T(tTestForm);
-            break;
-        case Verdict::Adjust:
-        {
-            std::wstring what;
-            auto add = [&](const std::wstring& s) { what += (what.empty() ? L"" : L", ") + s; };
-            if (j.t.down != cur.down) add(Fmt(T(kExercises[ex].adjDown), cur.down, j.t.down));
-            if (j.t.top != cur.top) add(Fmt(T(kExercises[ex].adjTop), cur.top, j.t.top));
-            if (j.t.hipDrop < cur.hipDrop) add(Fmt(T(tAdjHip), cur.hipDrop, j.t.hipDrop));
-            fix.on = true;
-            fix.st = j.t.top; fix.gd = j.t.goingDown; fix.gu = j.t.goingUp; fix.dn = j.t.down;
-            if (j.t.hipDrop < cur.hipDrop) { fix.hip = true; fix.hipDrop = j.t.hipDrop; }
-            ++fix.rounds;
-            fix.note = Fmt(T(tTestAdjusted), what.c_str());
-            LogF(L"calibrate: %s thresholds adjusted: %d/%d/%d/%d hip %.2f",
-                 ExerciseName(ex), fix.st, fix.gd, fix.gu, fix.dn, j.t.hipDrop);
-            break;
-        }
-        }
-        StartTest(ex);
-        UpdateControls();
-    }
-
-    // UI thread, per frame: take over what the detectors published.
-    void PollTest()
+    // UI thread, per frame: take over what the detectors published. The
+    // fifth rep ends the try: thresholds, or why there are none and 5 more.
+    void PollReps()
     {
         const int ex = Cur().exercise;
-        if (Cur().kind != StepKind::Test || g_testExercise.load() != ex) return;
-        TestFeed f;
+        if (Cur().kind != StepKind::Reps || g_repsExercise.load() != ex) return;
+        RepsFeed f;
         {
-            std::lock_guard<std::mutex> lk(g_testMx);
-            f = g_testFeed;
+            std::lock_guard<std::mutex> lk(g_repsMx);
+            f = g_repsFeed;
         }
-        if (f.gen != g_testGen.load()) return;   // the previous run's numbers
-        TestRun& run = g_tests[ex];
-        run.counted = std::min(static_cast<int>(f.count[ex]), kTestReps);
-        run.angle = f.angle[ex];
-        if (f.posture == static_cast<uint8_t>(kExercises[ex].posture)) run.postureOkMs = GetTickCount64();
-        run.notInPlank = ex == kPushUp && f.pushPhase == static_cast<uint8_t>(Ipc::PushUpPhase::NotInPlank);
-        const RepResult& r = f.last[ex];
-        if (r.seq != 0 && r.seq != run.lastSeq)
+        if (f.gen != g_repsGen.load()) return;   // the previous try's numbers
+        Capture& c = g_caps[ex];
+        c.angle = f.angle;
+        if (f.posture) c.postureOkMs = GetTickCount64();
+        const int reps = std::min(static_cast<int>(f.valleys.size()), kCalibReps);
+        if (reps != c.reps)
         {
-            run.lastSeq = r.seq;
-            run.last = r;
-            run.attempts.push_back(r);
-            LogF(L"calibrate: %s test attempt %u counted=%d down=%d deepest=%.1f dur=%u ms "
-                 L"fast=%d slow=%d shallow=%d moved=%d wobbled=%d hips=%d hipDrop=%.2f",
-                 ExerciseName(ex), r.seq, r.counted ? 1 : 0, r.reachedDown ? 1 : 0, r.deepest, r.durMs,
-                 r.tooFast ? 1 : 0, r.tooSlow ? 1 : 0, r.shallow ? 1 : 0, r.moved ? 1 : 0,
-                 r.wobbled ? 1 : 0, r.hipsStayed ? 1 : 0, r.hipDrop);
+            c.reps = reps;
+            if (reps > 0) c.fault.clear();   // a new try is under way
         }
-        if (f.valleys[ex].size() > run.valleys.size()) run.lastValleyMs = GetTickCount64();
-        run.peaks = f.peaks[ex];
-        run.valleys = f.valleys[ex];
-        if (run.counted >= kTestReps && !run.passed)
+        if (reps < kCalibReps) return;
+
+        using ExerciseUnlock::Calib::RepFault;
+        const auto r = ExerciseUnlock::Calib::PlanFromReps(f.peaks, f.valleys, f.peakHips, f.valleyHips, RulesOf(ex));
+        LogF(L"calibrate: %s reps reach %d..%d -> %d/%d/%d/%d hip %.2f fault %d", kExercises[ex].logName,
+             r.bottom, r.top, r.t.top, r.t.goingDown, r.t.goingUp, r.t.down, r.t.hipDrop, static_cast<int>(r.fault));
+        if (r.fault != RepFault::None)
         {
-            run.passed = true;
-            StopTest();
-            LogF(L"calibrate: %s test passed", ExerciseName(ex));
+            ++c.tries;
+            c.fault = r.fault == RepFault::Shallow ? Fmt(T(tRepsShallow), r.bottom, RulesOf(ex).deepest)
+                    : r.fault == RepFault::Hips    ? std::wstring(T(tRepsHips))
+                                                   : Fmt(T(tRepsRange), r.range);
+            StartReps(ex);
             UpdateControls();
             return;
         }
-        // Every bottom is a rep the child tried; the ones not counted add up.
-        const int failures = static_cast<int>(run.valleys.size()) - run.counted;
-        if (failures >= kFailuresPerRound && GetTickCount64() - run.lastValleyMs >= kSettleMs)
-            JudgeTest(ex);
-    }
-
-    // Why the last attempt did not count, in the parent's words.
-    std::wstring WhyNotCounted(int ex, const RepResult& r, const Plan& p)
-    {
-        if (!r.reachedDown && r.deepest < 360.0f)
-            return Fmt(T(kExercises[ex].notDeep), static_cast<int>(std::lround(r.deepest)), p.ex[ex].down);
-        const double sec = r.durMs / 1000.0;
-        int minMs = 0, maxMs = 0;
-        RepWindow(ex, minMs, maxMs);
-        if (r.tooFast) return Fmt(T(tTestTooFast), sec, minMs / 1000.0);
-        if (r.tooSlow) return Fmt(T(tTestTooSlow), sec, maxMs / 1000.0);
-        if (r.hipsStayed) return T(tTestHips);
-        if (r.moved) return T(tTestMoved);
-        if (r.wobbled) return T(tTestWobble);
-        return T(tTestShallow);
+        c.done = true;
+        c.plan = r;
+        c.fault.clear();
+        StopReps();
+        if (!g_phoneMode)
+        {
+            std::lock_guard<std::mutex> lk(g_frameMx);
+            if (g_latest.w > 0 && g_latest.h > 0) g_aspect = static_cast<double>(g_latest.w) / g_latest.h;
+        }
+        g_autoNextAt = GetTickCount64() + kAutoNextMs;
+        UpdateControls();
     }
 
     struct Para { std::wstring text; COLORREF color; };
     constexpr COLORREF kInfoInk = RGB(90, 96, 130), kOkInk = RGB(20, 150, 110), kErrInk = RGB(200, 40, 60),
                        kWarnInk = RGB(200, 110, 20), kTextInk = RGB(31, 37, 71);
 
-    // Test step panel: thresholds, progress, what went wrong.
-    std::vector<Para> TestParas(int ex)
+    // The reps step: how many so far and what went wrong, or what came out.
+    std::vector<Para> RepsParas(int ex)
     {
         std::vector<Para> out;
-        const Plan p = ComputePlan();
-        const Fix& fix = g_fix[ex];
-        if (!PlanReady(p, ex) || fix.restart)
+        const Capture& c = g_caps[ex];
+        if (c.done)
         {
-            out.push_back({ fix.restart ? fix.note : p.ex[ex].why, kErrInk });
-            out.push_back({ T(tRestartAsk), kErrInk });
+            out.push_back({ RepsResult(ex), kOkInk });
+            out.push_back({ Fmt(T(kExercises[ex].threshold), c.plan.t.down, c.plan.t.top), kInfoInk });
+            if (g_autoNextAt) out.push_back({ T(tRepsNext), kInfoInk });
             return out;
         }
-        out.push_back({ Fmt(T(kExercises[ex].threshold), p.ex[ex].down, p.ex[ex].top), kInfoInk });
-        const TestRun& run = g_tests[ex];
-        if (run.passed)
-        {
-            out.push_back({ Fmt(T(tTestPassed), run.counted, kTestReps), kOkInk });
-            return out;
-        }
-        if (!fix.note.empty()) out.push_back({ fix.note, kWarnInk });
-        out.push_back({ Fmt(T(tTestCounted), run.counted, kTestReps), kTextInk });
-        if (run.last.seq != 0 && !run.last.counted)
-            out.push_back({ WhyNotCounted(ex, run.last, p), kErrInk });
-        if (g_testExercise.load() == ex && GetTickCount64() - run.postureOkMs > 2500)
+        if (!c.fault.empty()) out.push_back({ c.fault, kErrInk });
+        out.push_back({ Fmt(T(tRepsCount), c.reps, kCalibReps), kTextInk });
+        if (g_repsExercise.load() == ex && GetTickCount64() - c.postureOkMs > 2500)
             out.push_back({ T(kExercises[ex].noPose), kWarnInk });
-        else if (run.notInPlank)
-            out.push_back({ T(tTestStraight), kWarnInk });
         return out;
-    }
-
-    std::wstring TestSummary(int ex)
-    {
-        const TestRun& t = g_tests[ex];
-        std::wstring s = t.passed ? Fmt(T(tSumTestOk), t.counted, kTestReps)
-                       : t.skipped ? std::wstring(T(tSumTestSkipped))
-                                   : Fmt(T(tSumTestWarn), t.counted, kTestReps);
-        if (g_fix[ex].on) s += L"\n" + std::wstring(T(tSumAdjusted));
-        return s;
-    }
-
-    // "Retake photos" on a check that cannot pass: back to the exercise's
-    // first photo, everything about it forgotten.
-    void GoToStep(int step);
-    void RetakeExercise(int ex)
-    {
-        ResetExercise(ex);
-        int first = -1;
-        for (int i = 0; i < kSteps; ++i)
-        {
-            const StepDef& s = kStepDefs[i];
-            if (s.kind != StepKind::Photo || s.exercise != ex) continue;
-            g_shots[s.shot] = Shot{};
-            if (first < 0) first = i;
-        }
-        LogF(L"calibrate: %s - retaking photos", ExerciseName(ex));
-        if (first >= 0) GoToStep(first);
     }
 
     std::wstring OldVal(const wchar_t* sec, const wchar_t* key)
@@ -1684,7 +1212,7 @@ namespace
             if (ex) s += L"\n\n";
             if (!e.ok)
             {
-                s += e.why.empty() ? Fmt(T(tSumKept), g_uk ? kExercises[ex].nameUk : kExercises[ex].nameEn) : e.why;
+                s += Fmt(T(tSumKept), g_uk ? kExercises[ex].nameUk : kExercises[ex].nameEn);
                 continue;
             }
             const wchar_t* sec = Section(ex);
@@ -1693,7 +1221,6 @@ namespace
                      OldVal(sec, k.key[2]).c_str(), e.goingUp, OldVal(sec, k.key[3]).c_str(), e.down);
             if (ex == kSquat && p.hip)
                 s += L"\n" + Fmt(T(tSumHip), OldVal(Section(kSquat), L"min_hip_drop").c_str(), p.hipDrop);
-            s += L"\n" + TestSummary(ex);
         }
         const int cam = static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0));
         if (g_phoneMode)
@@ -1735,6 +1262,8 @@ namespace
         req.uk = g_uk;
         req.configPath = g_configPath;
         req.soundsPath = ExerciseUnlock::DataPath(L"sounds.ini");
+        req.usersPath = g_usersPath.empty() ? ExerciseUnlock::DataPath(L"users.allow") : g_usersPath;
+        req.adminToolPath = g_exeDir + L"\\ExerciseUnlockAdmin.exe";
         for (const CameraInfo& c : g_cameras) req.cameras.push_back(c.name);
         return req;
     }
@@ -1748,15 +1277,12 @@ namespace
         return -1;
     }
 
-    // Only from steps without a running test: it reads config.ini again,
-    // over the thresholds a test put into Config.
+    // From the first and the last step: it reads config.ini again.
     void OpenSettings()
     {
         const auto r = ExerciseUnlock::Calib::ShowSettings(SettingsFor(g_wnd));
         if (!r.saved) return;
         Config::Load();
-        g_webcamMinHipDrop = Config::SquatMinHipDrop();
-        if (!g_phoneMode) g_cfgMinHipDrop = g_webcamMinHipDrop;
         const int pick = PreferredCamera();
         if (!g_phoneMode && pick >= 0 && pick != static_cast<int>(SendMessageW(g_cam, CB_GETCURSEL, 0, 0)))
         {
@@ -1808,15 +1334,7 @@ namespace
         // frame, so they depend on its aspect ratio. The phone camera page
         // rescales its poses to it (service PhoneLink sends it along) - unless
         // the phone has thresholds of its own, measured on its own frame.
-        for (int i = 1; i < kShotCount && !g_phoneMode; ++i)
-        {
-            const Frame& f = g_shots[i].photo;
-            if (g_shots[i].done && f.w > 0 && f.h > 0)
-            {
-                put(L"calibration", L"aspect", Fmt(L"%.4f", static_cast<double>(f.w) / f.h));
-                break;
-            }
-        }
+        if (!g_phoneMode && g_aspect > 0.0) put(L"calibration", L"aspect", Fmt(L"%.4f", g_aspect));
         WritePrivateProfileStringW(nullptr, nullptr, nullptr, g_configPath.c_str());   // flush
 
         if (!ok)
@@ -1833,115 +1351,15 @@ namespace
         return true;
     }
 
-    // ------------------------------------------------------------ capture
-    // Why a photo failed, for the log: how sure the model was of the joints
-    // the step measures, on the last frame.
-    void LogCaptureFailure()
-    {
-        BodyPose pose;
-        {
-            std::lock_guard<std::mutex> lk(g_frameMx);
-            pose = g_latest.pose;
-        }
-        const auto c = [&](int j) { return static_cast<int>(std::lround(pose.joints[j].confidence * 100.0f)); };
-        LogF(L"calibrate: photo %d failed: %zu of %zu frames measurable in %llu ms (%s); last frame "
-             L"hips %d/%d knees %d/%d ankles %d/%d shoulders %d/%d elbows %d/%d wrists %d/%d",
-             Cur().shot, g_samples.size(), g_collectFrames, GetTickCount64() - g_phaseStart,
-             g_phoneMode ? L"phone" : L"webcam",
-             c(kLHip), c(kRHip), c(kLKn), c(kRKn), c(kLAn), c(kRAn), c(kLSh), c(kRSh), c(kLEl), c(kREl), c(kLWr), c(kRWr));
-    }
-
-    void FinishCapture()
-    {
-        Shot& shot = g_shots[Cur().shot];
-        g_phase = Phase::Live;
-        if (g_samples.size() < kSamples / 2)
-        {
-            LogCaptureFailure();
-            // Hardly any frames: not the child's position but the phone.
-            const ULONGLONG secs = (GetTickCount64() - g_phaseStart + 500) / 1000;
-            g_status = g_collectFrames < kSamples / 2
-                ? Fmt(T(tFewFrames), static_cast<int>(g_collectFrames), static_cast<int>(secs))
-                : std::wstring(T(kExercises[Cur().exercise].notSeen));
-            g_statusIsError = true;
-            return;
-        }
-        ResetExercise(Cur().exercise);   // new photo, new thresholds: check again
-        shot.done = true;
-        shot.skipped = false;
-        shot.angle = Median(g_samples);
-        shot.hipY = Median(g_hipSamples);
-        {
-            std::lock_guard<std::mutex> lk(g_frameMx);
-            shot.photo = g_latest;
-        }
-        LogF(L"calibrate: photo %d angle=%.1f hipY=%.3f samples=%zu", Cur().shot, shot.angle, shot.hipY, g_samples.size());
-        g_status.clear();
-    }
-
-    void EndCapture()
-    {
-        FinishCapture();
-        UpdateControls();
-    }
-
-    void StartCollecting()
-    {
-        g_samples.clear();
-        g_hipSamples.clear();
-        g_collectFrames = 0;
-        g_phase = Phase::Collecting;   // the next ~12 frames give the angle (median)
-        g_phaseStart = GetTickCount64();
-    }
-
-    // "Take photo": from the phone after a countdown (Phase::Countdown,
-    // OnTimer starts collecting), from here straight away.
-    void TakePhoto(bool countdown)
-    {
-        g_shots[Cur().shot].done = false;
-        ResetExercise(Cur().exercise);
-        if (countdown)
-        {
-            g_phase = Phase::Countdown;
-            g_phaseStart = GetTickCount64();
-            LogF(L"calibrate: photo %d from the phone, countdown", Cur().shot);
-        }
-        else
-            StartCollecting();
-        UpdateControls();
-    }
-
-    // Whole seconds left of the countdown (5, 4 ... 1), 0 when there is none.
-    int CountdownLeft()
-    {
-        if (g_phase != Phase::Countdown) return 0;
-        const ULONGLONG gone = GetTickCount64() - g_phaseStart;
-        return gone >= kCountdownMs ? 0 : static_cast<int>((kCountdownMs - gone + 999) / 1000);
-    }
+    // ------------------------------------------------------------ frames
+    void SendCalibStep();
 
     void OnFrame()
     {
         g_framePending = false;
         if (g_status == T(tNoFrames)) g_status.clear();   // the picture came after all
-        if (g_phase == Phase::Collecting)
-        {
-            BodyPose pose;
-            {
-                std::lock_guard<std::mutex> lk(g_frameMx);
-                pose = g_latest.pose;
-            }
-            const bool squat = Cur().exercise == kSquat;
-            const float v = kExercises[Cur().exercise].measure(pose);
-            ++g_collectFrames;
-            if (v > 0.0f)
-            {
-                g_samples.push_back(v);
-                const float hy = HipY(pose);
-                if (squat && hy > 0.0f) g_hipSamples.push_back(hy);
-            }
-            if (g_samples.size() >= kSamples) EndCapture();
-        }
-        PollTest();
+        PollReps();
+        if (Cur().kind == StepKind::Reps) SendCalibStep();   // sent only when it changed
         InvalidateRect(g_wnd, nullptr, FALSE);
     }
 
@@ -1953,23 +1371,82 @@ namespace
         return PhoneStateNow() == PhoneState::Connected && GetTickCount64() - g_lastFrameMs.load() < 3000;
     }
 
-    // The wizard's step on the phone's screen: what to do now, and its own
-    // "Take photo" while the step takes one.
+    // The wizard's step on the phone's screen: what to do now, the wizard's
+    // own buttons (a page from 1.5.2 shows them), and on a reps step how many
+    // reps so far and what came out.
+    const char* ParaKind(COLORREF c)
+    {
+        return c == kOkInk ? "ok" : c == kErrInk ? "err" : c == kWarnInk ? "warn" : c == kInfoInk ? "info" : "text";
+    }
+
+    // The summary on the phone: one line per exercise, and the save's result.
+    std::vector<Para> SummaryParas()
+    {
+        std::vector<Para> out;
+        for (int ex = 0; ex < kExerciseCount; ++ex)
+        {
+            const std::wstring name = g_uk ? kExercises[ex].nameUk : kExercises[ex].nameEn;
+            if (g_caps[ex].done)
+                out.push_back({ Fmt(T(tSumReps), name.c_str(), AngleText(ex, g_caps[ex].plan.top).c_str(),
+                                    AngleText(ex, g_caps[ex].plan.bottom).c_str()), kOkInk });
+            else out.push_back({ Fmt(T(tSumKept), name.c_str()), kWarnInk });
+        }
+        if (!g_status.empty()) out.push_back({ g_status, g_statusIsError ? kErrInk : kOkInk });
+        return out;
+    }
+
     void SendCalibStep()
     {
         if (!g_phone) return;
         const StepDef& s = Cur();
+        const bool reps = s.kind == StepKind::Reps;
+        // The first step speaks to the phone itself.
+        const std::wstring text = s.kind == StepKind::Camera && g_phoneMode ? std::wstring(T(tPhoneStep0)) : std::wstring(T(s.text));
         Json::Writer w;
         w.BeginObject().Key("t").String("calib")
          .Key("title").String(Relay::ToUtf8(T(s.title)))
-         .Key("text").String(Relay::ToUtf8(T(s.text)))
-         .Key("photo").Bool(s.kind == StepKind::Photo)
-         .Key("busy").Bool(g_phase != Phase::Live || !SourceReady())
-         .Key("count").Int(CountdownLeft())
-         .Key("measuring").Bool(g_phase == Phase::Collecting)
-         .Key("shot").Int(s.kind == StepKind::Photo ? s.shot : 0)
-         .Key("test").String(s.kind == StepKind::Test ? Relay::ToUtf8(kExercises[s.exercise].logName) : std::string())
-         .EndObject();
+         .Key("text").String(Relay::ToUtf8(text))
+         .Key("photo").Bool(false)            // these four keep a page before 1.5.2 from offering a photo
+         .Key("busy").Bool(!SourceReady())
+         .Key("count").Int(0)
+         .Key("measuring").Bool(false)
+         .Key("shot").Int(0)
+         .Key("test").String(reps ? Relay::ToUtf8(kExercises[s.exercise].logName) : std::string());
+        // The wizard's own buttons, as the computer shows them: the phone drives the whole calibration.
+        // "Skip" on the first and the last step opens the settings: that one stays on the computer.
+        const bool pending = g_autoNextAt != 0;
+        auto button = [&](const char* key, HWND h, bool offer) {
+            wchar_t label[64] = L"";
+            GetWindowTextW(h, label, 64);
+            w.Key(key).BeginObject()
+             .Key("label").String(Relay::ToUtf8(label))
+             .Key("show").Bool(offer && IsWindowVisible(h))
+             .Key("on").Bool(offer && IsWindowEnabled(h) && !pending)
+             .EndObject();
+        };
+        w.Key("nav").BeginObject();
+        button("back", g_back, true);
+        button("skip", g_skip, reps);
+        button("take", g_take, reps);
+        button("next", g_next, true);
+        w.EndObject();
+        auto lines = [&](const std::vector<Para>& paras) {
+            w.Key("lines").BeginArray();
+            for (const Para& para : paras)
+                w.BeginObject().Key("text").String(Relay::ToUtf8(para.text)).Key("kind").String(ParaKind(para.color)).EndObject();
+            w.EndArray();
+        };
+        if (reps)
+        {
+            // the reps so far; a try that gave no thresholds (att) sounds on the phone
+            const Capture& c = g_caps[s.exercise];
+            w.Key("reps").Int(c.done ? kCalibReps : c.reps).Key("repsOf").Int(kCalibReps).Key("passed").Bool(c.done)
+             .Key("att").Int(c.tries).Key("attOk").Bool(false);
+            lines(RepsParas(s.exercise));
+        }
+        else if (s.kind == StepKind::Summary)
+            lines(SummaryParas());
+        w.EndObject();
         if (w.Str() == g_calibSent) return;
         g_calibSent = w.Str();
         PhoneSend(*g_phone, g_calibSent);
@@ -1979,41 +1456,36 @@ namespace
     {
         const StepDef& s = Cur();
         const bool cameraStep = s.kind == StepKind::Camera;
-        const bool photoStep = s.kind == StepKind::Photo;
-        const bool testStep = s.kind == StepKind::Test;
+        const bool repsStep = s.kind == StepKind::Reps;
         const bool summary = s.kind == StepKind::Summary;
-        const bool passed = testStep && g_tests[s.exercise].passed;
-        // A check that cannot pass offers new photos instead of a new start.
-        const bool retake = testStep && (g_fix[s.exercise].restart || !PlanReady(ComputePlan(), s.exercise));
-        const bool busy = g_phase != Phase::Live;
-        EnableWindow(g_back, g_step > 0 && !busy && !(summary && g_saved));
-        ShowWindow(g_take, photoStep || testStep ? SW_SHOW : SW_HIDE);
+        const bool done = repsStep && g_caps[s.exercise].done;
+        EnableWindow(g_back, g_step > 0 && !(summary && g_saved));
+        ShowWindow(g_take, repsStep ? SW_SHOW : SW_HIDE);
+        SetWindowTextW(g_take, T(tRestart));
+        EnableWindow(g_take, repsStep && SourceReady());
         // With nothing to skip, the button opens the settings.
         SetWindowTextW(g_skip, T(cameraStep || summary ? tSettings : tSkip));
-        EnableWindow(g_take, !busy && (retake || ((photoStep || testStep) && SourceReady())));
-        EnableWindow(g_skip, !busy && !passed);
-        EnableWindow(g_cam, !busy);
-        if (photoStep) SetWindowTextW(g_take, T(g_shots[s.shot].done ? tRetake : tTake));
-        if (testStep) SetWindowTextW(g_take, T(retake ? tRetakePhotos : tRestart));
+        EnableWindow(g_skip, !done);
         SetWindowTextW(g_next, T(summary ? (g_saved ? tClose : tSave) : tNext));
-        EnableWindow(g_next, !busy && (photoStep ? g_shots[s.shot].done : !testStep || passed));
+        EnableWindow(g_next, !repsStep || done);
         SendCalibStep();
         InvalidateRect(g_wnd, nullptr, FALSE);
     }
 
     void GoToStep(int step)
     {
-        const int dir = step < g_step ? -1 : 1;
         step = std::clamp(step, 0, kSteps - 1);
-        // Skipped photos skip their test too (the camera and summary steps
-        // at both ends are never tests, so this stays in range).
-        while (kStepDefs[step].kind == StepKind::Test && !PhotosDone(kStepDefs[step].exercise))
-            step += dir;
-        StopTest();
+        StopReps();
+        g_autoNextAt = 0;
         g_step = step;
-        g_phase = Phase::Live;
         g_status.clear();
-        if (Cur().kind == StepKind::Test && !g_tests[Cur().exercise].passed) StartTest(Cur().exercise);
+        // An exercise not done yet counts from here at once; a done one shows
+        // what its reps gave ("Start over" for new ones).
+        if (Cur().kind == StepKind::Reps && !g_caps[Cur().exercise].done)
+        {
+            g_caps[Cur().exercise] = Capture{};
+            StartReps(Cur().exercise);
+        }
         UpdateControls();
     }
 
@@ -2111,12 +1583,12 @@ namespace
         FillRect(dc, &area, bg);
         DeleteObject(bg);
 
-        // Photo steps show the taken photo until "Retake"; otherwise live.
         const StepDef& s = Cur();
         Frame f;
-        const bool showPhoto = s.kind == StepKind::Photo && g_shots[s.shot].done && g_phase == Phase::Live;
-        if (showPhoto) f = g_shots[s.shot].photo;
-        else { std::lock_guard<std::mutex> lk(g_frameMx); f = g_latest; }
+        {
+            std::lock_guard<std::mutex> lk(g_frameMx);
+            f = g_latest;
+        }
 
         SelectObject(dc, g_fontUi);
         if (f.bgra.empty() && (f.w == 0 || f.h == 0))
@@ -2157,39 +1629,21 @@ namespace
         }
         DrawSkeleton(dc, v, f.pose);
 
-        // "Take photo" on the phone: the seconds until it is taken.
-        if (const int left = CountdownLeft())
+        // A reps step: the reps so far, and the angle the detector sees right now.
+        if (s.kind == StepKind::Reps)
         {
-            SelectObject(dc, g_fontBig);
-            DrawShadowText(dc, std::to_wstring(left), v, DT_CENTER | DT_VCENTER | DT_SINGLELINE, RGB(255, 230, 90));
-        }
-
-        // Live measurement badge for the current step.
-        if (s.kind == StepKind::Photo)
-        {
-            const ExerciseInfo& info = kExercises[s.exercise];
-            const float a = info.measure(f.pose);
-            std::wstring label = (a > 0) ? Fmt(T(info.angle), static_cast<int>(std::lround(a))) : std::wstring(L"?");
-            if (showPhoto) label = Fmt(T(info.angle), static_cast<int>(std::lround(g_shots[s.shot].angle)));
-            RECT lr{ v.left + Px(12), v.top + Px(8), v.right, v.top + Px(40) };
-            SelectObject(dc, g_fontTitle);
-            DrawShadowText(dc, label, lr, DT_LEFT | DT_SINGLELINE, RGB(255, 230, 90));
-        }
-        else if (s.kind == StepKind::Test && PlanReady(ComputePlan(), s.exercise) && !g_fix[s.exercise].restart)
-        {
-            // Rep counter, and the angle the detector sees right now.
-            const TestRun& run = g_tests[s.exercise];
-            std::wstring big = Fmt(L"%d / %d", run.counted, kTestReps);
-            if (run.passed) big += L"  \x2714";
+            const Capture& c = g_caps[s.exercise];
+            std::wstring big = Fmt(L"%d / %d", c.done ? kCalibReps : c.reps, kCalibReps);
+            if (c.done) big += L"  \x2714";
             RECT br{ v.left + Px(16), v.top + Px(4), v.right, v.top + Px(70) };
             SelectObject(dc, g_fontBig);
-            DrawShadowText(dc, big, br, DT_LEFT | DT_SINGLELINE, run.passed ? RGB(90, 230, 140) : RGB(255, 230, 90));
-            const bool seen = GetTickCount64() - run.postureOkMs < 1000;
-            if (!run.passed && seen && run.angle > 0)
+            DrawShadowText(dc, big, br, DT_LEFT | DT_SINGLELINE, c.done ? RGB(90, 230, 140) : RGB(255, 230, 90));
+            const bool seen = GetTickCount64() - c.postureOkMs < 1000;
+            if (!c.done && seen && c.angle > 0)
             {
                 RECT lr{ v.left + Px(18), v.top + Px(72), v.right, v.top + Px(104) };
                 SelectObject(dc, g_fontTitle);
-                DrawShadowText(dc, Fmt(T(kExercises[s.exercise].angle), static_cast<int>(std::lround(run.angle))), lr,
+                DrawShadowText(dc, AngleText(s.exercise, static_cast<int>(std::lround(c.angle))), lr,
                                DT_LEFT | DT_SINGLELINE, RGB(255, 255, 255));
             }
         }
@@ -2197,7 +1651,7 @@ namespace
 
     // ------------------------------------------------------------ example pictures
     // A side-view figure per example (StepDef::example): 0 shows where the
-    // camera goes, 1-4 what the camera should see for that photo. Figure
+    // camera goes, 1-6 a pose the camera should see in the reps. Figure
     // units: y grows down,
     // the floor is at y = 100, the figure faces right.
     struct FigPt { float x, y; };
@@ -2370,7 +1824,7 @@ namespace
         };
         const bool lying = !scene && example >= 3;   // the floor exercises
         const float fdx = lying ? -4.0f : -3.0f, fdy = lying ? 0.0f : -1.5f;
-        // Soft highlight behind the joint whose angle this photo measures.
+        // Soft highlight behind the joint whose angle the step measures.
         const float ringR = 7.5f * u;
         const Gdiplus::PointF joint = F(f.ring == 1 ? f.knee : f.ring == 2 ? f.elbow : f.hip);
         if (!scene)
@@ -2425,13 +1879,11 @@ namespace
         DrawTextW(dc, T(step.title), -1, &r, DT_LEFT | DT_WORDBREAK);
         y += Px(40);
 
-        // Checklist above the buttons: one row per photo and per test.
-        // Not on the summary: it says the same and needs the room.
+        // Checklist above the buttons: one row per exercise. Not on the
+        // summary: it says the same and needs the room.
         const bool showList = step.kind != StepKind::Summary;
         const int rowH = Px(20);
-        int rows = 0;
-        for (const StepDef& s : kStepDefs)
-            if (showList && (s.kind == StepKind::Photo || s.kind == StepKind::Test)) ++rows;
+        const int rows = showList ? kExerciseCount : 0;
         const int listTop = p.bottom - Px(44) - rows * rowH;
         const int textBottom = listTop - Px(10);
 
@@ -2450,8 +1902,8 @@ namespace
         if (step.kind == StepKind::Summary) body += L"\n\n" + SummaryText();
         para(body, kTextInk);
         if (!g_status.empty()) para(g_status, g_statusIsError ? kErrInk : kOkInk);
-        if (step.kind == StepKind::Test)
-            for (const Para& t : TestParas(step.exercise)) para(t.text, t.color);
+        if (step.kind == StepKind::Reps)
+            for (const Para& t : RepsParas(step.exercise)) para(t.text, t.color);
 
         // Example picture in whatever room is left above the checklist.
         if (step.example >= 0 && textBottom - y >= Px(120))
@@ -2466,33 +1918,14 @@ namespace
 
         SetTextColor(dc, kTextInk);
         y = listTop;
-        for (const StepDef& s : kStepDefs)
+        for (int ex = 0; ex < kExerciseCount && showList; ++ex)
         {
-            if (!showList) break;
-            bool done = false;
-            std::wstring label, v;
-            if (s.kind == StepKind::Photo)
-            {
-                const Shot& shot = g_shots[s.shot];
-                done = shot.done;
-                int topShot = 0, downShot = 0;
-                PhotoShots(s.exercise, topShot, downShot);
-                const ExerciseInfo& info = kExercises[s.exercise];
-                label = T(s.shot == topShot ? info.rowTop : info.rowDown);
-                v = shot.done ? Fmt(T(info.angle), static_cast<int>(std::lround(shot.angle)))
-                              : (shot.skipped ? T(tSkipped) : T(tNotYet));
-            }
-            else if (s.kind == StepKind::Test)
-            {
-                const TestRun& t = g_tests[s.exercise];
-                done = t.passed;
-                label = T(s.title);
-                v = t.passed || t.counted > 0 ? Fmt(L"%d/%d", t.counted, kTestReps)
-                                              : (t.skipped ? T(tSkipped) : T(tNotYet));
-            }
-            else
-                continue;
-            const std::wstring line = std::wstring(done ? L"\x2714  " : L"\x2022  ") + label + L": " + v;
+            const Capture& c = g_caps[ex];
+            const std::wstring name = g_uk ? kExercises[ex].nameUk : kExercises[ex].nameEn;
+            const std::wstring v = c.done ? AngleText(ex, c.plan.top) + L" / " + AngleText(ex, c.plan.bottom)
+                                 : c.skipped ? std::wstring(T(tSkipped))
+                                 : c.reps > 0 ? Fmt(L"%d/%d", c.reps, kCalibReps) : std::wstring(T(tNotYet));
+            const std::wstring line = std::wstring(c.done ? L"\x2714  " : L"\x2022  ") + name + L": " + v;
             r = RECT{ p.left, y, p.right, y + rowH };
             DrawTextW(dc, line.c_str(), -1, &r, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
             y += rowH;
@@ -2525,20 +1958,13 @@ namespace
     void SwitchSource(bool phone)
     {
         bool any = false;
-        for (Shot& shot : g_shots)
+        for (Capture& c : g_caps)
         {
-            any = any || shot.done;
-            shot = Shot{};
+            any = any || c.done || c.reps > 0;
+            c = Capture{};
         }
-        for (int ex = 0; ex < kExerciseCount; ++ex) ResetExercise(ex);
         g_phoneMode = phone;
-        // A check without a hip drop from the photos uses the source's own.
-        g_cfgMinHipDrop = g_webcamMinHipDrop;
-        if (phone)
-        {
-            const std::wstring v = IniGet(L"phone_squat", L"min_hip_drop");
-            if (!v.empty()) g_cfgMinHipDrop = std::wcstof(v.c_str(), nullptr);
-        }
+        g_aspect = 0.0;
         if (any)
         {
             g_status = T(tPhoneReset);
@@ -2569,7 +1995,7 @@ namespace
                     StartCamera(sel);
                 }
                 // Another camera sees the child differently: count from zero.
-                if (Cur().kind == StepKind::Test && !g_tests[Cur().exercise].passed) StartTest(Cur().exercise);
+                if (Cur().kind == StepKind::Reps && !g_caps[Cur().exercise].done) StartReps(Cur().exercise);
                 UpdatePhoneUrl();
                 UpdateControls();
             }
@@ -2578,20 +2004,15 @@ namespace
             GoToStep(g_step - 1);
             break;
         case idTake:
-            g_status.clear();
-            if (Cur().kind == StepKind::Test)
+            // "Start over": this exercise's reps from zero.
+            if (Cur().kind == StepKind::Reps)
             {
-                const int ex = Cur().exercise;
-                if (g_fix[ex].restart || !PlanReady(ComputePlan(), ex))
-                    RetakeExercise(ex);      // "Retake photos"
-                else
-                {
-                    StartTest(ex);           // "Start over"
-                    UpdateControls();
-                }
-                break;
+                g_status.clear();
+                g_autoNextAt = 0;
+                g_caps[Cur().exercise] = Capture{};
+                StartReps(Cur().exercise);
+                UpdateControls();
             }
-            TakePhoto(false);
             break;
         case idSkip:
             if (Cur().kind == StepKind::Camera || Cur().kind == StepKind::Summary)
@@ -2599,14 +2020,8 @@ namespace
                 OpenSettings();
                 break;
             }
-            if (Cur().kind == StepKind::Test)
-                g_tests[Cur().exercise].skipped = true;
-            else
-            {
-                g_shots[Cur().shot].done = false;
-                g_shots[Cur().shot].skipped = true;
-                ResetExercise(Cur().exercise);
-            }
+            g_caps[Cur().exercise] = Capture{};
+            g_caps[Cur().exercise].skipped = true;
             GoToStep(g_step + 1);
             break;
         case idNext:
@@ -2621,23 +2036,15 @@ namespace
 
     void OnTimer()
     {
-        if (g_phase == Phase::Countdown)
+        // The reps gave the thresholds: on to the next exercise.
+        if (g_autoNextAt && GetTickCount64() >= g_autoNextAt)
         {
-            if (CountdownLeft() == 0)
+            g_autoNextAt = 0;
+            if (Cur().kind == StepKind::Reps && g_caps[Cur().exercise].done)
             {
-                StartCollecting();
-                UpdateControls();
+                LogF(L"calibrate: %s done, next step", kExercises[Cur().exercise].logName);
+                GoToStep(g_step + 1);
             }
-            else
-                SendCalibStep();   // the phone shows the seconds left
-        }
-        // A slow phone gets more time, until 12 frames came: "not visible"
-        // should mean the child, not a few frames in 5 s.
-        const ULONGLONG collecting = GetTickCount64() - g_phaseStart;
-        if (g_phase == Phase::Collecting && collecting >= kCollectMs &&
-            (g_collectFrames >= kSamples || collecting >= kCollectMaxMs))
-        {
-            EndCapture();
         }
         // The relay drops a connection that says nothing for a minute.
         if (g_phone && GetTickCount64() - g_phonePingMs >= 20000)
@@ -2645,7 +2052,7 @@ namespace
             g_phonePingMs = GetTickCount64();
             g_phone->sock.Send(R"({"t":"ping"})");
         }
-        // The phone's poses start or stop: "Take photo" follows.
+        // The phone's poses start or stop: "Start over" follows.
         if (SourceReady() != g_sourceReady)
         {
             g_sourceReady = !g_sourceReady;
@@ -2714,53 +2121,28 @@ namespace
             Layout();
             if (!g_snapshotPath.empty())
             {
-                // Layout check without a camera: sample measurements for the
-                // photos before this step, the squat check passed and a
-                // push-up check under way (3 of 5, last rep too shallow).
+                // Layout check without a camera: the exercises before this
+                // step done with sample reps, this one at 3 of 5.
                 g_snapshotStep = std::clamp(g_snapshotStep, 0, kSteps - 1);
-                const float sample[kShotCount] = { 0.0f, 171.0f, 96.0f, 164.0f, 108.0f, 118.0f, 40.0f };
-                for (int i = 0; i < kSteps; ++i)
+                const ExerciseUnlock::Calib::Thresholds sample[kExerciseCount] = {
+                    { 162, 152, 129, 117, 0.04f }, { 161, 156, 147, 141, 0.0f }, { 121, 110, 78, 63, 0.0f } };
+                const int sampleTop[kExerciseCount] = { 168, 164, 128 }, sampleBottom[kExerciseCount] = { 111, 138, 56 };
+                for (int i = 0; i < g_snapshotStep; ++i)
                 {
                     const StepDef& s = kStepDefs[i];
-                    if (s.kind != StepKind::Photo || i >= g_snapshotStep) continue;
-                    g_shots[s.shot].done = true;
-                    g_shots[s.shot].angle = sample[s.shot];
-                    g_shots[s.shot].hipY = (s.shot == 1) ? 0.50f : 0.62f;
+                    if (s.kind != StepKind::Reps) continue;
+                    Capture& c = g_caps[s.exercise];
+                    c.done = true;
+                    c.plan.t = sample[s.exercise];
+                    c.plan.top = sampleTop[s.exercise];
+                    c.plan.bottom = sampleBottom[s.exercise];
                 }
                 GoToStep(g_snapshotStep);
-                RepResult shallow;
-                shallow.seq = 1;
-                shallow.reachedDown = false;
-                shallow.deepest = 142.0f;
-                const int current = Cur().kind == StepKind::Test ? Cur().exercise : kPushUp;
-                for (int ex = 0; ex < kExerciseCount; ++ex)
+                if (Cur().kind == StepKind::Reps)
                 {
-                    if (!PhotosDone(ex)) continue;
-                    TestRun& t = g_tests[ex];
-                    t.counted = ex == current ? 3 : kTestReps;
-                    t.passed = ex != current;
-                    t.last = ex == current ? shallow : RepResult{};
-                    t.postureOkMs = GetTickCount64();   // no "not recognized" hint in the shot
-                }
-                // And the two check verdicts: squats and sit-ups adjusted,
-                // push-ups need new photos.
-                if (Cur().kind == StepKind::Test)
-                {
-                    Fix& fx = g_fix[current];
-                    if (current != kPushUp)
-                    {
-                        const ExercisePlan e = ComputePlan().ex[current];
-                        fx.on = true;
-                        fx.st = e.top - 2; fx.gd = e.goingDown - 2; fx.gu = e.goingUp + 6; fx.dn = e.down + 8;
-                        fx.rounds = 1;
-                        fx.note = Fmt(T(tTestAdjusted), (Fmt(T(kExercises[current].adjDown), e.down, fx.dn) + L", " +
-                                                         Fmt(T(kExercises[current].adjTop), e.top, fx.st)).c_str());
-                    }
-                    else
-                    {
-                        fx.restart = true;
-                        fx.note = Fmt(T(tRestartRange), 7);
-                    }
+                    Capture& c = g_caps[Cur().exercise];
+                    c.reps = 3;
+                    c.postureOkMs = GetTickCount64();   // no "not recognized" hint in the shot
                 }
                 UpdateControls();
                 SetTimer(hwnd, kSnapshotTimerId, 1500, nullptr);   // let DWM compose the window first
@@ -2814,14 +2196,19 @@ namespace
             UpdatePhoneUrl();
             UpdateControls();
             return 0;
-        case WM_APP_PHONETAP:
-            // "Take photo" on the phone: the same photo, after a countdown.
-            if (Cur().kind == StepKind::Photo && IsWindowEnabled(g_take))
-            {
-                g_status.clear();
-                TakePhoto(true);
-            }
+        case WM_APP_PHONENAV:
+        {
+            // A wizard button on the phone does what the computer's does, while the computer's is on.
+            const int id = static_cast<int>(wp);
+            const StepKind kind = Cur().kind;
+            if (g_autoNextAt) return 0;
+            if (id == idSkip && (kind == StepKind::Camera || kind == StepKind::Summary)) return 0;   // the settings
+            const HWND b = id == idBack ? g_back : id == idNext ? g_next : id == idSkip ? g_skip : g_take;
+            if (!IsWindowVisible(b) || !IsWindowEnabled(b)) return 0;
+            LogF(L"calibrate: the phone pressed %d on step %d", id, g_step);
+            OnCommand(id, BN_CLICKED);
             return 0;
+        }
         case WM_CTLCOLORSTATIC:
             if (reinterpret_cast<HWND>(lp) == g_url)
             {
@@ -2845,7 +2232,6 @@ namespace
         case WM_APP_CAMERR:
             g_status = T(tCamBusy);
             g_statusIsError = true;
-            g_phase = Phase::Live;
             UpdateControls();
             return 0;
         case WM_DESTROY:
@@ -2897,6 +2283,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
                 langFrom = L"/lang";
             }
             else if (_wcsicmp(argv[i], L"/snapshot") == 0 && i + 1 < argc) g_snapshotPath = argv[++i];
+            else if (_wcsicmp(argv[i], L"/users") == 0 && i + 1 < argc) g_usersPath = argv[++i];
             else if (_wcsicmp(argv[i], L"/step") == 0 && i + 1 < argc) g_snapshotStep = _wtoi(argv[++i]);
         }
         LocalFree(argv);
@@ -2907,12 +2294,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show)
     PathRemoveFileSpecW(exe);
     g_exeDir = exe;
     g_configPath = g_exeDir + L"\\config.ini";
-    // The test steps run the service's detectors: the same config.ini (the
+    // The reps steps run the service's detectors: the same config.ini (the
     // service reads the one next to its exe, which is this folder), any
     // time of day.
     Config::Load();
     Config::SetIgnoreSchedule(true);
-    g_cfgMinHipDrop = g_webcamMinHipDrop = Config::SquatMinHipDrop();
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);

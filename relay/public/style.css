@@ -102,7 +102,23 @@ button.flip svg { flex: none; }
 
 /* The calibration wizard's step (its title is the banner). */
 .calib { display: flex; flex-direction: column; gap: 10px; }
-.calib p { margin: 0; color: var(--muted); font-size: 15px; }
+.calib p { margin: 0; color: var(--muted); font-size: 15px; white-space: pre-line; }
+/* the check: reps counted out of 5, big; the wizard's lines under the step's text */
+.calib-reps { display: flex; align-items: baseline; justify-content: center; gap: 4px; }
+.calib-reps b { font-size: 56px; line-height: 1; }
+.calib-reps span { font-size: 24px; color: var(--muted); }
+.calib-reps.ok b { color: var(--accent); }
+.calib-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.calib-lines li { white-space: pre-line; color: var(--muted); }
+.calib-lines li.text { color: var(--ink); }
+.calib-lines li.ok { color: var(--accent); font-weight: 600; }
+.calib-lines li.warn { color: var(--warn); }
+.calib-lines li.err { color: #ff7b8a; }
+/* the wizard's buttons: back, skip, next */
+.calib-nav { display: flex; gap: 8px; }
+.calib-nav button { flex: 1 1 0; padding: 12px 8px; font-size: 16px; }
+.calib-nav button:disabled { opacity: .45; }
+.calib-reps[hidden], .calib-lines[hidden], .calib-nav[hidden] { display: none; }
 
 @media (orientation: landscape) and (max-height: 600px) {
   .live { flex-direction: row; }

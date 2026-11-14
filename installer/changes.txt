@@ -2,17 +2,7 @@
 # lists it to a parent. build-installer.ps1 copies it into version.txt.
 # Rewrite it for every release: one point per line, "en:" or "uk:" first,
 # up to 8 short points per language.
-en: Setup can take administrator rights away from the chosen account
-en: Setup's questions have "Yes" and "No" in the language chosen in setup
-en: Setup can create the user's account when the PC has only one
-en: The calibration starts after setup again, without the error 740
-en: "Take photo" on the phone counts down 5 seconds, so you can step out of the picture
-en: The calibration always opens in the language chosen in setup
-en: After removing the app, PIN and Windows Hello sign-in options are no longer "managed by your organization"
-uk: Інсталятор може прибрати права адміністратора в обраного облікового запису
-uk: Запитання інсталятора мають кнопки «Так» і «Ні» мовою інсталяції
-uk: Інсталятор може створити обліковий запис користувача, якщо на ПК він лише один
-uk: Калібрування знову запускається після інсталяції, без помилки 740
-uk: «Зробити фото» на телефоні відлічує 5 секунд, щоб ви встигли відійти з кадру
-uk: Калібрування завжди відкривається мовою, вибраною під час інсталяції
-uk: Після видалення програми вхід через PIN і Windows Hello більше не «керується вашою організацією»
+en: The phone page speaks the language Exercise Unlock was installed in, whatever the phone is set to
+en: Calibration leaves more room: push-ups and sit-ups a little short of the calibration ones still count. Please calibrate again
+uk: Сторінка на телефоні говорить мовою, якою встановлено Exercise Unlock, незалежно від мови телефона
+uk: Калібрування залишає більший запас: віджимання й прес, трохи неповніші за калібрувальні, тепер зараховуються. Відкалібруйте ще раз

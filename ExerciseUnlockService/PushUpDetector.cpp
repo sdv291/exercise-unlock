@@ -99,7 +99,7 @@ namespace ExerciseUnlock::Svc
             st.pushUpPhase.store(static_cast<uint8_t>(PushUpPhase::Unknown));
             return;
         }
-        const bool offHours = !Config::IsWithinActiveWindowNow();
+        const bool offHours = !IsWithinHoursNow();
 
         // v1.2 posture gate: no reps unless the classifier latched
         // PushUp. Standing with arms outstretched or walking around

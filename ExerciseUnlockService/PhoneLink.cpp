@@ -194,16 +194,31 @@ namespace ExerciseUnlock::Svc
         // them, the reps are counted here; space "phone": the thresholds are
         // in the phone's own frame, "pc": map the poses onto the webcam's
         // (aspect).
+        // The language setup ran in (HKLM\SOFTWARE\ExerciseUnlock\Language, the lock
+        // screen's too): "uk" / "en", or "" when it is not there.
+        std::string SetupLanguage()
+        {
+            wchar_t v[16]{};
+            DWORD cb = sizeof(v);
+            if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\ExerciseUnlock", L"Language",
+                             RRF_RT_REG_SZ | RRF_SUBKEY_WOW6464KEY, nullptr, v, &cb) != ERROR_SUCCESS) return {};
+            return _wcsicmp(v, L"uk") == 0 ? "uk" : _wcsicmp(v, L"en") == 0 ? "en" : "";
+        }
+
         std::string ConfigJson(const PhoneSetup& s)
         {
+            const UserRules rules = ActiveRules();   // the minutes per rep it shows
             Json::Writer w;
             w.BeginObject().Key("t").String("config").Key("v").Int(1)
              .Key("aspect").Number(s.aspect)
              .Key("poses").Int(1)
-             .Key("space").String(s.phoneSpace ? "phone" : "pc")
-             .Key("exercises").BeginArray();
+             .Key("space").String(s.phoneSpace ? "phone" : "pc");
+            // the phone page speaks the lock screen's language, whatever the phone is set to
+            const std::string lang = SetupLanguage();
+            if (!lang.empty()) w.Key("lang").String(lang);
+            w.Key("exercises").BeginArray();
 
-            w.BeginObject().Key("id").String("squat").Key("seconds").Int(Config::SquatSeconds())
+            w.BeginObject().Key("id").String("squat").Key("seconds").Int(rules.squatSec)
              .Key("params").BeginObject()
                 .Key("standing").Number(s.squat.standing)
                 .Key("down").Number(s.squat.down)
@@ -221,7 +236,7 @@ namespace ExerciseUnlock::Svc
                 .Key("goingUpHipFrac").Number(s.squat.goingUpHipFrac)
              .EndObject().EndObject();
 
-            w.BeginObject().Key("id").String("pushup").Key("seconds").Int(Config::PushupSeconds())
+            w.BeginObject().Key("id").String("pushup").Key("seconds").Int(rules.pushupSec)
              .Key("params").BeginObject()
                 .Key("up").Number(s.pushup.up)
                 .Key("down").Number(s.pushup.down)
@@ -233,7 +248,7 @@ namespace ExerciseUnlock::Svc
                 .Key("qualityMin").Number(s.pushup.qualityMin)
              .EndObject().EndObject();
 
-            w.BeginObject().Key("id").String("situp").Key("seconds").Int(Config::SitupSeconds())
+            w.BeginObject().Key("id").String("situp").Key("seconds").Int(rules.situpSec)
              .Key("params").BeginObject()
                 .Key("lying").Number(s.situp.lying)
                 .Key("rising").Number(s.situp.rising)
@@ -253,7 +268,7 @@ namespace ExerciseUnlock::Svc
             Ipc::Response r{};
             SnapshotInto(r);
             const bool session = IsSessionActive();
-            const bool hours   = Config::IsWithinActiveWindowNow();
+            const bool hours   = IsWithinHoursNow();
             Json::Writer w;
             w.BeginObject().Key("t").String("status")
              .Key("counts").BeginObject()
@@ -321,7 +336,7 @@ namespace ExerciseUnlock::Svc
                 why = "unknown";
                 return false;
             }
-            if (!Config::IsWithinActiveWindowNow())
+            if (!IsWithinHoursNow())
             {
                 // A real rep, just not now: the tile plays the error sound.
                 st.offHoursReps.fetch_add(1);

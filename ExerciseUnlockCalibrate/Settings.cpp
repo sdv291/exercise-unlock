@@ -5,6 +5,7 @@
 #include "Log.h"
 
 #include <commctrl.h>
+#include <lm.h>
 
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,12 @@
 #include <cstdlib>
 #include <cwchar>
 #include <iterator>
+#include <map>
+#include <string>
+#include <vector>
+
+#pragma comment(lib, "netapi32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 using ExerciseUnlock::Svc::Config;
 using ExerciseUnlock::Svc::LogF;
@@ -20,7 +27,7 @@ namespace ExerciseUnlock::Calib
 {
 namespace
 {
-    enum Page { kTime, kSchedule, kSquats, kPushUps, kSitUps, kCamera, kPhone, kTexts, kSounds, kPageCount };
+    enum Page { kTime, kSchedule, kUsers, kSquats, kPushUps, kSitUps, kCamera, kPhone, kTexts, kSounds, kPageCount };
 
     struct PageText { const wchar_t* en; const wchar_t* uk; const wchar_t* noteEn; const wchar_t* noteUk; };
 
@@ -34,6 +41,9 @@ namespace
         { L"Schedule", L"Розклад",
           L"Outside these hours reps are not credited and the computer does not unlock. From = to means no limit.",
           L"Поза цими годинами повтори не зараховуються, а комп'ютер не розблоковується. Якщо «від» = «до», обмеження немає." },
+        { L"Users", L"Користувачі",
+          L"The Windows accounts that unlock with exercises. Changes on this page take effect at once.",
+          L"Облікові записи Windows, які розблоковуються вправами. Зміни на цій сторінці діють одразу." },
         { L"Squats", L"Присідання", kAnglesEn, kAnglesUk },
         { L"Push-ups", L"Віджимання", kAnglesEn, kAnglesUk },
         { L"Sit-ups", L"Прес", kAnglesEn, kAnglesUk },
@@ -442,13 +452,15 @@ namespace
     }
 
     // The value as the file should have it, or why it can't be saved.
-    bool Normalize(const Field& f, const std::wstring& text, std::wstring& value, std::wstring& error, bool uk)
+    // allowEmpty: one user's value, where empty means "as for everybody".
+    bool Normalize(const Field& f, const std::wstring& text, std::wstring& value, std::wstring& error, bool uk,
+                   bool allowEmpty = false)
     {
         wchar_t buf[256]{};
         value = Trim(text);
         if (value.empty())
         {
-            if (!f.required) return true;
+            if (!f.required || allowEmpty) return true;
             error = uk ? L"Це поле не може бути порожнім." : L"This field can't be empty.";
             return false;
         }
@@ -497,7 +509,7 @@ namespace
 
     // ------------------------------------------------------------ window
     constexpr UINT_PTR kFirstFieldId = 1000;
-    constexpr int kListId = 100;
+    constexpr int kListId = 100, kScopeId = 101, kUsersId = 102, kAddUserId = 103, kRemoveUserId = 104;
 
     // Layout at 96 DPI: page list on the left, one row per value to its
     // right, then the description of the focused value and the buttons.
@@ -509,6 +521,10 @@ namespace
     constexpr int kNumberW = 110;
     constexpr int kHintY = 510, kHintH = 84;
     constexpr int kButtonY = kClientH - 48, kButtonW = 120, kButtonH = 32;
+    // "For: <account>" at the top right of the Time and Schedule pages;
+    // the Users page's list and its buttons.
+    constexpr int kScopeW = 240, kScopeX = kBodyR - kScopeW, kScopeLabelW = 90;
+    constexpr int kUsersW = 380, kUsersH = 300, kUserButtonX = kBodyX + kUsersW + 16, kUserButtonW = 150;
 
     constexpr COLORREF kInk = RGB(31, 37, 71), kMuted = RGB(90, 96, 130), kErrInk = RGB(200, 40, 60),
                        kCard = RGB(241, 244, 251), kAccent = RGB(60, 110, 220);
@@ -520,11 +536,18 @@ namespace
         std::wstring initial;
     };
 
+    // The "Time" and "Schedule" pages hold one set of values for everybody
+    // ([reward], [schedule]) and one per user ([reward@<account>] ...):
+    // an empty field there means "as for everybody".
+    bool PerUser(const Field& f) { return f.page == kTime || f.page == kSchedule; }
+
     struct Window
     {
         const SettingsRequest* req = nullptr;
         SettingsResult result;
         HWND   hwnd = nullptr, list = nullptr, save = nullptr, cancel = nullptr;
+        HWND   scope = nullptr;                        // "For": everybody / one user (Time, Schedule)
+        HWND   users = nullptr, addUser = nullptr, removeUser = nullptr;   // the Users page
         HFONT  ui = nullptr, title = nullptr;
         HBRUSH white = nullptr;
         UINT   dpi = 96;
@@ -533,6 +556,12 @@ namespace
         int    focused = -1;     // row the description belongs to
         std::wstring error;      // shown instead of the description
         bool   done = false;
+
+        std::vector<std::wstring> accounts;            // users.allow, in its order
+        std::wstring account;                          // the per-user pages show: "" = everybody
+        // Per-user values by account ("" = everybody), indexed like kFields:
+        // what is typed so far, and what the file had.
+        std::map<std::wstring, std::vector<std::wstring>> scopeText, scopeInitial;
     };
     Window* g_w = nullptr;       // the window is modal: one at a time
 
@@ -546,14 +575,22 @@ namespace
         return wcscmp(f.section, L"sounds") == 0 ? g_w->req->soundsPath : g_w->req->configPath;
     }
 
+    // The section a value lives in: everybody's, or one account's own.
+    std::wstring SectionOf(const Field& f, const std::wstring& account)
+    {
+        return account.empty() ? std::wstring(f.section) : std::wstring(f.section) + L"@" + account;
+    }
+
     // What the file says now; for a key it doesn't have, what the service
-    // uses instead. Hand-edited numbers may carry a "; comment".
-    std::wstring CurrentValue(const Field& f)
+    // uses instead - or, for one account, nothing (as for everybody).
+    // Hand-edited numbers may carry a "; comment".
+    std::wstring CurrentValue(const Field& f, const std::wstring& account = L"")
     {
         constexpr wchar_t kMissing[] = L"\x1F";
         wchar_t buf[2048]{};
-        GetPrivateProfileStringW(f.section, f.key, kMissing, buf, static_cast<DWORD>(std::size(buf)), PathOf(f).c_str());
-        if (wcscmp(buf, kMissing) == 0) return f.fallback ? f.fallback() : std::wstring();
+        GetPrivateProfileStringW(SectionOf(f, account).c_str(), f.key, kMissing, buf, static_cast<DWORD>(std::size(buf)),
+                                 PathOf(f).c_str());
+        if (wcscmp(buf, kMissing) == 0) return account.empty() && f.fallback ? f.fallback() : std::wstring();
         std::wstring v = buf;
         if (f.kind != Kind::Text && f.kind != Kind::Camera) v = v.substr(0, v.find(L';'));
         return Trim(v);
@@ -657,6 +694,166 @@ namespace
             SetControlValue(r, CurrentValue(f));
             r.initial = ControlValue(r);
         }
+        // Everybody's per-user values are what the controls show first.
+        auto& text = w.scopeText[L""];
+        text.assign(kFieldCount, std::wstring());
+        for (int i = 0; i < kFieldCount; ++i)
+            if (PerUser(kFields[i])) text[static_cast<size_t>(i)] = w.rows[i].initial;
+        w.scopeInitial[L""] = text;
+    }
+
+    // ------------------------------------------------------------ one user's values
+    // The per-user fields as typed now go into the shown account's set.
+    void StashScope()
+    {
+        Window& w = *g_w;
+        auto& text = w.scopeText[w.account];
+        text.resize(kFieldCount);
+        for (int i = 0; i < kFieldCount; ++i)
+            if (PerUser(kFields[i])) text[static_cast<size_t>(i)] = ControlValue(w.rows[i]);
+    }
+
+    // Show `account`'s per-user values ("" = everybody's). An empty field
+    // of one account shows everybody's value in grey.
+    void SetScope(const std::wstring& account)
+    {
+        Window& w = *g_w;
+        StashScope();
+        if (!w.scopeText.count(account))
+        {
+            std::vector<std::wstring> v(kFieldCount);
+            for (int i = 0; i < kFieldCount; ++i)
+                if (PerUser(kFields[i])) v[static_cast<size_t>(i)] = CurrentValue(kFields[i], account);
+            w.scopeText[account] = v;
+            w.scopeInitial[account] = v;
+        }
+        w.account = account;
+        const auto& text = w.scopeText[account];
+        const auto& everybody = w.scopeText[L""];
+        for (int i = 0; i < kFieldCount; ++i)
+        {
+            if (!PerUser(kFields[i])) continue;
+            SetControlValue(w.rows[i], text[static_cast<size_t>(i)]);
+            SendMessageW(w.rows[i].control, EM_SETCUEBANNER, TRUE,
+                         reinterpret_cast<LPARAM>(account.empty() ? L"" : everybody[static_cast<size_t>(i)].c_str()));
+        }
+        int pick = 0;
+        for (size_t k = 0; k < w.accounts.size(); ++k)
+            if (_wcsicmp(w.accounts[k].c_str(), account.c_str()) == 0) pick = static_cast<int>(k) + 1;
+        SendMessageW(w.scope, CB_SETCURSEL, static_cast<WPARAM>(pick), 0);
+        w.error.clear();
+        InvalidateRect(w.hwnd, nullptr, TRUE);
+    }
+
+    // ------------------------------------------------------------ users
+    // users.allow: one account per line, UTF-8; '#' / ';' lines are comments.
+    std::vector<std::wstring> ReadAccounts(const std::wstring& path)
+    {
+        std::vector<std::wstring> out;
+        HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (f == INVALID_HANDLE_VALUE) return out;
+        std::string raw(64 * 1024, '\0');
+        DWORD got = 0;
+        ReadFile(f, raw.data(), static_cast<DWORD>(raw.size()), &got, nullptr);
+        CloseHandle(f);
+        raw.resize(got);
+        if (raw.size() >= 3 && raw.compare(0, 3, "\xEF\xBB\xBF") == 0) raw.erase(0, 3);
+        std::wstring text(static_cast<size_t>(MultiByteToWideChar(CP_UTF8, 0, raw.data(), static_cast<int>(raw.size()), nullptr, 0)), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, raw.data(), static_cast<int>(raw.size()), text.data(), static_cast<int>(text.size()));
+        size_t at = 0;
+        while (at <= text.size())
+        {
+            size_t end = text.find(L'\n', at);
+            if (end == std::wstring::npos) end = text.size();
+            std::wstring line = Trim(text.substr(at, end - at));
+            if (!line.empty() && line[0] != L'#' && line[0] != L';') out.push_back(line);
+            at = end + 1;
+        }
+        return out;
+    }
+
+    bool WriteAccounts(const std::wstring& path, const std::vector<std::wstring>& accounts)
+    {
+        std::string utf8 = "\xEF\xBB\xBF";   // the BOM: setup reads the file as UTF-8 then
+        for (const std::wstring& a : accounts)
+        {
+            const int n = WideCharToMultiByte(CP_UTF8, 0, a.c_str(), static_cast<int>(a.size()), nullptr, 0, nullptr, nullptr);
+            std::string s(static_cast<size_t>(n), '\0');
+            WideCharToMultiByte(CP_UTF8, 0, a.c_str(), static_cast<int>(a.size()), s.data(), n, nullptr, nullptr);
+            utf8 += s + "\r\n";
+        }
+        // An existing file keeps its ACL (SYSTEM + Administrators, SYSTEM
+        // reads it in LogonUI); a new one inherits the data folder's.
+        HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (f == INVALID_HANDLE_VALUE) return false;
+        DWORD wrote = 0;
+        const bool ok = WriteFile(f, utf8.data(), static_cast<DWORD>(utf8.size()), &wrote, nullptr) && wrote == utf8.size();
+        CloseHandle(f);
+        return ok;
+    }
+
+    bool IsAdminAccount(const std::wstring& account)
+    {
+        USER_INFO_1* ui = nullptr;
+        if (NetUserGetInfo(nullptr, account.c_str(), 1, reinterpret_cast<LPBYTE*>(&ui)) != NERR_Success) return false;
+        const bool admin = ui->usri1_priv == USER_PRIV_ADMIN;
+        NetApiBufferFree(ui);
+        return admin;
+    }
+
+    // A tool run hidden to the end; its exit code, or -1 if it didn't start.
+    DWORD RunHidden(std::wstring cmd)
+    {
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi{};
+        if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+        {
+            LogF(L"calibrate: could not run %s (%lu)", cmd.c_str(), GetLastError());
+            return static_cast<DWORD>(-1);
+        }
+        WaitForSingleObject(pi.hProcess, 60000);
+        DWORD code = static_cast<DWORD>(-1);
+        GetExitCodeProcess(pi.hProcess, &code);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return code;
+    }
+
+    // Setup's "disable PIN ... and forbid changing the password" (lock-user.ps1):
+    // an account added later gets the same "can't change the password".
+    void SetPasswordChange(const std::wstring& account, bool allowed)
+    {
+        DWORD lockdown = 0, cb = sizeof(lockdown);
+        if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\ExerciseUnlock", L"Lockdown", RRF_RT_REG_DWORD, nullptr,
+                         &lockdown, &cb) != ERROR_SUCCESS || lockdown != 1)
+            return;
+        wchar_t sys[MAX_PATH]{};
+        GetSystemDirectoryW(sys, MAX_PATH);
+        const DWORD code = RunHidden(L"\"" + std::wstring(sys) + L"\\net.exe\" user \"" + account + L"\" /passwordchg:" +
+                                     (allowed ? L"yes" : L"no"));
+        LogF(L"calibrate: %s may change the password: %s (net user -> %lu)", account.c_str(), allowed ? L"yes" : L"no", code);
+    }
+
+    void FillAccounts()
+    {
+        Window& w = *g_w;
+        SendMessageW(w.scope, CB_RESETCONTENT, 0, 0);
+        SendMessageW(w.scope, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(Uk() ? L"Усі користувачі" : L"Everybody"));
+        SendMessageW(w.users, LB_RESETCONTENT, 0, 0);
+        for (const std::wstring& a : w.accounts)
+        {
+            SendMessageW(w.scope, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(a.c_str()));
+            const std::wstring item = IsAdminAccount(a) ? a + (Uk() ? L"   (адміністратор)" : L"   (administrator)") : a;
+            SendMessageW(w.users, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(item.c_str()));
+        }
+        bool shown = w.account.empty();
+        for (const std::wstring& a : w.accounts) shown = shown || _wcsicmp(a.c_str(), w.account.c_str()) == 0;
+        SetScope(shown ? w.account : std::wstring());
+        EnableWindow(w.removeUser, w.accounts.size() > 1);
     }
 
     void ShowPage(int page)
@@ -667,6 +864,9 @@ namespace
         w.error.clear();
         for (const Row& r : w.rows)
             ShowWindow(r.control, r.field->page == page ? SW_SHOW : SW_HIDE);
+        const bool perUserPage = page == kTime || page == kSchedule;
+        ShowWindow(w.scope, perUserPage && !w.accounts.empty() ? SW_SHOW : SW_HIDE);
+        for (HWND h : { w.users, w.addUser, w.removeUser }) ShowWindow(h, page == kUsers ? SW_SHOW : SW_HIDE);
         SendMessageW(w.list, LB_SETCURSEL, static_cast<WPARAM>(page), 0);
         InvalidateRect(w.hwnd, nullptr, TRUE);
     }
@@ -724,55 +924,81 @@ namespace
     bool SaveAll()
     {
         Window& w = *g_w;
+        StashScope();
+        // What goes into the files: a field, whose section (everybody's or
+        // one account's), the value and what it was.
+        struct Change { const Row* row; std::wstring account, value, initial; };
+        std::vector<Change> changes;
+
+        // Everybody's values and every other page.
         std::vector<std::wstring> values(kFieldCount);
         for (int i = 0; i < kFieldCount; ++i)
         {
             const Row& r = w.rows[i];
-            const std::wstring text = ControlValue(r);
-            if (text == r.initial) { values[static_cast<size_t>(i)] = text; continue; }
+            const size_t at = static_cast<size_t>(i);
+            const bool perUser = PerUser(*r.field);
+            const std::wstring text = perUser ? w.scopeText[L""][at] : ControlValue(r);
+            const std::wstring initial = perUser ? w.scopeInitial[L""][at] : r.initial;
+            if (text == initial) { values[at] = text; continue; }
             std::wstring error;
-            if (!Normalize(*r.field, text, values[static_cast<size_t>(i)], error, Uk()))
+            if (!Normalize(*r.field, text, values[at], error, Uk()))
             {
+                if (perUser) SetScope(L"");
                 ShowError(r, error);
                 return false;
             }
+            if (values[at] != initial) changes.push_back({ &r, L"", values[at], initial });
         }
         for (const Rule& rule : kRules)
             if (!CheckOrder(rule, values)) return false;
 
-        bool anyConfig = false, anyValue = false;
-        for (int i = 0; i < kFieldCount; ++i)
+        // Each account's own values: empty = as for everybody.
+        for (const std::wstring& account : w.accounts)
         {
-            if (values[static_cast<size_t>(i)] == w.rows[i].initial) continue;
-            anyValue = true;
-            anyConfig = anyConfig || wcscmp(w.rows[i].field->section, L"sounds") != 0;
+            const auto typed = w.scopeText.find(account);
+            if (typed == w.scopeText.end()) continue;
+            const std::vector<std::wstring>& initial = w.scopeInitial[account];
+            for (int i = 0; i < kFieldCount; ++i)
+            {
+                const size_t at = static_cast<size_t>(i);
+                if (!PerUser(kFields[i]) || typed->second[at] == initial[at]) continue;
+                std::wstring value, error;
+                if (!Normalize(kFields[i], typed->second[at], value, error, Uk(), true))
+                {
+                    SetScope(account);
+                    ShowError(w.rows[i], error);
+                    return false;
+                }
+                if (value != initial[at]) changes.push_back({ &w.rows[i], account, value, initial[at] });
+            }
         }
-        if (!anyValue) return true;
+        if (changes.empty()) return true;
 
+        bool anyConfig = false;
+        for (const Change& c : changes) anyConfig = anyConfig || wcscmp(c.row->field->section, L"sounds") != 0;
         if (anyConfig) CopyFileW(w.req->configPath.c_str(), (w.req->configPath + L".bak").c_str(), FALSE);
-        for (int i = 0; i < kFieldCount; ++i)
+        for (const Change& c : changes)
         {
-            const Row& r = w.rows[i];
-            const Field& f = *r.field;
-            const std::wstring& v = values[static_cast<size_t>(i)];
-            if (v == r.initial) continue;
+            const Field& f = *c.row->field;
+            const std::wstring section = SectionOf(f, c.account);
             // An empty text is a value of its own (no blocklist, no relay);
             // other empty fields mean "not set".
-            const bool remove = v.empty() && f.kind != Kind::Text && f.kind != Kind::Camera;
-            if (!WritePrivateProfileStringW(f.section, f.key, remove ? nullptr : v.c_str(), PathOf(f).c_str()))
+            const bool remove = c.value.empty() && f.kind != Kind::Text && f.kind != Kind::Camera;
+            if (!WritePrivateProfileStringW(section.c_str(), f.key, remove ? nullptr : c.value.c_str(), PathOf(f).c_str()))
             {
                 wchar_t buf[256]{};
                 swprintf_s(buf, Uk() ? L"Не вдалося записати %s (помилка %lu)." : L"Could not write %s (error %lu).",
                            PathOf(f).c_str(), GetLastError());
-                ShowError(r, buf);
+                if (PerUser(f)) SetScope(c.account);
+                ShowError(*c.row, buf);
                 return false;
             }
-            LogF(L"calibrate: setting [%s] %s: '%s' -> '%s'", f.section, f.key, r.initial.c_str(), v.c_str());
+            LogF(L"calibrate: setting [%s] %s: '%s' -> '%s'", section.c_str(), f.key, c.initial.c_str(), c.value.c_str());
         }
         WritePrivateProfileStringW(nullptr, nullptr, nullptr, w.req->configPath.c_str());   // flush
         WritePrivateProfileStringW(nullptr, nullptr, nullptr, w.req->soundsPath.c_str());
         w.result.saved = true;
-        w.result.serviceConfig = anyConfig;
+        w.result.serviceConfig = w.result.serviceConfig || anyConfig;
         return true;
     }
 
@@ -822,12 +1048,19 @@ namespace
         DeleteObject(lineBrush);
 
         const PageText& page = kPages[w.page];
-        RECT r{ Px(kBodyX), Px(kTitleY), Px(kBodyR), Px(kNoteY) };
+        const bool scoped = (w.page == kTime || w.page == kSchedule) && !w.accounts.empty();
+        RECT r{ Px(kBodyX), Px(kTitleY), Px(scoped ? kScopeX - kScopeLabelW - 8 : kBodyR), Px(kNoteY) };
         SelectObject(dc, w.title);
         SetTextColor(dc, kInk);
-        DrawTextW(dc, Uk() ? page.uk : page.en, -1, &r, DT_LEFT | DT_SINGLELINE);
+        DrawTextW(dc, Uk() ? page.uk : page.en, -1, &r, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SelectObject(dc, w.ui);
+        if (scoped)
+        {
+            r = RECT{ Px(kScopeX - kScopeLabelW), Px(kTitleY), Px(kScopeX - 8), Px(kTitleY + kControlH) };
+            SetTextColor(dc, kMuted);
+            DrawTextW(dc, Uk() ? L"Для кого:" : L"For:", -1, &r, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+        }
         if (page.noteEn)
         {
             SetTextColor(dc, kMuted);
@@ -844,9 +1077,35 @@ namespace
             DrawTextW(dc, Label(kFields[i]), -1, &r, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         }
 
-        const std::wstring hint = !w.error.empty() ? w.error
-                                : w.focused >= 0 ? Hint(*w.rows[w.focused].field)
-                                : Uk() ? L"Виберіть поле, щоб побачити його опис." : L"Pick a field to see what it does.";
+        // One account's values: an empty field takes everybody's.
+        const bool oneUser = scoped && !w.account.empty();
+        std::wstring hint;
+        if (!w.error.empty())
+            hint = w.error;
+        else if (w.focused >= 0)
+        {
+            hint = Hint(*w.rows[w.focused].field);
+            if (oneUser && PerUser(*w.rows[w.focused].field))
+            {
+                const std::wstring& everybody = w.scopeText.at(L"")[static_cast<size_t>(w.focused)];
+                hint += Uk() ? L"\nПорожньо - як для всіх користувачів" : L"\nEmpty: as for everybody";
+                if (!everybody.empty()) hint += L" (" + everybody + L")";
+                hint += L".";
+            }
+        }
+        else if (w.page == kUsers)
+            hint = Uk() ? L"Кожен обліковий запис зі списку отримує на екрані блокування плитку Exercise Unlock. Його пароль "
+                          L"Windows зберігається зашифрованим, щоб розблоковувати після вправ. Хвилини за повтор і дозволені "
+                          L"години кожному можна задати окремо на сторінках «Час» і «Розклад»."
+                        : L"Every account on the list gets the Exercise Unlock tile on the lock screen. Its Windows password "
+                          L"is kept encrypted, to unlock after the exercises. Minutes per rep and the allowed hours can be "
+                          L"set for each of them on the Time and Schedule pages.";
+        else if (oneUser)
+            hint = (Uk() ? L"Значення лише для «" : L"Values for \"") + w.account +
+                   (Uk() ? L"». Порожнє поле - як для всіх користувачів (сірим показано їхнє значення)."
+                         : L"\" only. An empty field: as for everybody (their value is shown in grey).");
+        else
+            hint = Uk() ? L"Виберіть поле, щоб побачити його опис." : L"Pick a field to see what it does.";
         RECT card{ Px(kBodyX), Px(kHintY), Px(kBodyR), Px(kHintY + kHintH) };
         HBRUSH cardBrush = CreateSolidBrush(kCard);
         FillRect(dc, &card, cardBrush);
@@ -861,6 +1120,333 @@ namespace
         }
         SetTextColor(dc, w.error.empty() ? kMuted : kErrInk);
         DrawTextW(dc, hint.c_str(), -1, &card, DT_LEFT | DT_WORDBREAK);
+    }
+
+    // ------------------------------------------------------------ add / remove a user
+    // "Add": a Windows account that isn't on the list yet and its current
+    // password - checked with Windows, then kept by the admin tool (the
+    // password reaches it in its environment only, never on its command
+    // line). The account gets the lock screen tile from the next lock.
+    struct AddDialog
+    {
+        HWND hwnd = nullptr, account = nullptr, password = nullptr, confirm = nullptr, message = nullptr, ok = nullptr;
+        std::vector<std::wstring> candidates;
+        bool done = false, added = false, messageIsError = false;
+    };
+    AddDialog* g_add = nullptr;
+
+    constexpr int kAddW = 440, kAddH = 300;
+    enum { kAddAccount = 200, kAddPassword, kAddConfirm, kAddMessage };
+
+    // Local accounts that are on, not on the list yet.
+    std::vector<std::wstring> CandidateAccounts()
+    {
+        std::vector<std::wstring> out;
+        USER_INFO_1* buf = nullptr;
+        DWORD read = 0, total = 0;
+        if (NetUserEnum(nullptr, 1, FILTER_NORMAL_ACCOUNT, reinterpret_cast<LPBYTE*>(&buf), MAX_PREFERRED_LENGTH,
+                        &read, &total, nullptr) != NERR_Success && !buf)
+            return out;
+        for (DWORD i = 0; i < read; ++i)
+        {
+            if (buf[i].usri1_flags & UF_ACCOUNTDISABLE) continue;
+            const std::wstring name = buf[i].usri1_name;
+            bool listed = false;
+            for (const std::wstring& a : g_w->accounts) listed = listed || _wcsicmp(a.c_str(), name.c_str()) == 0;
+            if (!listed) out.push_back(name);
+        }
+        if (buf) NetApiBufferFree(buf);
+        return out;
+    }
+
+    void AddMessage(const std::wstring& text, bool error)
+    {
+        g_add->messageIsError = error;
+        SetWindowTextW(g_add->message, text.c_str());
+    }
+
+    // The picked account: a word about it (an administrator can switch
+    // Exercise Unlock off).
+    void AddAccountPicked()
+    {
+        const int i = static_cast<int>(SendMessageW(g_add->account, CB_GETCURSEL, 0, 0));
+        if (i < 0 || i >= static_cast<int>(g_add->candidates.size())) return;
+        AddMessage(IsAdminAccount(g_add->candidates[static_cast<size_t>(i)])
+                       ? (Uk() ? L"Цей обліковий запис має права адміністратора: користувач зможе вимкнути Exercise Unlock. "
+                                 L"Краще обрати звичайний обліковий запис."
+                               : L"This account is an administrator: the user could switch Exercise Unlock off. "
+                                 L"A standard account is better.")
+                       : std::wstring(), true);
+    }
+
+    std::wstring EditText(HWND h)
+    {
+        std::wstring s(static_cast<size_t>(GetWindowTextLengthW(h)) + 1, L'\0');
+        GetWindowTextW(h, s.data(), static_cast<int>(s.size()));
+        s.resize(wcslen(s.c_str()));
+        return s;
+    }
+
+    void AddConfirmed()
+    {
+        AddDialog& d = *g_add;
+        const int i = static_cast<int>(SendMessageW(d.account, CB_GETCURSEL, 0, 0));
+        if (i < 0 || i >= static_cast<int>(d.candidates.size()))
+        {
+            AddMessage(Uk() ? L"Оберіть обліковий запис." : L"Choose an account.", true);
+            return;
+        }
+        const std::wstring account = d.candidates[static_cast<size_t>(i)];
+        std::wstring pw = EditText(d.password), pw2 = EditText(d.confirm);
+        auto wipe = [&] {
+            SecureZeroMemory(pw.data(), pw.size() * sizeof(wchar_t));
+            SecureZeroMemory(pw2.data(), pw2.size() * sizeof(wchar_t));
+        };
+        if (pw.empty())
+        {
+            AddMessage(Uk() ? L"Введіть пароль облікового запису. Якщо пароля немає, спершу встановіть його в Параметрах Windows: "
+                              L"без пароля користувач входитиме без жодних вправ."
+                            : L"Enter the account's password. If it has none, set one in Windows Settings first: "
+                              L"without a password the user signs in without any exercises.", true);
+            return;
+        }
+        if (pw != pw2)
+        {
+            wipe();
+            AddMessage(Uk() ? L"Паролі не збігаються." : L"The passwords do not match.", true);
+            return;
+        }
+        // The password has to be the account's real one: a wrong one would
+        // leave a tile that never unlocks.
+        HANDLE token = nullptr;
+        if (LogonUserW(account.c_str(), L".", pw.c_str(), LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &token))
+            CloseHandle(token);
+        else if (GetLastError() == ERROR_LOGON_FAILURE)
+        {
+            wipe();
+            AddMessage(Uk() ? L"Неправильний пароль для цього облікового запису." : L"The password is not correct for this account.", true);
+            return;
+        }
+        else
+            LogF(L"calibrate: Windows could not check the password of %s (%lu) - kept anyway", account.c_str(), GetLastError());
+
+        constexpr wchar_t kEnv[] = L"EU_SETTINGS_ACCOUNT_PASSWORD";
+        SetEnvironmentVariableW(kEnv, pw.c_str());
+        wipe();
+        const DWORD code = RunHidden(L"\"" + g_w->req->adminToolPath + L"\" set --domain . --user \"" + account +
+                                     L"\" --password-env " + kEnv);
+        SetEnvironmentVariableW(kEnv, nullptr);
+        if (code != 0)
+        {
+            wchar_t buf[256]{};
+            swprintf_s(buf, Uk() ? L"Не вдалося зберегти пароль (код %lu)." : L"Could not save the password (code %lu).", code);
+            AddMessage(buf, true);
+            return;
+        }
+        std::vector<std::wstring> accounts = g_w->accounts;
+        accounts.push_back(account);
+        if (!WriteAccounts(g_w->req->usersPath, accounts))
+        {
+            wchar_t buf[256]{};
+            swprintf_s(buf, Uk() ? L"Не вдалося записати %s (помилка %lu)." : L"Could not write %s (error %lu).",
+                       g_w->req->usersPath.c_str(), GetLastError());
+            AddMessage(buf, true);
+            return;
+        }
+        SetPasswordChange(account, false);
+        LogF(L"calibrate: user %s added", account.c_str());
+        g_w->accounts = accounts;
+        d.added = true;
+        d.done = true;
+    }
+
+    LRESULT CALLBACK AddProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+    {
+        switch (msg)
+        {
+        case WM_CTLCOLORSTATIC:
+        {
+            HDC dc = reinterpret_cast<HDC>(wp);
+            SetBkColor(dc, RGB(255, 255, 255));
+            SetTextColor(dc, reinterpret_cast<HWND>(lp) == g_add->message && g_add->messageIsError ? kErrInk : kInk);
+            return reinterpret_cast<LRESULT>(g_w->white);
+        }
+        case WM_COMMAND:
+            if (LOWORD(wp) == IDOK) AddConfirmed();
+            else if (LOWORD(wp) == IDCANCEL) g_add->done = true;
+            else if (LOWORD(wp) == kAddAccount && HIWORD(wp) == CBN_SELCHANGE) AddAccountPicked();
+            return 0;
+        case WM_CLOSE:
+            g_add->done = true;
+            return 0;
+        default:
+            return DefWindowProcW(hwnd, msg, wp, lp);
+        }
+    }
+
+    // Modal. True when an account was added (g_w->accounts has it).
+    bool AddUserDialog()
+    {
+        Window& w = *g_w;
+        AddDialog d;
+        d.candidates = CandidateAccounts();
+        g_add = &d;
+
+        WNDCLASSEXW wc{ sizeof(wc) };
+        wc.lpfnWndProc = AddProc;
+        wc.hInstance = w.req->inst;
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hbrBackground = w.white;
+        wc.lpszClassName = L"ExerciseUnlockAddUser";
+        RegisterClassExW(&wc);
+
+        constexpr DWORD kStyle = WS_POPUP | WS_CAPTION | WS_SYSMENU;
+        RECT size{ 0, 0, Px(kAddW), Px(kAddH) };
+        AdjustWindowRectExForDpi(&size, kStyle, FALSE, WS_EX_DLGMODALFRAME, w.dpi);
+        RECT owner{};
+        GetWindowRect(w.hwnd, &owner);
+        const int width = size.right - size.left, height = size.bottom - size.top;
+        d.hwnd = CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, Uk() ? L"Додати користувача" : L"Add a user", kStyle,
+                                 (owner.left + owner.right - width) / 2, (owner.top + owner.bottom - height) / 2,
+                                 width, height, w.hwnd, nullptr, w.req->inst, nullptr);
+        if (!d.hwnd)
+        {
+            g_add = nullptr;
+            return false;
+        }
+        auto control = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int cx, int cy, int id, DWORD ex = 0) {
+            HWND h = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, Px(x), Px(y), Px(cx), Px(cy), d.hwnd,
+                                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), w.req->inst, nullptr);
+            SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(w.ui), FALSE);
+            return h;
+        };
+        const int fieldW = kAddW - 32;
+        control(WC_STATICW, Uk() ? L"Обліковий запис Windows:" : L"Windows account:", 0, 16, 16, fieldW, 20, -1);
+        d.account = control(WC_COMBOBOXW, L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST, 16, 38, fieldW, 200, kAddAccount);
+        control(WC_STATICW, Uk() ? L"Його поточний пароль Windows:" : L"Its current Windows password:", 0, 16, 76, fieldW, 20, -1);
+        d.password = control(WC_EDITW, L"", WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 16, 98, fieldW, 24, kAddPassword, WS_EX_CLIENTEDGE);
+        control(WC_STATICW, Uk() ? L"Підтвердження пароля:" : L"Confirm the password:", 0, 16, 132, fieldW, 20, -1);
+        d.confirm = control(WC_EDITW, L"", WS_TABSTOP | ES_PASSWORD | ES_AUTOHSCROLL, 16, 154, fieldW, 24, kAddConfirm, WS_EX_CLIENTEDGE);
+        d.message = control(WC_STATICW, L"", 0, 16, 188, fieldW, 54, kAddMessage);
+        d.ok = control(WC_BUTTONW, Uk() ? L"Додати" : L"Add", WS_TABSTOP | BS_DEFPUSHBUTTON,
+                       kAddW - 16 - 2 * kButtonW - 8, kAddH - 16 - kButtonH, kButtonW, kButtonH, IDOK);
+        control(WC_BUTTONW, Uk() ? L"Скасувати" : L"Cancel", WS_TABSTOP | BS_PUSHBUTTON,
+                kAddW - 16 - kButtonW, kAddH - 16 - kButtonH, kButtonW, kButtonH, IDCANCEL);
+        for (const std::wstring& a : d.candidates)
+            SendMessageW(d.account, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(a.c_str()));
+        if (d.candidates.empty())
+        {
+            AddMessage(Uk() ? L"Усі облікові записи Windows уже в списку. Новий можна створити в Параметрах Windows: "
+                              L"Облікові записи - Інші користувачі."
+                            : L"Every Windows account is on the list already. A new one can be created in Windows Settings: "
+                              L"Accounts - Other users.", false);
+            EnableWindow(d.ok, FALSE);
+        }
+        else
+        {
+            SendMessageW(d.account, CB_SETCURSEL, 0, 0);
+            AddAccountPicked();
+        }
+
+        EnableWindow(w.hwnd, FALSE);
+        ShowWindow(d.hwnd, SW_SHOWNORMAL);
+        SetFocus(d.candidates.empty() ? GetDlgItem(d.hwnd, IDCANCEL) : d.password);
+        MSG m{};
+        while (!d.done)
+        {
+            const BOOL got = GetMessageW(&m, nullptr, 0, 0);
+            if (got <= 0)
+            {
+                if (got == 0) PostQuitMessage(static_cast<int>(m.wParam));
+                break;
+            }
+            if (!IsDialogMessageW(d.hwnd, &m))
+            {
+                TranslateMessage(&m);
+                DispatchMessageW(&m);
+            }
+        }
+        EnableWindow(w.hwnd, TRUE);
+        DestroyWindow(d.hwnd);
+        SetActiveWindow(w.hwnd);
+        g_add = nullptr;
+        return d.added;
+    }
+
+    // A question with our own buttons (a MessageBox's follow Windows'
+    // language, not the app's).
+    bool AskToConfirm(const std::wstring& text, const wchar_t* yes)
+    {
+        const TASKDIALOG_BUTTON buttons[] = { { IDYES, yes }, { IDNO, Uk() ? L"Скасувати" : L"Cancel" } };
+        TASKDIALOGCONFIG c{};
+        c.cbSize = sizeof(c);
+        c.hwndParent = g_w->hwnd;
+        c.dwFlags = TDF_POSITION_RELATIVE_TO_WINDOW;
+        c.pszWindowTitle = L"Exercise Unlock";
+        c.pszMainIcon = TD_WARNING_ICON;
+        c.pszContent = text.c_str();
+        c.cButtons = static_cast<UINT>(std::size(buttons));
+        c.pButtons = buttons;
+        c.nDefaultButton = IDNO;
+        int pressed = 0;
+        return SUCCEEDED(TaskDialogIndirect(&c, &pressed, nullptr, nullptr)) && pressed == IDYES;
+    }
+
+    void Inform(const std::wstring& text)
+    {
+        MessageBoxW(g_w->hwnd, text.c_str(), L"Exercise Unlock", MB_OK | MB_ICONWARNING);
+    }
+
+    // "Remove": the account loses its tile and its saved password, and its
+    // own minutes and hours go too. One account always stays: an empty
+    // list would give the tile to every account on the PC.
+    void RemoveSelectedUser()
+    {
+        Window& w = *g_w;
+        const int i = static_cast<int>(SendMessageW(w.users, LB_GETCURSEL, 0, 0));
+        if (i < 0 || i >= static_cast<int>(w.accounts.size()))
+        {
+            Inform(Uk() ? L"Оберіть у списку обліковий запис, який треба видалити." : L"Pick the account to remove in the list.");
+            return;
+        }
+        if (w.accounts.size() <= 1)
+        {
+            Inform(Uk() ? L"У списку має залишитися щонайменше один обліковий запис." : L"At least one account has to stay on the list.");
+            return;
+        }
+        const std::wstring account = w.accounts[static_cast<size_t>(i)];
+        wchar_t buf[512]{};
+        swprintf_s(buf, Uk() ? L"Прибрати «%s» з Exercise Unlock? Плитка зникне з екрана блокування, збережений пароль "
+                               L"і власні налаштування часу цього облікового запису буде видалено. Сам обліковий запис Windows залишиться."
+                             : L"Remove \"%s\" from Exercise Unlock? Its lock screen tile goes, and so do its saved password "
+                               L"and its own time settings. The Windows account itself stays.",
+                   account.c_str());
+        if (!AskToConfirm(buf, Uk() ? L"Видалити" : L"Remove")) return;
+
+        std::vector<std::wstring> accounts = w.accounts;
+        accounts.erase(accounts.begin() + i);
+        if (!WriteAccounts(w.req->usersPath, accounts))
+        {
+            swprintf_s(buf, Uk() ? L"Не вдалося записати %s (помилка %lu)." : L"Could not write %s (error %lu).",
+                       w.req->usersPath.c_str(), GetLastError());
+            Inform(buf);
+            return;
+        }
+        const DWORD code = RunHidden(L"\"" + w.req->adminToolPath + L"\" remove --user \"" + account + L"\"");
+        if (code != 0) LogF(L"calibrate: removing the saved password of %s -> %lu", account.c_str(), code);
+        SetPasswordChange(account, true);
+        for (const Field& f : kFields)
+            if (PerUser(f)) WritePrivateProfileStringW(SectionOf(f, account).c_str(), nullptr, nullptr, w.req->configPath.c_str());
+        WritePrivateProfileStringW(nullptr, nullptr, nullptr, w.req->configPath.c_str());
+        LogF(L"calibrate: user %s removed", account.c_str());
+        w.result.saved = true;
+        w.result.serviceConfig = true;
+        // Its values were shown: show everybody's first, then forget its.
+        if (_wcsicmp(w.account.c_str(), account.c_str()) == 0) SetScope(L"");
+        w.scopeText.erase(account);
+        w.scopeInitial.erase(account);
+        w.accounts = accounts;
+        FillAccounts();
     }
 
     LRESULT CALLBACK SettingsProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -889,6 +1475,23 @@ namespace
                 SendMessageW(w->list, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(w->req->uk ? p.uk : p.en));
 
             CreateRows();
+
+            auto child = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int cx, int cy, int id,
+                             DWORD ex = 0) {
+                HWND h = CreateWindowExW(ex, cls, text, WS_CHILD | WS_TABSTOP | style, Px(x), Px(y), Px(cx), Px(cy), hwnd,
+                                         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), w->req->inst, nullptr);
+                SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(w->ui), FALSE);
+                return h;
+            };
+            w->scope = child(WC_COMBOBOXW, L"", WS_VSCROLL | CBS_DROPDOWNLIST, kScopeX, kTitleY, kScopeW, 240, kScopeId);
+            w->users = child(WC_LISTBOXW, L"", WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT, kBodyX, kRowsY, kUsersW, kUsersH,
+                             kUsersId, WS_EX_CLIENTEDGE);
+            w->addUser = child(WC_BUTTONW, w->req->uk ? L"Додати..." : L"Add...", BS_PUSHBUTTON, kUserButtonX, kRowsY,
+                               kUserButtonW, kButtonH, kAddUserId);
+            w->removeUser = child(WC_BUTTONW, w->req->uk ? L"Видалити" : L"Remove", BS_PUSHBUTTON, kUserButtonX,
+                                  kRowsY + kButtonH + 10, kUserButtonW, kButtonH, kRemoveUserId);
+            w->accounts = ReadAccounts(w->req->usersPath);
+            FillAccounts();
 
             auto button = [&](int id, const wchar_t* text, int x, DWORD style) {
                 HWND b = CreateWindowExW(0, WC_BUTTONW, text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | style,
@@ -936,6 +1539,18 @@ namespace
             if (id == IDCANCEL) { Close(); return 0; }
             if (id == kListId && code == LBN_SELCHANGE)
                 ShowPage(static_cast<int>(SendMessageW(w->list, LB_GETCURSEL, 0, 0)));
+            else if (id == kScopeId && code == CBN_SELCHANGE)
+            {
+                const int i = static_cast<int>(SendMessageW(w->scope, CB_GETCURSEL, 0, 0));
+                SetScope(i > 0 && i <= static_cast<int>(w->accounts.size()) ? w->accounts[static_cast<size_t>(i - 1)]
+                                                                              : std::wstring());
+            }
+            else if (id == kAddUserId && code == BN_CLICKED)
+            {
+                if (AddUserDialog()) FillAccounts();
+            }
+            else if (id == kRemoveUserId && code == BN_CLICKED)
+                RemoveSelectedUser();
             else if (id >= static_cast<int>(kFirstFieldId) && id < static_cast<int>(kFirstFieldId) + kFieldCount &&
                      (code == EN_SETFOCUS || code == CBN_SETFOCUS || code == BN_SETFOCUS))
             {

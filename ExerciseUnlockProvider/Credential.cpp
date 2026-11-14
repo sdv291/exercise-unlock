@@ -103,7 +103,8 @@ namespace ExerciseUnlock
 
     HRESULT Credential::Initialize(const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* fields,
                                    DWORD fieldCount,
-                                   PCWSTR userSid)
+                                   PCWSTR userSid,
+                                   PCWSTR userName)
     {
         if (!fields || fieldCount == 0)
         {
@@ -121,6 +122,7 @@ namespace ExerciseUnlock
             }
         }
         m_userSid = userSid ? userSid : L"";
+        m_userName = userName ? userName : L"";
         return S_OK;
     }
 
@@ -253,7 +255,7 @@ namespace ExerciseUnlock
     {
         std::wstring text;
         Ipc::Response resp{};
-        const bool ok = SUCCEEDED(Client::QueryStatus(resp));
+        const bool ok = SUCCEEDED(Client::QueryStatus(m_userName, resp));
         if (ok) text = Client::FormatStatus(resp);
         else    text = Client::FormatUnreachable();
 
@@ -750,7 +752,7 @@ namespace ExerciseUnlock
         // the tile and don't build a credential.
         Ipc::Response resp{};
         m_sounds.Reload();
-        if (FAILED(Client::QueryStatus(resp)))
+        if (FAILED(Client::QueryStatus(m_userName, resp)))
         {
             LogF(L"GetSerialization: pipe query failed");
             PlayWavOrFallback(m_sounds.PickOne(SoundConfig::SlotError),
@@ -773,7 +775,7 @@ namespace ExerciseUnlock
 
         // Enough. Pull the parent's cached credentials from the vault.
         Vault::Credentials creds;
-        HRESULT hr = Vault::Load(creds);
+        HRESULT hr = Vault::Load(m_userName, creds);
         if (FAILED(hr))
         {
             LogF(L"GetSerialization: Vault::Load failed 0x%08X",
@@ -856,7 +858,7 @@ namespace ExerciseUnlock
         // Failure -> leave state alone; child hasn't gone anywhere.
         if (ntsStatus == 0)
         {
-            HRESULT hr = Client::StartSession();
+            HRESULT hr = Client::StartSession(m_userName);
             if (FAILED(hr))
             {
                 LogF(L"ReportResult: StartSession failed 0x%08X",

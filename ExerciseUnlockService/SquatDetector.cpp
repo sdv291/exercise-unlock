@@ -110,7 +110,7 @@ namespace ExerciseUnlock::Svc
         // recognized - so the tile can tell the child they don't count
         // now (offHoursReps -> error sound) - but evening / early-morning
         // exercising is never banked toward a future unlock.
-        const bool offHours = !Config::IsWithinActiveWindowNow();
+        const bool offHours = !IsWithinHoursNow();
 
         // v1.2 posture gate: never credit a rep unless the posture
         // classifier has latched Squat. MoveNet produces wild angle

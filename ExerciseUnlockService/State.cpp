@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cstring>
 #include <cmath>
+#include <cwchar>
+#include <map>
 
 namespace ExerciseUnlock::Svc
 {
@@ -14,6 +16,112 @@ namespace ExerciseUnlock::Svc
     State& GetState()
     {
         return g_state;
+    }
+
+    // ------------------------------------------------------------ users
+    namespace
+    {
+        struct NoCase
+        {
+            bool operator()(const std::wstring& a, const std::wstring& b) const
+            {
+                return _wcsicmp(a.c_str(), b.c_str()) < 0;
+            }
+        };
+
+        std::mutex g_usersMx;                                // the two below
+        std::wstring g_active;                               // "" = nobody yet
+        std::map<std::wstring, UserRecord, NoCase> g_users;  // all but the active one's live values
+
+        UserRecord TakeLive()
+        {
+            UserRecord r;
+            r.squats  = g_state.squatCount.load();
+            r.pushups = g_state.pushUpCount.load();
+            r.situps  = g_state.sitUpCount.load();
+            r.bankSeconds   = g_state.earnedBankSeconds.load();
+            r.pausedSeconds = g_state.pausedSessionSeconds.load();
+            r.lastSessionEndedUnix = g_state.lastSessionEndedUnix.load();
+            r.dayKey = g_state.dayKey.load();
+            return r;
+        }
+
+        void PutLive(const UserRecord& r)
+        {
+            g_state.squatCount.store(r.squats);
+            g_state.pushUpCount.store(r.pushups);
+            g_state.sitUpCount.store(r.situps);
+            g_state.earnedBankSeconds.store(r.bankSeconds);
+            g_state.pausedSessionSeconds.store(r.pausedSeconds);
+            g_state.lastSessionEndedUnix.store(r.lastSessionEndedUnix);
+            g_state.dayKey.store(r.dayKey);
+        }
+    }
+
+    std::wstring ActiveUser()
+    {
+        std::lock_guard<std::mutex> lk(g_usersMx);
+        return g_active;
+    }
+
+    UserRules ActiveRules()
+    {
+        return Config::Rules(ActiveUser());
+    }
+
+    bool IsWithinHoursNow()
+    {
+        return ActiveRules().InWindowNow();
+    }
+
+    bool SelectUser(const std::wstring& user)
+    {
+        if (user.empty()) return false;
+        std::lock_guard<std::mutex> lk(g_usersMx);
+        if (_wcsicmp(user.c_str(), g_active.c_str()) == 0) return false;
+        if (!g_active.empty()) g_users[g_active] = TakeLive();
+        UserRecord next;
+        if (auto it = g_users.find(user); it != g_users.end())
+        {
+            next = it->second;
+            g_users.erase(it);
+        }
+        PutLive(next);
+        LogF(L"user: '%s' -> '%s' (squats=%u pushups=%u situps=%u bank=%us paused=%us)",
+             g_active.c_str(), user.c_str(), next.squats, next.pushups, next.situps,
+             next.bankSeconds, next.pausedSeconds);
+        g_active = user;
+        return true;
+    }
+
+    std::vector<UserEntry> SnapshotUsers(std::wstring& active)
+    {
+        std::lock_guard<std::mutex> lk(g_usersMx);
+        std::vector<UserEntry> out;
+        active = g_active;
+        if (!g_active.empty()) out.push_back({ g_active, TakeLive() });
+        for (const auto& [name, record] : g_users) out.push_back({ name, record });
+        return out;
+    }
+
+    void RestoreUsers(const std::wstring& active, std::vector<UserEntry> users)
+    {
+        std::lock_guard<std::mutex> lk(g_usersMx);
+        g_users.clear();
+        g_active.clear();
+        PutLive(UserRecord{});
+        for (UserEntry& u : users)
+        {
+            if (u.name.empty()) continue;
+            if (!active.empty() && _wcsicmp(u.name.c_str(), active.c_str()) == 0)
+            {
+                g_active = u.name;
+                PutLive(u.record);
+            }
+            else
+                g_users[u.name] = u.record;
+        }
+        if (g_active.empty() && !active.empty()) g_active = active;   // no record yet: zeros
     }
 
     bool IsSessionActive()
@@ -112,15 +220,18 @@ namespace ExerciseUnlock::Svc
         out.sitUpPhase        = g_state.sitUpPhase.load();
         out.reserved11[0] = out.reserved11[1] = out.reserved11[2] = 0;
 
+        // The active account's rules: its minutes per rep, cap, hours.
+        const UserRules rules = ActiveRules();
+
         // v1.1 progression: after `progression_after_days` from
         // install, scale per-rep reward down by
         //   1 / (1 + weeks_elapsed * factor)
         // where weeks_elapsed = (days_since_install - after_days) / 7.
         // Never below 0.25x so it stays reachable.
-        auto progressionScale = []() -> float
+        auto progressionScale = [&rules]() -> float
         {
-            const float factor    = Config::ProgressionFactor();
-            const int   afterDays = Config::ProgressionAfterDays();
+            const float factor    = rules.progressionFactor;
+            const int   afterDays = rules.progressionDays;
             if (factor <= 0.0f || afterDays <= 0) return 1.0f;
             const int64_t start = g_state.installStartUnix.load();
             if (start == 0) return 1.0f;
@@ -134,9 +245,9 @@ namespace ExerciseUnlock::Svc
             return scale < 0.25f ? 0.25f : scale;
         };
         const float scale = progressionScale();
-        const uint32_t puSec = static_cast<uint32_t>(Config::PushupSeconds() * scale);
-        const uint32_t sqSec = static_cast<uint32_t>(Config::SquatSeconds()  * scale);
-        const uint32_t suSec = static_cast<uint32_t>(Config::SitupSeconds()  * scale);
+        const uint32_t puSec = static_cast<uint32_t>(rules.pushupSec * scale);
+        const uint32_t sqSec = static_cast<uint32_t>(rules.squatSec  * scale);
+        const uint32_t suSec = static_cast<uint32_t>(rules.situpSec  * scale);
         const uint32_t paused = g_state.pausedSessionSeconds.load();
         uint32_t earned =
             g_state.earnedBankSeconds.load() +
@@ -147,18 +258,17 @@ namespace ExerciseUnlock::Svc
         // Hard cap: never hold more than max_session_seconds of
         // earned time. Reps above the cap still count on the tile
         // but add nothing.
-        const int cap = Config::MaxSessionSeconds();
+        const int cap = rules.maxSessionSec;
         if (cap > 0 && earned > static_cast<uint32_t>(cap))
             earned = static_cast<uint32_t>(cap);
         // Weekend-aware min_unlock — same window logic as schedule.
-        const uint32_t minUnlock =
-            static_cast<uint32_t>(Config::MinUnlockSecondsToday());
+        const uint32_t minUnlock = static_cast<uint32_t>(rules.MinUnlockToday());
 
         // Outside the schedule window we can't unlock at all, so force
         // rewardEnough to 0 regardless of what's in the bank. The bank
         // itself is preserved and shown so the child sees their credit
         // for tomorrow.
-        const bool inWindow = Config::IsWithinActiveWindowNow();
+        const bool inWindow = rules.InWindowNow();
         out.rewardEarnedSeconds    = earned;
         out.rewardMinUnlockSeconds = minUnlock;
 
@@ -170,7 +280,7 @@ namespace ExerciseUnlock::Svc
         const int64_t nowUnixGrace = duration_cast<seconds>(
             system_clock::now().time_since_epoch()).count();
         const int64_t lastEnd      = g_state.lastSessionEndedUnix.load();
-        const int     graceWin     = Config::GraceWindowSeconds();
+        const int     graceWin     = rules.graceWindowSec;
         const bool    inGrace      = (graceWin > 0 && lastEnd > 0 &&
                                       (nowUnixGrace - lastEnd) <= graceWin &&
                                       g_state.sessionExpiresAtUnix.load() == 0);
@@ -245,8 +355,8 @@ namespace ExerciseUnlock::Svc
         // happening instead of silently ignoring input.
         if (!inWindow)
         {
-            const int fromMin = Config::ScheduleFromMinutesToday();
-            const int toMin   = Config::ScheduleToMinutesToday();
+            const int fromMin = rules.FromToday();
+            const int toMin   = rules.ToToday();
             wchar_t fromBuf[8]{}, toBuf[8]{};
             _snwprintf_s(fromBuf, _TRUNCATE, L"%02d:%02d", fromMin / 60, fromMin % 60);
             _snwprintf_s(toBuf,   _TRUNCATE, L"%02d:%02d", toMin   / 60, toMin   % 60);

@@ -4,11 +4,35 @@
 
 #include <windows.h>
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <string>
 
 namespace ExerciseUnlock::Svc
 {
+    // One account's rules for earning and spending computer time: config.ini
+    // [reward] and [schedule], overridden key by key for that account by
+    // [reward@<account>] and [schedule@<account>]. Several people share the
+    // PC, each with their own minutes per rep and allowed hours.
+    struct UserRules
+    {
+        int   pushupSec = 30, squatSec = 10, situpSec = 300;
+        int   maxSessionSec = 3600;            // cap on earned time, 0 = none
+        int   graceWindowSec = 300, graceUnlockSec = 60;
+        float progressionFactor = 0.0f;
+        int   progressionDays = 0;
+        // [0] Monday-Friday, [1] Saturday-Sunday. Minutes since midnight;
+        // from == to: all day, from > to: overnight.
+        int   fromMin[2]{ 7 * 60, 7 * 60 }, toMin[2]{ 20 * 60, 20 * 60 };
+        int   minUnlockSec[2]{ 600, 600 };
+
+        int  FromToday() const;
+        int  ToToday() const;
+        int  MinUnlockToday() const;
+        // Inside today's allowed hours (always while the calibration tests).
+        bool InWindowNow() const;
+    };
+
     // Configuration read from config.ini next to the service exe.
     // Numeric values are cached in atomics; the camera preference is
     // a wstring guarded by its own mutex. Load() is called once at
@@ -89,17 +113,12 @@ namespace ExerciseUnlock::Svc
         // poses onto the webcam's frame ([calibration] aspect).
         static bool PhoneProfile(SquatParams& squat, PushupParams& pushup, SitupParams& situp);
 
-        // Daily active window (minutes since local midnight). Outside
-        // it, exercises don't count and StartSession is refused.
-        // Weekday (Mon-Fri) and weekend (Sat-Sun) can have different
-        // windows and different min-unlock times. Wrap-around
-        // (from > to) is supported and treated as overnight.
-        // Legacy [schedule]/active_from & active_to still work as a
-        // fallback for both weekday and weekend.
-        static int  ScheduleFromMinutesToday();
-        static int  ScheduleToMinutesToday();
-        static int  MinUnlockSecondsToday();
-        static bool IsWithinActiveWindowNow();
+        // An account's rules (UserRules): its own sections over the common
+        // ones. "" = the common rules. Read once per account and kept until
+        // the next Load(). The [reward] getters above and below are the
+        // common values (the settings window shows them as defaults).
+        static UserRules Rules(const std::wstring& account);
+        static bool IgnoringSchedule() { return s_ignoreSchedule.load(); }
 
         // Difficulty progression: after `progression_days` from first
         // install, every reward-per-rep is scaled by
@@ -238,14 +257,8 @@ namespace ExerciseUnlock::Svc
         static std::atomic<int>   s_pushupMinRepMs;
         static std::atomic<int>   s_pushupMaxRepMs;
 
-        static std::atomic<int>   s_activeFromMin;
-        static std::atomic<int>   s_activeToMin;
-        static std::atomic<int>   s_weekdayFromMin;
-        static std::atomic<int>   s_weekdayToMin;
-        static std::atomic<int>   s_weekendFromMin;
-        static std::atomic<int>   s_weekendToMin;
-        static std::atomic<int>   s_weekdayMinUnlockSec;
-        static std::atomic<int>   s_weekendMinUnlockSec;
+        // Rules() per account (lower-case), under s_stringsMx.
+        static std::map<std::wstring, UserRules> s_rules;
 
         static std::atomic<float> s_progressionFactor;
         static std::atomic<int>   s_progressionDays;

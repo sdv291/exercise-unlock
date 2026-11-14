@@ -8,42 +8,42 @@
 #include <sddl.h>
 #include <mutex>
 #include <chrono>
+#include <cwchar>
+#include <vector>
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
 
 namespace ExerciseUnlock::Svc
 {
-    // Layout evolution:
-    //   v1 (16B): magic, version, reserved, pushupCount, squatCount
-    //   v2 (20B): + earnedBankSeconds
-    //   v3 (36B): + sessionExpiresAtUnix, installStartUnix
-    //   v4 (40B): + dayKey (YYYYMMDD the counters belong to)
-    //   v5 (44B): + situpCount
+    // v6 (1.5.0, several accounts): a header - the active account and its
+    // running session - then one record per account. Older files (one
+    // set of counters) are not read: 1.5.0 is installed from scratch.
     #pragma pack(push, 1)
-    struct FileLayout
+    struct FileHeader
     {
-        uint32_t magic;              // 'EUST'
-        uint16_t version;            // 3
-        uint16_t pausedSessionSeconds; // was reserved (0 in old files)
-        uint32_t pushupCount;
-        uint32_t squatCount;
-        uint32_t earnedBankSeconds;  // v2+
-        int64_t  sessionExpiresAtUnix; // v3+
-        int64_t  installStartUnix;   // v3+
-        int32_t  dayKey;             // v4+
-        uint32_t situpCount;         // v5+
+        uint32_t magic;                  // 'EUST'
+        uint16_t version;                // 6
+        uint16_t count;                  // records that follow
+        int64_t  installStartUnix;
+        int64_t  sessionExpiresAtUnix;   // the active account's session, 0 = none
+        uint8_t  sessionIsGrace;
+        uint8_t  reserved[7];
+        wchar_t  active[Ipc::kUserChars];
+    };
+    struct FileRecord
+    {
+        wchar_t  name[Ipc::kUserChars];
+        uint32_t squats, pushups, situps;
+        uint32_t bankSeconds, pausedSeconds;
+        int64_t  lastSessionEndedUnix;
+        int32_t  dayKey;
     };
     #pragma pack(pop)
-    static_assert(sizeof(FileLayout) == 44, "unexpected layout");
 
     static constexpr uint32_t kMagic     = 0x54535545;  // 'EUST' little-endian
-    static constexpr uint16_t kVersion   = 5;
-    static constexpr size_t   kSizeV1    = 16;
-    static constexpr size_t   kSizeV2    = 20;
-    static constexpr size_t   kSizeV3    = 36;
-    static constexpr size_t   kSizeV4    = 40;
-    static constexpr size_t   kSizeV5    = 44;
+    static constexpr uint16_t kVersion   = 6;
+    static constexpr uint16_t kMaxUsers  = 64;
 
     static std::mutex g_ioMx;
 
@@ -91,50 +91,56 @@ namespace ExerciseUnlock::Svc
             return;
         }
 
-        FileLayout data{};
+        FileHeader head{};
         DWORD read = 0;
-        BOOL ok = ReadFile(f, &data, sizeof(data), &read, nullptr);
+        BOOL ok = ReadFile(f, &head, sizeof(head), &read, nullptr);
+        if (!ok || read != sizeof(head) || head.magic != kMagic || head.version != kVersion ||
+            head.count > kMaxUsers)
+        {
+            CloseHandle(f);
+            LogF(L"persistent: not a v%u state file (read=%lu magic=0x%08X v%u) - starting clean",
+                 kVersion, read, head.magic, head.version);
+            return;
+        }
+        std::vector<UserEntry> users;
+        for (uint16_t i = 0; i < head.count; ++i)
+        {
+            FileRecord r{};
+            if (!ReadFile(f, &r, sizeof(r), &read, nullptr) || read != sizeof(r)) break;
+            r.name[Ipc::kUserChars - 1] = L'\0';
+            UserEntry u;
+            u.name = r.name;
+            u.record.squats = r.squats;
+            u.record.pushups = r.pushups;
+            u.record.situps = r.situps;
+            u.record.bankSeconds = r.bankSeconds;
+            u.record.pausedSeconds = r.pausedSeconds;
+            u.record.lastSessionEndedUnix = r.lastSessionEndedUnix;
+            u.record.dayKey = r.dayKey;
+            users.push_back(std::move(u));
+        }
         CloseHandle(f);
-        if (!ok || (read != kSizeV1 && read != kSizeV2 && read != kSizeV3 && read != kSizeV4 && read != kSizeV5))
-        {
-            LogF(L"persistent: short read (%lu) — ignoring", read);
-            return;
-        }
-        if (data.magic != kMagic ||
-            (data.version < 1 || data.version > kVersion))
-        {
-            LogF(L"persistent: bad magic/version (0x%08X v%u) — ignoring",
-                 data.magic, data.version);
-            return;
-        }
+
+        head.active[Ipc::kUserChars - 1] = L'\0';
+        const std::wstring active = head.active;
+        const size_t count = users.size();
+        RestoreUsers(active, std::move(users));
 
         auto& st = GetState();
-        st.pushUpCount.store(data.pushupCount);
-        st.squatCount.store(data.squatCount);
-        st.pausedSessionSeconds.store(data.pausedSessionSeconds);
-        if (read >= kSizeV2) st.earnedBankSeconds.store(data.earnedBankSeconds);
-        if (read >= kSizeV3)
+        st.installStartUnix.store(head.installStartUnix);
+        // Restore the session only if it hasn't already expired —
+        // otherwise a stale value would grant free unlock.
+        using namespace std::chrono;
+        const int64_t nowUnix = duration_cast<seconds>(
+            system_clock::now().time_since_epoch()).count();
+        if (head.sessionExpiresAtUnix > nowUnix)
         {
-            // Restore session only if it hasn't already expired —
-            // otherwise a stale value would grant free unlock.
-            using namespace std::chrono;
-            const int64_t nowUnix = duration_cast<seconds>(
-                system_clock::now().time_since_epoch()).count();
-            if (data.sessionExpiresAtUnix > nowUnix)
-                st.sessionExpiresAtUnix.store(data.sessionExpiresAtUnix);
-            st.installStartUnix.store(data.installStartUnix);
+            st.sessionExpiresAtUnix.store(head.sessionExpiresAtUnix);
+            st.sessionIsGrace.store(head.sessionIsGrace != 0);
         }
-        if (read >= kSizeV4)
-        {
-            st.dayKey.store(data.dayKey);
-        }
-        if (read >= kSizeV5)
-        {
-            st.sitUpCount.store(data.situpCount);
-        }
-        LogF(L"persistent: loaded pushups=%u squats=%u situps=%u bank=%us paused=%us "
-             L"session=%lld install=%lld",
-             data.pushupCount, data.squatCount, st.sitUpCount.load(),
+        LogF(L"persistent: loaded %zu account(s), active '%s': pushups=%u squats=%u situps=%u "
+             L"bank=%us paused=%us session=%lld install=%lld",
+             count, active.c_str(), st.pushUpCount.load(), st.squatCount.load(), st.sitUpCount.load(),
              st.earnedBankSeconds.load(), st.pausedSessionSeconds.load(),
              (long long)st.sessionExpiresAtUnix.load(),
              (long long)st.installStartUnix.load());
@@ -173,18 +179,32 @@ namespace ExerciseUnlock::Svc
             st.installStartUnix.store(nowUnix);
         }
 
-        FileLayout data{};
-        data.magic                = kMagic;
-        data.version              = kVersion;
-        data.pushupCount          = st.pushUpCount.load();
-        data.squatCount           = st.squatCount.load();
-        const uint32_t paused     = st.pausedSessionSeconds.load();
-        data.pausedSessionSeconds = static_cast<uint16_t>(paused > 0xFFFF ? 0xFFFF : paused);
-        data.earnedBankSeconds    = st.earnedBankSeconds.load();
-        data.sessionExpiresAtUnix = st.sessionExpiresAtUnix.load();
-        data.installStartUnix     = st.installStartUnix.load();
-        data.dayKey               = st.dayKey.load();
-        data.situpCount           = st.sitUpCount.load();
+        std::wstring active;
+        std::vector<UserEntry> users = SnapshotUsers(active);
+        if (users.size() > kMaxUsers) users.resize(kMaxUsers);
+
+        std::vector<uint8_t> data(sizeof(FileHeader) + users.size() * sizeof(FileRecord));
+        auto* head = reinterpret_cast<FileHeader*>(data.data());
+        head->magic                = kMagic;
+        head->version              = kVersion;
+        head->count                = static_cast<uint16_t>(users.size());
+        head->installStartUnix     = st.installStartUnix.load();
+        head->sessionExpiresAtUnix = st.sessionExpiresAtUnix.load();
+        head->sessionIsGrace       = st.sessionIsGrace.load() ? 1 : 0;
+        wcsncpy_s(head->active, active.c_str(), _TRUNCATE);
+        auto* rec = reinterpret_cast<FileRecord*>(data.data() + sizeof(FileHeader));
+        for (size_t i = 0; i < users.size(); ++i)
+        {
+            const UserRecord& u = users[i].record;
+            wcsncpy_s(rec[i].name, users[i].name.c_str(), _TRUNCATE);
+            rec[i].squats  = u.squats;
+            rec[i].pushups = u.pushups;
+            rec[i].situps  = u.situps;
+            rec[i].bankSeconds   = u.bankSeconds;
+            rec[i].pausedSeconds = u.pausedSeconds;
+            rec[i].lastSessionEndedUnix = u.lastSessionEndedUnix;
+            rec[i].dayKey  = u.dayKey;
+        }
 
         HANDLE f = CreateFileW(StatePath().c_str(),
                                GENERIC_WRITE, 0, sd ? &sa : nullptr,
@@ -214,7 +234,7 @@ namespace ExerciseUnlock::Svc
             return;
         }
         DWORD wrote = 0;
-        WriteFile(f, &data, sizeof(data), &wrote, nullptr);
+        WriteFile(f, data.data(), static_cast<DWORD>(data.size()), &wrote, nullptr);
         CloseHandle(f);
         if (sd) LocalFree(sd);
     }

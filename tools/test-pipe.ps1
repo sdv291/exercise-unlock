@@ -4,6 +4,11 @@
 #
 # Run with the service already running, either via `sc start` or
 # `.\ExerciseUnlockService.exe --console`.
+#
+#   .\test-pipe.ps1              # the account that is active now
+#   .\test-pipe.ps1 -User kid    # makes "kid" the active account first
+
+param([string]$User = '')
 
 $pipeName = 'ExerciseUnlock'
 $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(
@@ -24,18 +29,21 @@ catch
 $pipe.ReadMode = [System.IO.Pipes.PipeTransmissionMode]::Message
 
 # Request layout matches ExerciseUnlockCommon/Protocol.h::Request.
-$req = New-Object byte[] 8
+# 8 bytes of header, then the account name: 64 UTF-16 chars, NUL-padded.
+$req = New-Object byte[] 136
 $magic = [byte[]] (0x45, 0x55, 0x4C, 0x4B)  # 'EULK'
 [Array]::Copy($magic, 0, $req, 0, 4)
-$req[4] = 1; $req[5] = 0    # version = 1
+$req[4] = 2; $req[5] = 0    # version = 2
 $req[6] = 1; $req[7] = 0    # op = GetStatus
+$name = [System.Text.Encoding]::Unicode.GetBytes($User)
+[Array]::Copy($name, 0, $req, 8, [Math]::Min($name.Length, 126))
 $pipe.Write($req, 0, $req.Length)
 $pipe.Flush()
 
-# Response layout matches Protocol.h::Response (592 bytes).
-$buf = New-Object byte[] 592
+# Response layout matches Protocol.h::Response (772 bytes).
+$buf = New-Object byte[] 772
 $n = $pipe.Read($buf, 0, $buf.Length)
-if ($n -ne 592)
+if ($n -ne 772)
 {
     Write-Error "short response: $n bytes"
     exit 1

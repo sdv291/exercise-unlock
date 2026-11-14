@@ -119,7 +119,9 @@
       calibEnded: 'The calibration wizard on the computer was closed.',
     },
   };
-  const lang = /^(uk|ru|be)/i.test(navigator.language || '') ? 'uk' : 'en';
+  // The phone's own language until the PC says its own (config.lang, 1.6.2+): the page then speaks
+  // the language the computer was set up in, whatever the phone is set to.
+  let lang = /^(uk|ru|be)/i.test(navigator.language || '') ? 'uk' : 'en';
   function T(key, ...args) {
     const s = (TEXT[lang][key] !== undefined ? TEXT[lang][key] : TEXT.en[key]) || key;
     return s.replace(/\{(\d)\}/g, (_, i) => String(args[Number(i)]));
@@ -135,6 +137,8 @@
     video: $('video'), canvas: $('overlay'), banner: $('banner'), toast: $('toast'), debug: $('debug'),
     counters: $('counters'), progress: $('progress'), barFill: $('bar-fill'), earned: $('earned-text'),
     calib: $('calib'), calibText: $('calib-text'), photo: $('btn-photo'), count: $('count'),
+    reps: $('calib-reps'), repsN: $('reps-n'), repsOf: $('reps-of'), lines: $('calib-lines'),
+    nav: $('calib-nav'), back: $('btn-back'), skip: $('btn-skip'), next: $('btn-next'),
     flip: $('btn-flip'), endTitle: $('end-title'), endMsg: $('end-msg'),
   };
   ui.hint.textContent = T('placeHint');
@@ -144,6 +148,19 @@
   ui.flip.setAttribute('aria-label', T('flipTitle'));
   ui.photo.textContent = T('photo');
   ui.startMsg.textContent = T('connecting');
+
+  // The computer's language: the fixed words again (the rest is written as it is shown).
+  function setLanguage(l) {
+    if (!TEXT[l] || l === lang) return;
+    lang = l;
+    document.documentElement.lang = lang;
+    ui.hint.textContent = T('placeHint');
+    ui.startBtn.textContent = T('start');
+    $('flip-text').textContent = T('flip');
+    ui.flip.title = T('flipTitle');
+    ui.flip.setAttribute('aria-label', T('flipTitle'));
+    ui.photo.textContent = T('photo');
+  }
 
   function show(screen) {
     for (const s of [ui.start, ui.live, ui.end]) s.hidden = s !== screen;
@@ -242,6 +259,7 @@
     switch (m.t) {
       case 'config':
         config = m;
+        setLanguage(m.lang);
         buildCounters();
         coach = new EU.Coach(config.exercises || []);
         // The wizard's page: its step instead of counters and progress.
@@ -332,14 +350,57 @@
   // The wizard's current step, from the PC. "Take photo" here takes it
   // after a countdown (count: seconds left), so whoever pressed it can step
   // out of the picture; then the PC measures (measuring) for a few seconds.
-  let shownCount = 0, shownMeasuring = false;
+  // From 1.5.2 the wizard also sends its buttons (nav: back, skip, take, next - label, shown, on),
+  // so the whole calibration runs from here; and on a check the reps counted (reps of repsOf), the
+  // last attempt (att, attOk) and its lines, the same the computer shows.
+  let shownCount = 0, shownMeasuring = false, shownReps = -1, shownAtt = 0, shownPassed = false;
+  function setButton(btn, spec) {
+    btn.hidden = !spec || !spec.show;
+    if (btn.hidden) return;
+    btn.textContent = spec.label || '';
+    btn.disabled = !spec.on;
+  }
   function renderCalib() {
     if (!calibStep || !running) return;
-    const count = calibStep.count || 0, measuring = !!calibStep.measuring;
-    banner(measuring ? T('holdStill') : (calibStep.title || ''), 'go');
-    ui.calibText.textContent = calibStep.text || '';
-    ui.photo.hidden = !calibStep.photo;
-    ui.photo.disabled = !!calibStep.busy;
+    const m = calibStep, nav = m.nav;
+    const count = m.count || 0, measuring = !!m.measuring;
+    banner(measuring ? T('holdStill') : (m.title || ''), 'go');
+    ui.calibText.textContent = m.text || '';
+    if (nav) {
+      setButton(ui.photo, nav.take);
+      ui.photo.className = m.test ? 'ghost' : 'primary';   // on a check: "Start over", the quiet one
+      setButton(ui.back, nav.back);
+      setButton(ui.skip, nav.skip);
+      setButton(ui.next, nav.next);
+      ui.nav.hidden = false;
+    } else {
+      ui.photo.textContent = T('photo');
+      ui.photo.hidden = !m.photo;
+      ui.photo.disabled = !!m.busy;
+      ui.nav.hidden = true;
+    }
+    const checking = typeof m.reps === 'number';
+    ui.reps.hidden = !checking;
+    if (checking) {
+      ui.repsN.textContent = String(m.reps);
+      ui.repsOf.textContent = '/' + (m.repsOf || 5);
+      ui.reps.classList.toggle('ok', !!m.passed);
+      if (m.passed && !shownPassed) sounds.enough();
+      else if (shownReps >= 0 && m.reps > shownReps) sounds.rep();
+      else if (m.att && m.att !== shownAtt && !m.attOk) sounds.drop();
+    }
+    shownReps = checking ? m.reps : -1;
+    shownAtt = checking ? (m.att || 0) : 0;
+    shownPassed = checking && !!m.passed;
+    // the big number says how many counted: its own line ('text') is left out here
+    const lines = (Array.isArray(m.lines) ? m.lines : []).filter((l) => !(checking && l.kind === 'text'));
+    ui.lines.replaceChildren(...lines.map((l) => {
+      const li = document.createElement('li');
+      li.textContent = l.text || '';
+      li.className = l.kind || '';
+      return li;
+    }));
+    ui.lines.hidden = !lines.length;
     ui.count.hidden = !count;
     ui.count.textContent = count ? String(count) : '';
     if (count && count !== shownCount) beep(660, 120);
@@ -733,7 +794,9 @@
   }
 
   ui.startBtn.addEventListener('click', start);
-  ui.photo.addEventListener('click', () => sendMsg({ t: 'tap' }));
+  // "Take photo": a wizard from 1.5.2 takes any of its buttons; an older one only the photo.
+  ui.photo.addEventListener('click', () => sendMsg(calibStep && calibStep.nav ? { t: 'nav', id: 'take' } : { t: 'tap' }));
+  for (const id of ['back', 'skip', 'next']) ui[id].addEventListener('click', () => sendMsg({ t: 'nav', id }));
   ui.flip.addEventListener('click', async () => {
     if (demo) return;
     facing = facing === 'user' ? 'environment' : 'user';

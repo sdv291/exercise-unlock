@@ -20,8 +20,8 @@
 ;   * optionally disables PIN / Windows Hello sign-in and time zone changes
 ;     by standard accounts (tools\lock-user.ps1)
 ;   * starts the calibration (ExerciseUnlockCalibrate.exe) when "Finish" is
-;     clicked, if its box on the last page is ticked: live camera, 6 photos
-;     and test reps -> thresholds written to config.ini
+;     clicked, if its box on the last page is ticked: live camera, 5 reps
+;     of each exercise -> thresholds written to config.ini
 ; All runtime data (vault, state, logs, users.allow, sounds) lives in
 ; {app}\data, locked to SYSTEM + Administrators; components find it via
 ; HKLM\SOFTWARE\ExerciseUnlock\InstallDir (ExerciseUnlockCommon\Paths.h).
@@ -124,6 +124,8 @@ Name: "lockdown"; Description: "{cm:TaskLockdown}"
 Name: "{group}\{cm:CalibrateShortcut}"; Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/lang {language}"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"
 ; The same wizard with the phone camera picked (its QR code); no webcam is opened.
 Name: "{group}\{cm:CalibratePhoneShortcut}"; Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/phone /lang {language}"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"
+; Minutes per rep, hours, the users (accounts) and the rest, without the calibration.
+Name: "{group}\{cm:SettingsShortcut}"; Filename: "{app}\ExerciseUnlockCalibrate.exe"; Parameters: "/settings /lang {language}"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"
 
 [Run]
 ; The calibration starts once "Finish" is clicked (ticked on a new install,
@@ -190,8 +192,8 @@ en.UserPageCaption=User's account
 uk.UserPageCaption=Обліковий запис користувача
 en.UserPageDescription=Choose the Windows account that will be unlocked with exercises.
 uk.UserPageDescription=Оберіть обліковий запис Windows, який розблоковуватиметься вправами.
-en.UserPageHint=The Exercise Unlock tile will appear on the lock screen only for this account. All other accounts, including yours, keep signing in as usual.
-uk.UserPageHint=Плитка Exercise Unlock з'явиться на екрані блокування лише для цього облікового запису. Усі інші облікові записи, зокрема ваш, входитимуть як звичайно.
+en.UserPageHint=The Exercise Unlock tile will appear on the lock screen for this account. More accounts can be added later in the settings; all others, including yours, keep signing in as usual.
+uk.UserPageHint=Плитка Exercise Unlock з'явиться на екрані блокування для цього облікового запису. Інші можна додати пізніше в налаштуваннях; решта, зокрема ваш, входитимуть як звичайно.
 en.UserMarkAdmin=administrator
 uk.UserMarkAdmin=адміністратор
 en.UserMarkYou=you
@@ -270,6 +272,8 @@ en.RunCalibrate=Start the calibration: tune the exercises to the user with the c
 uk.RunCalibrate=Запустити калібрування: налаштувати вправи під користувача з камерою (близько 5 хвилин, користувач має бути поруч)
 en.CalibrateShortcut=Exercise Unlock calibration
 uk.CalibrateShortcut=Калібрування Exercise Unlock
+en.SettingsShortcut=Exercise Unlock settings
+uk.SettingsShortcut=Налаштування Exercise Unlock
 en.CalibratePhoneShortcut=Exercise Unlock phone calibration
 uk.CalibratePhoneShortcut=Калібрування телефона Exercise Unlock
 en.ReadyChildAccount=User's account:
@@ -292,8 +296,8 @@ en.ErrService=The service could not be started (code %1). Restart the computer; 
 uk.ErrService=Не вдалося запустити службу (код %1). Перезавантажте комп'ютер; якщо помилка повториться, перегляньте service.log у папці data каталогу встановлення.
 en.ErrVCRedist=The Microsoft Visual C++ runtime could not be installed (code %1). Exercise Unlock will not work without it.%n%nInstall it from https://aka.ms/vc14/vc_redist.x64.exe and restart the computer.
 uk.ErrVCRedist=Не вдалося встановити середовище виконання Microsoft Visual C++ (код %1). Без нього Exercise Unlock не працюватиме.%n%nВстановіть його з https://aka.ms/vc14/vc_redist.x64.exe і перезавантажте комп'ютер.
-en.FinishedNote=To try it, lock the computer (Win+L) and choose the account "%1".%n%nSettings (minutes per exercise, allowed hours, camera): %2%n%nTo recalibrate the angles later: Start menu - Exercise Unlock calibration.
-uk.FinishedNote=Щоб спробувати, заблокуйте комп'ютер (Win+L) і оберіть обліковий запис «%1».%n%nНалаштування (хвилини за вправу, дозволені години, камера): %2%n%nЩоб пізніше перекалібрувати кути: меню «Пуск» - Калібрування Exercise Unlock.
+en.FinishedNote=To try it, lock the computer (Win+L) and choose the account "%1".%n%nMinutes per exercise, allowed hours, more users: Start menu - Exercise Unlock settings.%n%nTo recalibrate the angles later: Start menu - Exercise Unlock calibration.
+uk.FinishedNote=Щоб спробувати, заблокуйте комп'ютер (Win+L) і оберіть обліковий запис «%1».%n%nХвилини за вправу, дозволені години, інші користувачі: меню «Пуск» - Налаштування Exercise Unlock.%n%nЩоб пізніше перекалібрувати кути: меню «Пуск» - Калібрування Exercise Unlock.
 en.NoSilent=Exercise Unlock setup must be run interactively: it asks which account to configure and for that account's password.
 uk.NoSilent=Інсталяцію Exercise Unlock потрібно запускати у звичайному режимі: вона запитує, який обліковий запис налаштувати, і його пароль.
 
@@ -1265,47 +1269,65 @@ begin
   end;
 end;
 
-{ Earlier builds kept their data in C:\ProgramData\ExerciseUnlock and
-  debug files in C:\Users\Public. Carry over the counters and the unlock
-  history, then remove the old folder - including its copy of the vault. }
-procedure MigrateLegacyData(const Data: String);
+{ users.allow: the accounts that unlock with exercises, one per line
+  (UTF-8). The settings window adds and removes them. }
+procedure ReadAllowedUsers(const Path: String; var Users: TArrayOfString);
 var
-  Old: String;
+  Lines: TArrayOfString;
+  I, N: Integer;
+  Line: String;
 begin
-  Old := ExpandConstant('{commonappdata}\ExerciseUnlock');
-  if DirExists(Old) then
+  N := 0;
+  SetArrayLength(Users, 0);
+  if not LoadStringsFromFile(Path, Lines) then
+    Exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
   begin
-    if FileExists(Old + '\state.dat') and not FileExists(Data + '\state.dat') then
-      CopyFile(Old + '\state.dat', Data + '\state.dat', True);
-    if FileExists(Old + '\activity.log') and not FileExists(Data + '\activity.log') then
-      CopyFile(Old + '\activity.log', Data + '\activity.log', True);
-    DelTree(Old, True, True, True);
-    Log('migrated and removed ' + Old);
+    Line := Trim(Lines[I]);
+    if (Line <> '') and (Ord(Line[1]) = $FEFF) then
+      Line := Trim(Copy(Line, 2, MaxInt));
+    if (Line = '') or (Line[1] = '#') or (Line[1] = ';') then
+      Continue;
+    SetArrayLength(Users, N + 1);
+    Users[N] := Line;
+    N := N + 1;
   end;
-  DeleteFile('C:\Users\Public\exerciseunlock-provider.log');
-  DeleteFile('C:\Users\Public\eu-service-trace.log');
-  DeleteFile('C:\Users\Public\ExerciseUnlockWebcam.bmp');
 end;
 
-{ An update keeps config.ini and sounds.ini, so defaults that came later
-  reach an existing install only here. Only what older versions shipped is
-  replaced: a value somebody chose stays. }
-procedure MigrateDefaults(const Cfg, Snd: String);
+{ The chosen account goes where the one it replaces was (or at the end);
+  the others the settings window added stay. }
+procedure WriteAllowedUsers(const Path, PrevUser, ChildUser: String);
 var
-  Cur: String;
+  Old, Kept: TArrayOfString;
+  I, N: Integer;
+  Line: String;
+  Have: Boolean;
 begin
-  if (GetIniInt('update', 'enabled', 0, 0, 1, Cfg) = 0) and (GetIniString('update', 'manifest_url', '', Cfg) = '') then
+  ReadAllowedUsers(Path, Old);
+  N := 0;
+  Have := False;
+  for I := 0 to GetArrayLength(Old) - 1 do
   begin
-    SetIniString('update', 'enabled', '1', Cfg);
-    SetIniString('update', 'manifest_url', MANIFEST_URL, Cfg);
-    Log('update check switched on');
+    Line := Old[I];
+    if (PrevUser <> '') and (CompareText(Line, PrevUser) = 0) then
+      Line := ChildUser;
+    if CompareText(Line, ChildUser) = 0 then
+    begin
+      if Have then
+        Continue;
+      Have := True;
+    end;
+    SetArrayLength(Kept, N + 1);
+    Kept[N] := Line;
+    N := N + 1;
   end;
-  Cur := GetIniString('sounds', 'situp_ready', '', Snd);
-  if (Cur = '') or (Cur = 'pushup_ready.wav') then
-    SetIniString('sounds', 'situp_ready', 'situp_ready.wav', Snd);
-  Cur := GetIniString('sounds', 'situp_counted', '', Snd);
-  if (Cur = '') or (Cur = 'pushup_counted.wav') then
-    SetIniString('sounds', 'situp_counted', 'situp_counted.wav', Snd);
+  if not Have then
+  begin
+    SetArrayLength(Kept, N + 1);
+    Kept[N] := ChildUser;
+  end;
+  if not SaveStringsToUTF8File(Path, Kept, False) then
+    Log('could not write ' + Path);
 end;
 
 procedure ConfigureExerciseUnlock;
@@ -1313,7 +1335,8 @@ var
   Code: Integer;
   Data, Admin, SvcExe, PrevUser, BinPath: String;
   PrevLock: Cardinal;
-  Lines: TArrayOfString;
+  Users: TArrayOfString;
+  I: Integer;
   WantLock: Boolean;
 begin
   SetupConfigured := True;   { from here on setup re-enables + starts the service itself }
@@ -1344,11 +1367,7 @@ begin
     they inherit the data folder's ACL - a dump holds pieces of the
     service's memory. }
   ForceDirectories(Data + '\dumps');
-  MigrateLegacyData(Data);
-  SetArrayLength(Lines, 1);
-  Lines[0] := ChildUser;
-  if not SaveStringsToUTF8File(Data + '\users.allow', Lines, False) then
-    Log('could not write ' + Data + '\users.allow');
+  WriteAllowedUsers(Data + '\users.allow', PrevUser, ChildUser);
 
   { An update keeps the stored password (verified at startup). }
   if not KeepSettings then
@@ -1372,8 +1391,6 @@ begin
     end;
   end;
 
-  MigrateDefaults(ExpandConstant('{app}\config.ini'), Data + '\sounds.ini');
-
   { 2. Service: create or repoint, auto-restart on crash, lock it so
        non-admins can't stop it, start. The calibration comes after
        setup closes ([Run]). }
@@ -1395,16 +1412,23 @@ begin
   if (Code <> 0) and (Code <> ERROR_SERVICE_ALREADY_RUNNING) then
     MsgBox(FmtMessage(CustomMessage('ErrService'), [IntToStr(Code)]), mbError, MB_OK);
 
-  { 3. Optional lockdown of PIN / Hello / password change. Undo it for a
-       previously configured account when it changes or is unticked. }
+  { 3. Optional lockdown of PIN / Hello / password change, for every
+       account on the list. Undo it for a replaced account, and for all of
+       them when it is unticked. }
   WantLock := WizardIsTaskSelected('lockdown');
   RepairSignInOptions;
+  ReadAllowedUsers(Data + '\users.allow', Users);
   if (PrevLock = 1) and ((not WantLock) or (CompareText(PrevUser, ChildUser) <> 0)) and (PrevUser <> '') then
     RunLockUser(PrevUser, True);
+  if (PrevLock = 1) and not WantLock then
+    for I := 0 to GetArrayLength(Users) - 1 do
+      if CompareText(Users[I], PrevUser) <> 0 then
+        RunLockUser(Users[I], True);
   if WantLock then
   begin
     SetStatus(CustomMessage('StatusLockdown'));
-    RunLockUser(ChildUser, False);
+    for I := 0 to GetArrayLength(Users) - 1 do
+      RunLockUser(Users[I], False);
   end;
 
   RegWriteStringValue(HKLM, REG_KEY, 'ChildUser', ChildUser);
@@ -1451,6 +1475,8 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   User: String;
+  Users: TArrayOfString;
+  I: Integer;
   Lock: Cardinal;
 begin
   if CurUninstallStep = usUninstall then
@@ -1459,9 +1485,18 @@ begin
     RunHidden(ExpandConstant('{app}\ExerciseUnlockAdmin.exe'), 'harden');
     StopServiceHard;
     RunHidden(SysExe('sc.exe'), 'delete ' + SVC);
-    if RegQueryDWordValue(HKLM, REG_KEY, 'Lockdown', Lock) and (Lock = 1) and
-       RegQueryStringValue(HKLM, REG_KEY, 'ChildUser', User) then
-      RunLockUser(User, True);
+    { Every account on the list was locked down (the settings window too). }
+    if RegQueryDWordValue(HKLM, REG_KEY, 'Lockdown', Lock) and (Lock = 1) then
+    begin
+      ReadAllowedUsers(ExpandConstant('{app}\data\users.allow'), Users);
+      if (GetArrayLength(Users) = 0) and RegQueryStringValue(HKLM, REG_KEY, 'ChildUser', User) then
+      begin
+        SetArrayLength(Users, 1);
+        Users[0] := User;
+      end;
+      for I := 0 to GetArrayLength(Users) - 1 do
+        RunLockUser(Users[I], True);
+    end;
     RepairSignInOptions;
     { Wipe the stored password before the folder goes away. }
     RunHidden(ExpandConstant('{app}\ExerciseUnlockAdmin.exe'), 'clear');

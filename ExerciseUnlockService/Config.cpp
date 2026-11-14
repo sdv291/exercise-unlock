@@ -2,8 +2,11 @@
 #include "Log.h"
 
 #include <shlwapi.h>
+#include <algorithm>
+#include <initializer_list>
 #include <string>
 #include <cwchar>
+#include <cwctype>
 #include <cstdlib>
 #include <climits>
 #include <ctime>
@@ -64,17 +67,7 @@ namespace ExerciseUnlock::Svc
     std::atomic<int>   Config::s_situpMaxRepMs      { 6000 };
     std::atomic<float> Config::s_situpQualityMin    { 0.0f };
 
-    // Default active window: 07:00..20:00 local time.
-    std::atomic<int>   Config::s_activeFromMin      { 7 * 60 };
-    std::atomic<int>   Config::s_activeToMin        { 20 * 60 };
-    // Weekday / weekend overrides — INT_MIN sentinel = "not set,
-    // fall through to legacy active_from/to and min_unlock_seconds".
-    std::atomic<int>   Config::s_weekdayFromMin     { INT_MIN };
-    std::atomic<int>   Config::s_weekdayToMin       { INT_MIN };
-    std::atomic<int>   Config::s_weekendFromMin     { INT_MIN };
-    std::atomic<int>   Config::s_weekendToMin       { INT_MIN };
-    std::atomic<int>   Config::s_weekdayMinUnlockSec{ INT_MIN };
-    std::atomic<int>   Config::s_weekendMinUnlockSec{ INT_MIN };
+    std::map<std::wstring, UserRules> Config::s_rules;
 
     // Progression disabled by default.
     std::atomic<float> Config::s_progressionFactor  { 0.0f };
@@ -182,33 +175,18 @@ namespace ExerciseUnlock::Svc
         return lt.wDayOfWeek == 0 || lt.wDayOfWeek == 6;
     }
 
-    int Config::ScheduleFromMinutesToday()
-    {
-        const int day = IsWeekendNow()
-            ? s_weekendFromMin.load() : s_weekdayFromMin.load();
-        return (day != INT_MIN) ? day : s_activeFromMin.load();
-    }
-    int Config::ScheduleToMinutesToday()
-    {
-        const int day = IsWeekendNow()
-            ? s_weekendToMin.load() : s_weekdayToMin.load();
-        return (day != INT_MIN) ? day : s_activeToMin.load();
-    }
-    int Config::MinUnlockSecondsToday()
-    {
-        const int day = IsWeekendNow()
-            ? s_weekendMinUnlockSec.load() : s_weekdayMinUnlockSec.load();
-        return (day != INT_MIN) ? day : s_minUnlockSec.load();
-    }
+    int UserRules::FromToday() const      { return fromMin[IsWeekendNow() ? 1 : 0]; }
+    int UserRules::ToToday() const        { return toMin[IsWeekendNow() ? 1 : 0]; }
+    int UserRules::MinUnlockToday() const { return minUnlockSec[IsWeekendNow() ? 1 : 0]; }
 
-    bool Config::IsWithinActiveWindowNow()
+    bool UserRules::InWindowNow() const
     {
-        if (s_ignoreSchedule.load()) return true;
+        if (Config::IgnoringSchedule()) return true;
         SYSTEMTIME lt{};
         GetLocalTime(&lt);
         const int nowMin = lt.wHour * 60 + lt.wMinute;
-        const int from = ScheduleFromMinutesToday();
-        const int to   = ScheduleToMinutesToday();
+        const int from = FromToday();
+        const int to   = ToToday();
         if (from == to) return true;
         if (from < to)  return nowMin >= from && nowMin < to;
         return nowMin >= from || nowMin < to;
@@ -309,6 +287,123 @@ namespace ExerciseUnlock::Svc
         std::wstring p = exe;
         p += L"\\config.ini";
         return p;
+    }
+
+    namespace
+    {
+        // One key of config.ini as written, without a "; comment"; false
+        // when the section doesn't have it (or it is empty).
+        bool ReadKey(const std::wstring& path, const std::wstring& section, const wchar_t* key, std::wstring& out)
+        {
+            constexpr wchar_t kMissing[] = L"\x1F";
+            wchar_t buf[256]{};
+            GetPrivateProfileStringW(section.c_str(), key, kMissing, buf, static_cast<DWORD>(std::size(buf)), path.c_str());
+            if (wcscmp(buf, kMissing) == 0) return false;
+            std::wstring v = buf;
+            v = v.substr(0, v.find(L';'));
+            const size_t a = v.find_first_not_of(L" \t");
+            if (a == std::wstring::npos) return false;
+            out = v.substr(a, v.find_last_not_of(L" \t") - a + 1);
+            return true;
+        }
+
+        bool ParseInt(const std::wstring& s, int& out)
+        {
+            wchar_t* end = nullptr;
+            const long v = wcstol(s.c_str(), &end, 10);
+            if (end == s.c_str() || *end != L'\0') return false;
+            out = static_cast<int>(v);
+            return true;
+        }
+
+        bool ParseFloat(const std::wstring& s, float& out)
+        {
+            wchar_t* end = nullptr;
+            const double v = wcstod(s.c_str(), &end);
+            if (end == s.c_str() || *end != L'\0') return false;
+            out = static_cast<float>(v);
+            return true;
+        }
+
+        bool ParseHHMM(const std::wstring& s, int& out)
+        {
+            wchar_t* end = nullptr;
+            const long h = wcstol(s.c_str(), &end, 10);
+            if (end == s.c_str() || *end != L':') return false;
+            const wchar_t* m0 = end + 1;
+            const long m = wcstol(m0, &end, 10);
+            if (end == m0 || *end != L'\0' || h < 0 || h > 23 || m < 0 || m > 59) return false;
+            out = static_cast<int>(h * 60 + m);
+            return true;
+        }
+
+        // Where an account's value comes from, first match wins: the
+        // account's own sections, then the common ones. Within one layer
+        // the keys are tried in order (e.g. weekday_from, then active_from)
+        // - an account that sets only active_from gets it on weekdays too,
+        // even when the common section has its own weekday_from.
+        struct Source { const wchar_t* section; const wchar_t* key; };
+
+        template <typename T, typename Parse>
+        T Pick(const std::wstring& path, const std::wstring& account, std::initializer_list<Source> keys,
+               T fallback, Parse parse)
+        {
+            std::wstring raw;
+            T value{};
+            for (int layer = account.empty() ? 1 : 0; layer < 2; ++layer)
+                for (const Source& s : keys)
+                {
+                    const std::wstring section = layer == 0 ? std::wstring(s.section) + L"@" + account : s.section;
+                    if (ReadKey(path, section, s.key, raw) && parse(raw, value)) return value;
+                }
+            return fallback;
+        }
+
+        UserRules ReadRules(const std::wstring& path, const std::wstring& account)
+        {
+            UserRules r;
+            auto i = [&](std::initializer_list<Source> keys, int fallback) { return Pick<int>(path, account, keys, fallback, ParseInt); };
+            auto f = [&](std::initializer_list<Source> keys, float fallback) { return Pick<float>(path, account, keys, fallback, ParseFloat); };
+            auto t = [&](std::initializer_list<Source> keys, int fallback) { return Pick<int>(path, account, keys, fallback, ParseHHMM); };
+            auto positive = [](int v, int fallback) { return v > 0 ? v : fallback; };
+
+            r.pushupSec = positive(i({ { L"reward", L"pushup_seconds" } }, r.pushupSec), 30);
+            r.squatSec  = positive(i({ { L"reward", L"squat_seconds" } }, r.squatSec), 10);
+            r.situpSec  = positive(i({ { L"reward", L"situp_seconds" } }, r.situpSec), 300);
+            r.maxSessionSec  = (std::max)(0, i({ { L"reward", L"max_session_seconds" } }, r.maxSessionSec));
+            r.graceWindowSec = (std::max)(0, i({ { L"reward", L"grace_window_seconds" } }, r.graceWindowSec));
+            r.graceUnlockSec = positive(i({ { L"reward", L"grace_unlock_seconds" } }, r.graceUnlockSec), 60);
+            r.progressionDays   = (std::max)(0, i({ { L"reward", L"progression_after_days" } }, 0));
+            r.progressionFactor = (std::max)(0.0f, f({ { L"reward", L"progression_factor" } }, 0.0f));
+
+            r.fromMin[0] = t({ { L"schedule", L"weekday_from" }, { L"schedule", L"active_from" } }, 7 * 60);
+            r.toMin[0]   = t({ { L"schedule", L"weekday_to" },   { L"schedule", L"active_to" } },   20 * 60);
+            r.fromMin[1] = t({ { L"schedule", L"weekend_from" }, { L"schedule", L"active_from" } }, 7 * 60);
+            r.toMin[1]   = t({ { L"schedule", L"weekend_to" },   { L"schedule", L"active_to" } },   20 * 60);
+            r.minUnlockSec[0] = positive(i({ { L"schedule", L"weekday_min_unlock_seconds" }, { L"reward", L"min_unlock_seconds" } }, 600), 600);
+            r.minUnlockSec[1] = positive(i({ { L"schedule", L"weekend_min_unlock_seconds" }, { L"reward", L"min_unlock_seconds" } }, 600), 600);
+            return r;
+        }
+    }
+
+    UserRules Config::Rules(const std::wstring& account)
+    {
+        std::wstring key = account;
+        for (wchar_t& c : key) c = static_cast<wchar_t>(towlower(c));
+        {
+            std::lock_guard<std::mutex> lk(s_stringsMx);
+            if (auto it = s_rules.find(key); it != s_rules.end()) return it->second;
+        }
+        const UserRules r = ReadRules(FindConfigPath(), account);
+        LogF(L"config: rules for '%s': squat=%d pushup=%d situp=%d s, min_unlock=%d/%d s, max=%d s, "
+             L"hours %02d:%02d-%02d:%02d / %02d:%02d-%02d:%02d",
+             account.empty() ? L"(everyone)" : account.c_str(), r.squatSec, r.pushupSec, r.situpSec,
+             r.minUnlockSec[0], r.minUnlockSec[1], r.maxSessionSec,
+             r.fromMin[0] / 60, r.fromMin[0] % 60, r.toMin[0] / 60, r.toMin[0] % 60,
+             r.fromMin[1] / 60, r.fromMin[1] % 60, r.toMin[1] / 60, r.toMin[1] % 60);
+        std::lock_guard<std::mutex> lk(s_stringsMx);
+        s_rules[key] = r;
+        return r;
     }
 
     void Config::Load()
@@ -441,41 +536,11 @@ namespace ExerciseUnlock::Svc
         s_situpMinRepMs.store(suMinMs > 0 ? suMinMs : 800);
         s_situpMaxRepMs.store(suMaxMs > suMinMs ? suMaxMs : (suMinMs > 0 ? suMinMs * 2 : 6000));
 
-        // --- schedule (HH:MM strings) ---
-        auto parseHHMM = [](const std::wstring& s, int dflt) -> int
+        // [schedule] and each account's own rules: Rules(), read on demand.
         {
-            if (s.empty()) return dflt;
-            wchar_t* end = nullptr;
-            long h = wcstol(s.c_str(), &end, 10);
-            if (end == s.c_str() || *end != L':') return dflt;
-            long m = wcstol(end + 1, nullptr, 10);
-            if (h < 0 || h > 23 || m < 0 || m > 59) return dflt;
-            return static_cast<int>(h) * 60 + static_cast<int>(m);
-        };
-        auto parseHHMMOptional = [&](const std::wstring& s) -> int
-        {
-            if (s.empty()) return INT_MIN;
-            return parseHHMM(s, INT_MIN);
-        };
-        const std::wstring sFrom = readStr(L"schedule", L"active_from", L"07:00");
-        const std::wstring sTo   = readStr(L"schedule", L"active_to",   L"20:00");
-        s_activeFromMin.store(parseHHMM(sFrom, s_activeFromMin.load()));
-        s_activeToMin.store  (parseHHMM(sTo,   s_activeToMin.load()));
-
-        // Weekday / weekend windows (optional; empty = fall back to
-        // active_from/to). Same syntax.
-        s_weekdayFromMin.store(parseHHMMOptional(readStr(L"schedule", L"weekday_from", L"")));
-        s_weekdayToMin.store  (parseHHMMOptional(readStr(L"schedule", L"weekday_to",   L"")));
-        s_weekendFromMin.store(parseHHMMOptional(readStr(L"schedule", L"weekend_from", L"")));
-        s_weekendToMin.store  (parseHHMMOptional(readStr(L"schedule", L"weekend_to",   L"")));
-
-        auto readIntOpt = [&](const wchar_t* section, const wchar_t* key) -> int
-        {
-            const int probe = GetPrivateProfileIntW(section, key, -424242, path.c_str());
-            return (probe == -424242) ? INT_MIN : probe;
-        };
-        s_weekdayMinUnlockSec.store(readIntOpt(L"schedule", L"weekday_min_unlock_seconds"));
-        s_weekendMinUnlockSec.store(readIntOpt(L"schedule", L"weekend_min_unlock_seconds"));
+            std::lock_guard<std::mutex> lk(s_stringsMx);
+            s_rules.clear();
+        }
 
         // Progression [reward] section, optional keys.
         s_progressionDays.store(GetPrivateProfileIntW(
@@ -596,8 +661,6 @@ namespace ExerciseUnlock::Svc
         if (phone[0].have || phone[1].have || phone[2].have)
             LogF(L"config: phone calibration squat=%d pushup=%d situp=%d hipDrop=%.2f",
                  phone[0].have ? 1 : 0, phone[1].have ? 1 : 0, phone[2].have ? 1 : 0, phoneHipDrop);
-        LogF(L"config: schedule active %02d:%02d..%02d:%02d local",
-             s_activeFromMin.load() / 60, s_activeFromMin.load() % 60,
-             s_activeToMin.load()   / 60, s_activeToMin.load()   % 60);
+        Rules(L"");   // logs the common rules
     }
 }

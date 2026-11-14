@@ -328,6 +328,24 @@ namespace ExerciseUnlock::Svc
             return;
         }
 
+        // The tile that asks makes its account the active one: its reps,
+        // earned time and session. Another account's running session is
+        // paused first (like a lock), its reps stay in its record.
+        req.user[kUserChars - 1] = L'\0';
+        const std::wstring user = req.user;
+        if (!user.empty() && _wcsicmp(user.c_str(), ActiveUser().c_str()) != 0)
+        {
+            {
+                std::lock_guard<std::mutex> g(m_userSwitchMx);
+                if (_wcsicmp(user.c_str(), ActiveUser().c_str()) != 0)
+                {
+                    GetSessionManager().PauseOnLock();
+                    SelectUser(user);
+                }
+            }
+            PersistentState::Save();
+        }
+
         Response resp{};
         switch (static_cast<Op>(req.op))
         {
@@ -372,7 +390,8 @@ namespace ExerciseUnlock::Svc
             // period). The grace minute below is the one exception:
             // a session cut off at e.g. 20:00 still lets the child
             // unlock once for a minute to close their apps.
-            const bool inWindow = Config::IsWithinActiveWindowNow();
+            const UserRules rules = ActiveRules();
+            const bool inWindow = rules.InWindowNow();
 
             // Arm countdown for the currently-earned time, THEN zero
             // the earned bank AND the rep counters — everything the
@@ -386,7 +405,7 @@ namespace ExerciseUnlock::Svc
             // left alone — the grace unlock doesn't consume credit.
             Response tmp{};
             SnapshotInto(tmp);
-            const int   minUnlock = Config::MinUnlockSecondsToday();
+            const int   minUnlock = rules.MinUnlockToday();
             auto& st = GetState();
             // A paused session remainder resumes even below min_unlock.
             const bool  earnedOk  = inWindow &&
@@ -400,12 +419,12 @@ namespace ExerciseUnlock::Svc
                 const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
                 const int64_t lastEnd = st.lastSessionEndedUnix.load();
-                const int graceWin    = Config::GraceWindowSeconds();
+                const int graceWin    = rules.graceWindowSec;
                 if (graceWin > 0 && lastEnd > 0 &&
                     (now - lastEnd) <= graceWin &&
                     st.sessionExpiresAtUnix.load() == 0)
                 {
-                    grantSec = (uint32_t)Config::GraceUnlockSeconds();
+                    grantSec = (uint32_t)rules.graceUnlockSec;
                     graceGrant = true;
                     LogF(L"StartSession: grace unlock %u sec (last ended %lld s ago)",
                          grantSec, (long long)(now - lastEnd));
@@ -420,7 +439,7 @@ namespace ExerciseUnlock::Svc
                 break;
             }
 
-            LogF(L"StartSession requested %s=%u sec",
+            LogF(L"StartSession requested by '%s' %s=%u sec", ActiveUser().c_str(),
                  graceGrant ? L"grace" : L"earned", grantSec);
             GetSessionManager().ArmSession(grantSec,
                 graceGrant ? SessionManager::Kind::Grace

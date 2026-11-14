@@ -2,6 +2,7 @@
 #include "Log.h"
 
 #include <windows.h>
+#include <cwchar>
 #include <sstream>
 #include <iomanip>
 
@@ -89,16 +90,24 @@ namespace ExerciseUnlock::Client
         return S_OK;
     }
 
-    HRESULT QueryStatus(Response& out, unsigned timeoutMs)
+    // A request for `op`, on behalf of the tile's account.
+    static Request MakeRequest(Op op, const std::wstring& user)
+    {
+        Request req{};
+        req.magic   = kMagic;
+        req.version = kVersion;
+        req.op      = static_cast<uint16_t>(op);
+        wcsncpy_s(req.user, user.c_str(), _TRUNCATE);
+        return req;
+    }
+
+    HRESULT QueryStatus(const std::wstring& user, Response& out, unsigned timeoutMs)
     {
         HANDLE pipe = INVALID_HANDLE_VALUE;
         const HRESULT hrOpen = OpenServicePipe(timeoutMs, pipe);
         if (FAILED(hrOpen)) return hrOpen;
 
-        Request req{};
-        req.magic   = kMagic;
-        req.version = kVersion;
-        req.op      = static_cast<uint16_t>(Op::GetStatus);
+        const Request req = MakeRequest(Op::GetStatus, user);
 
         DWORD written = 0;
         if (!WriteFile(pipe, &req, sizeof(req), &written, nullptr) || written != sizeof(req))
@@ -146,16 +155,13 @@ namespace ExerciseUnlock::Client
 
     // Common helper: send a payload-less request with the given op,
     // drain the response, close.
-    static HRESULT SendOpNoData(Op op, unsigned timeoutMs)
+    static HRESULT SendOpNoData(Op op, const std::wstring& user, unsigned timeoutMs)
     {
         HANDLE pipe = INVALID_HANDLE_VALUE;
         const HRESULT hrOpen = OpenServicePipe(timeoutMs, pipe);
         if (FAILED(hrOpen)) return hrOpen;
 
-        Request req{};
-        req.magic   = kMagic;
-        req.version = kVersion;
-        req.op      = static_cast<uint16_t>(op);
+        const Request req = MakeRequest(op, user);
 
         DWORD written = 0;
         BOOL ok = WriteFile(pipe, &req, sizeof(req), &written, nullptr) &&
@@ -170,13 +176,13 @@ namespace ExerciseUnlock::Client
         return ok ? S_OK : HRESULT_FROM_WIN32(GetLastError());
     }
 
-    HRESULT ResetCounts(unsigned timeoutMs)
+    HRESULT ResetCounts(const std::wstring& user, unsigned timeoutMs)
     {
-        return SendOpNoData(Op::ResetCounts, timeoutMs);
+        return SendOpNoData(Op::ResetCounts, user, timeoutMs);
     }
 
-    HRESULT StartSession(unsigned timeoutMs)
+    HRESULT StartSession(const std::wstring& user, unsigned timeoutMs)
     {
-        return SendOpNoData(Op::StartSession, timeoutMs);
+        return SendOpNoData(Op::StartSession, user, timeoutMs);
     }
 }
