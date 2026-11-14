@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="{{lang}}" data-type="software" data-radius="round" data-buttons="pill" data-ground="sky" data-motion>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{title}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:image" content="https://exercise-unlock.sdv291.com/landing/share.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+<meta name="theme-color" content="#121633">
+<link rel="canonical" href="https://exercise-unlock.sdv291.com/landing/{{canonical_query}}">
+<link rel="alternate" hreflang="uk" href="https://exercise-unlock.sdv291.com/landing/?lang=uk">
+<link rel="alternate" hreflang="en" href="https://exercise-unlock.sdv291.com/landing/?lang=en">
+<meta name="site-kind" content="software">
+<meta name="page-type" content="software">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..700&family=JetBrains+Mono:wght@400..500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/system.css">
+<link rel="stylesheet" href="assets/ui/cards.css">
+<link rel="stylesheet" href="assets/motion/motion.css">
+<link rel="stylesheet" href="assets/backgrounds/backgrounds.css">
+<link rel="stylesheet" href="assets/layout/layout.css">
+<style>
+:root {
+  --p-bg: #121633; --p-surface: #1b2050; --p-ink: #eef0ff; --p-muted: #a7add8;
+  --p-accent: #2bff88; --p-accent-ink: #121633; --p-action: #2bff88; --p-action-ink: #121633;
+  --p-inv-bg: #eef0ff; --p-inv-surface: #dcdfef; --p-inv-ink: #121633; --p-inv-muted: #5b617b;
+  --p-inv-accent: #121633; --p-inv-accent-ink: #eef0ff; --p-inv-action: #121633; --p-inv-action-ink: #eef0ff;
+  --font-display: "Manrope", system-ui, sans-serif;
+  --font-text: "Manrope", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --display-weight: 500;
+  --display-tracking: -0.035em;
+  --display-tracking-xl: -0.045em;
+  --ly-scale: 0.97;
+}
+</style>
+<script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
+<script>document.documentElement.classList.add('mo-js');setTimeout(()=>document.documentElement.classList.add('mo-safe'),2500)</script>
+<link rel="modulepreload" href="assets/moments/moments.js">
+<link rel="modulepreload" href="assets/moments/lib.js">
+<link rel="modulepreload" href="assets/moments/counter-rolls/moment.js">
+<link rel="modulepreload" href="assets/moments/liquid-type/moment.js">
+<!-- page CSS: what sits inside the visuals (the lock screen, the boy and his skeleton, the video frame, the settings
+     window, the phone, the diagram, the email), one --p-h per card group, the sections' screen counts at tablet
+     width and the closing name's size. The brand's own colours inside the visuals: green #2bff88, pink #ff2e88,
+     cyan #15abcf, yellow #ffc21c, always with navy #121633 words on them. -->
+<style>
+  .nav__logo img { width: 28px; height: 28px; border-radius: 8px; }
+
+  /* hero: the Windows lock screen with the Exercise Unlock tile; one CSS loop (a squat, the count, +3 min) */
+  #hero .hero__window { background: radial-gradient(120% 140% at 80% 0%, #2a62c9 0%, #1b3a8a 38%, #121a4a 72%, #0e1238 100%); }
+  .eu-lock { color: #fff; display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: var(--s-8); align-items: start; }
+  .eu-lock__kid { position: relative; grid-column: 2; grid-row: 1; height: 330px; margin-top: calc(-1 * var(--s-3)); }
+  .eu-lock__kid img { display: block; height: 100%; width: auto; margin-inline: auto; }
+  .eu-lock .eu-tile { grid-column: 1; grid-row: 1; }
+  [data-m-loop] .eu-lock__kid .eu-tag { animation: eu-float var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .eu-lock__kid .eu-tag:nth-of-type(2) { animation-name: eu-float2; }
+  @keyframes eu-float  { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @keyframes eu-float2 { 0%, 100% { transform: translateY(-4px); } 50% { transform: translateY(3px); } }
+  .eu-tile__time { margin-left: auto; font: 500 14px/1 var(--font-text); opacity: .78; }
+  .eu-tile { display: grid; grid-template-columns: 132px 1fr; gap: var(--s-5); align-items: center; padding: var(--s-5);
+    border-radius: 20px; background: rgba(13, 17, 52, .72); border: 1px solid rgba(255, 255, 255, .14); }
+  .eu-tile__fig { position: relative; height: 196px; }
+  .eu-tile__fig svg { width: 100%; height: 100%; overflow: visible; }
+  .eu-tile__head { display: flex; align-items: center; gap: var(--s-2); font: 600 15px/1 var(--font-text); margin-bottom: var(--s-4); }
+  .eu-tile__head img { width: 24px; height: 24px; border-radius: 6px; }
+  .eu-rows { display: grid; gap: var(--s-2); margin: 0 0 var(--s-4); }
+  .eu-rows > div { display: flex; justify-content: space-between; font: 500 15px/1.3 var(--font-text); }
+  .eu-rows dt { opacity: .78; }
+  .eu-rows dd { margin: 0; font-family: var(--font-mono); min-width: 2ch; text-align: right; }
+  .eu-bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .14); overflow: hidden; }
+  .eu-bar i { display: block; height: 100%; width: 100%; background: #2bff88; transform-origin: left; transform: scaleX(.9); }
+  .eu-earned { display: flex; justify-content: space-between; gap: var(--s-3); margin-top: var(--s-2); font: 500 14px/1.3 var(--font-text); }
+  .eu-earned b { color: #2bff88; font-weight: 600; }
+  .eu-num { display: inline-grid; }
+  .eu-num > span { grid-area: 1 / 1; }
+  .eu-chip { position: absolute; right: -6px; top: 18px; padding: 4px 10px; border-radius: 99px; background: #ffc21c; color: #121633;
+    font: 700 14px/1.2 var(--font-text); }
+  .sk line, .sk circle.sk-head { stroke: #2bff88; stroke-width: 5; stroke-linecap: round; fill: none; }
+  .sk circle { fill: #fff; }
+  .sk g { transform-box: view-box; }
+  /* the squat: the shin turns at the ankle, the thigh at the knee, the torso at the hip, the arms at the shoulder */
+  [data-m-loop] .sk-shin { transform-origin: 80px 205px; animation: sk-shin var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .sk-thigh { transform-origin: 80px 150px; animation: sk-thigh var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .sk-torso { transform-origin: 80px 95px; animation: sk-torso var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .sk-arm { transform-origin: 80px 40px; animation: sk-arm var(--m-cycle) ease-in-out infinite; }
+  @keyframes sk-shin  { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(35deg); } 76%, 100% { transform: rotate(0); } }
+  @keyframes sk-thigh { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(-110deg); } 76%, 100% { transform: rotate(0); } }
+  @keyframes sk-torso { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(115deg); } 76%, 100% { transform: rotate(0); } }
+  @keyframes sk-arm   { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(-130deg); } 76%, 100% { transform: rotate(0); } }
+  /* the count turns over as he stands up: 6 to 7, 24:00 to 27:00, the bar fills a step, +3 min shows */
+  [data-m-loop] .eu-was { animation: eu-was var(--m-cycle) linear infinite; }
+  [data-m-loop] .eu-now { animation: eu-now var(--m-cycle) linear infinite; }
+  [data-m-loop] .eu-chip { animation: eu-chip var(--m-cycle) cubic-bezier(.22, 1, .36, 1) infinite; }
+  [data-m-loop] .eu-bar i { animation: eu-bar var(--m-cycle) cubic-bezier(.22, 1, .36, 1) infinite; }
+  @keyframes eu-was  { 0%, 76% { opacity: 1; } 80%, 100% { opacity: 0; } }
+  @keyframes eu-now  { 0%, 76% { opacity: 0; } 80%, 100% { opacity: 1; } }
+  @keyframes eu-chip { 0%, 76% { opacity: 0; transform: translateY(8px); } 82%, 100% { opacity: 1; transform: translateY(0); } }
+  @keyframes eu-bar  { 0%, 76% { transform: scaleX(.8); } 84%, 100% { transform: scaleX(.9); } }
+  #hero [data-m-loop] { --m-still: .97; }
+  /* without the loop the finished picture: 7 squats, 27:00, +3 min */
+  .eu-was { opacity: 0; } .eu-now { opacity: 1; }
+  @media (max-width: 1023px) { .eu-lock { grid-template-columns: minmax(0, 1fr) 150px; gap: var(--s-6); } .eu-lock__kid { height: 250px; } }
+  @media (max-width: 639px) {
+    .eu-lock { grid-template-columns: 1fr; } .eu-lock__kid { display: none; }
+    .eu-tile { grid-template-columns: 92px 1fr; gap: var(--s-4); padding: var(--s-4); }
+    .eu-tile__fig { height: 150px; }
+    .eu-rows { margin-bottom: var(--s-3); }
+    .eu-rows > div:nth-child(3) { display: none; }
+  }
+
+  /* the steps: one picture per card on the sky ground */
+  #how .panel { --p-h: 320px; }
+  .eu-setup { position: absolute; inset: var(--s-5) var(--s-5) auto; padding: var(--s-4); border-radius: 16px; background: var(--bg); color: var(--ink); }
+  .eu-setup p { margin: 0 0 var(--s-3); font: 600 15px/1.3 var(--font-text); }
+  .eu-setup ul { list-style: none; margin: 0 0 var(--s-4); padding: 0; display: grid; gap: 6px; }
+  .eu-setup li { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 10px; font: 500 14px/1.2 var(--font-text); background: var(--surface); }
+  .eu-setup li.is-on { box-shadow: inset 0 0 0 2px #2bff88; }
+  .eu-setup li span { color: var(--muted); }
+  .eu-setup .eu-lbl { display: block; font: 500 13px/1.2 var(--font-text); color: var(--muted); margin-bottom: 6px; }
+  .eu-setup .eu-pwd { height: 36px; border-radius: 10px; border: 1px solid var(--line); display: flex; align-items: center; gap: 6px; padding: 0 12px; }
+  .eu-setup .eu-pwd i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
+  .eu-kid { position: absolute; inset: var(--s-4) 0 0; display: grid; justify-items: center; }
+  .eu-kid__box { position: relative; height: 100%; aspect-ratio: 2 / 3; }
+  .eu-kid__box img, .eu-kid__box svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .eu-kid__box svg line { stroke: #2bff88; stroke-width: 12; stroke-linecap: round; }
+  .eu-kid__box svg circle { fill: #fff; stroke: #121633; stroke-width: 4; }
+  .eu-tag { position: absolute; padding: 4px 10px; border-radius: 99px; font: 700 14px/1.2 var(--font-text); white-space: nowrap; color: #121633; }
+  .eu-tag--yellow { background: #ffc21c; } .eu-tag--green { background: #2bff88; } .eu-tag--pink { background: #ff2e88; } .eu-tag--cyan { background: #15abcf; }
+  #how .panel > .eu-tag--yellow { left: var(--s-5); top: var(--s-5); z-index: 2; }
+  .eu-signin { position: absolute; inset: var(--s-5) var(--s-5) auto; padding: var(--s-5); border-radius: 18px; background: rgba(13, 17, 52, .92); color: #fff; display: grid; gap: var(--s-3); }
+  .eu-signin__who { display: flex; align-items: center; gap: var(--s-3); font: 600 17px/1.2 var(--font-text); }
+  .eu-signin__ava { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: #ffc21c; color: #121633; font: 700 18px/1 var(--font-text); }
+  .eu-signin__row { display: flex; justify-content: space-between; font: 500 14px/1.3 var(--font-text); }
+  .eu-signin__row span { opacity: .78; } .eu-signin__row b { font: 500 14px/1.3 var(--font-mono); color: #2bff88; }
+  .eu-signin__btn { justify-self: stretch; text-align: center; margin-top: var(--s-2); padding: 10px 16px; border-radius: 10px; background: #2bff88; color: #121633; font: 700 15px/1.2 var(--font-text); }
+
+  /* the video: a still of the boy until play, then the YouTube player (16:9) in the same frame */
+  .eu-video { position: relative; border-radius: var(--r-lg); overflow: hidden; container-type: size; min-height: 300px;
+    background: radial-gradient(110% 130% at 85% 10%, #2a62c9 0%, #1b2a7a 45%, #0e1238 100%); }
+  .eu-video > img { position: absolute; right: 5%; bottom: 0; height: 90%; width: auto; max-width: 60%; object-fit: contain; object-position: bottom right; }
+  .eu-video__go { position: absolute; left: var(--s-6); bottom: var(--s-6); display: grid; gap: var(--s-4); justify-items: start; width: min(360px, 40%);
+    padding: var(--s-5); border-radius: 20px; background: rgba(13, 17, 52, .78); border: 1px solid rgba(255, 255, 255, .14); color: #fff; }
+  .eu-video__go p { margin: 0; font: 500 16px/1.4 var(--font-text); }
+  .eu-video__go .btn svg { width: 14px; height: 14px; fill: currentColor; }
+  .eu-video iframe { position: absolute; inset: 0; margin: auto; border: 0; width: min(100cqw, 100cqh * 16 / 9); height: min(100cqh, 100cqw * 9 / 16); }
+  @media (max-width: 639px) {
+    .eu-video { min-height: 420px; }
+    .eu-video > img { right: 4%; top: var(--s-4); bottom: auto; height: 50%; max-width: 80%; object-position: top right; }
+    .eu-video__go { left: var(--s-4); right: var(--s-4); bottom: var(--s-4); width: auto; padding: var(--s-4); }
+    .eu-video__go .btn { width: 100%; }
+  }
+
+  /* minutes: the figures beside the settings window */
+  /* the figures on the page's own columns: inside span-5 the second starts on column 3, on a tablet on column 7, on a phone on the half */
+  .eu-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s-6) var(--gutter); }
+  .eu-stats > :nth-child(odd) { grid-column: 1 / span 2; } .eu-stats > :nth-child(even) { grid-column: 3 / span 3; }
+  @media (min-width: 640px) and (max-width: 1023px) { .eu-stats { grid-template-columns: repeat(12, minmax(0, 1fr)); } .eu-stats > :nth-child(odd) { grid-column: 1 / span 6; } .eu-stats > :nth-child(even) { grid-column: 7 / span 6; } }
+  @media (max-width: 639px) { .eu-stats { grid-template-columns: 1fr 1fr; } .eu-stats > :nth-child(n) { grid-column: auto; } }
+  .eu-stats > div { display: grid; gap: var(--s-2); align-content: start; }
+  .eu-stats .t-stat, .eu-stats p { margin: 0; }
+  .eu-win { border-radius: var(--r-lg); background: #f4f5fb; color: #1f2547; overflow: hidden; align-self: start; }
+  .eu-win__bar { display: flex; align-items: center; gap: var(--s-2); padding: 12px 16px; background: #e6e8f3; font: 600 14px/1 var(--font-text); }
+  .eu-win__bar img { width: 20px; height: 20px; border-radius: 5px; }
+  .eu-win__body { display: grid; grid-template-columns: 170px 1fr; }
+  .eu-win__side { padding: var(--s-4); display: grid; gap: 6px; align-content: start; border-right: 1px solid #dfe2ef; font: 500 14px/1.2 var(--font-text); }
+  .eu-win__side span { padding: 8px 10px; border-radius: 8px; color: #5b617b; }
+  .eu-win__side span.is-on { background: #fff; color: #1f2547; box-shadow: inset 3px 0 0 #3c6edc; }
+  .eu-win__main { padding: var(--s-5) var(--s-6); }
+  .eu-win__row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: 18px 0; border-bottom: 1px solid #e3e6f1; font: 500 15px/1.3 var(--font-text); }
+  .eu-win__row b { min-width: 86px; padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #cfd4e6; text-align: center; font: 500 15px/1.2 var(--font-mono); }
+  .eu-win__row b.is-edit { border-color: #13b85a; box-shadow: 0 0 0 3px rgba(43, 255, 136, .45); }
+  .eu-win__scope { display: flex; justify-content: flex-end; align-items: center; gap: var(--s-3); padding-bottom: var(--s-2); font: 500 14px/1.2 var(--font-text); color: #5b617b; }
+  .eu-win__scope span { min-width: 150px; padding: 7px 12px; border-radius: 8px; background: #fff; border: 1px solid #cfd4e6; color: #1f2547; font-weight: 600; }
+  .eu-win__scope span::after { content: ""; float: right; margin-top: 4px; border: 5px solid transparent; border-top-color: #5b617b; }
+  .eu-win__row b.is-all { color: #8a90ad; }
+  .eu-win__foot { display: flex; justify-content: flex-end; padding-top: var(--s-5); }
+  .eu-win__foot span { padding: 8px 18px; border-radius: 8px; background: #3c6edc; color: #fff; font: 600 14px/1.2 var(--font-text); }
+  @media (max-width: 639px) {
+    .eu-win__body { grid-template-columns: 1fr; } .eu-win__side { display: none; } .eu-win__main { padding: var(--s-2) var(--s-4) var(--s-4); }
+    .eu-win__row { padding: 10px 0; font-size: 14px; } .eu-win__row:nth-child(n+4), .eu-win__foot { display: none; }
+    .eu-win__scope { justify-content: flex-start; padding-top: var(--s-2); }
+  }
+
+  /* rules: four cards with a small picture each */
+  #rules .panel { --p-h: 264px; }
+  .eu-mini { position: absolute; inset: var(--s-5) var(--s-5) auto; display: grid; gap: 8px; }
+  .eu-mini > div { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); padding: 10px 12px; border-radius: 12px;
+    background: var(--bg); color: var(--ink); font: 500 14px/1.25 var(--font-text); }
+  .eu-mini b { font: 500 14px/1 var(--font-mono); }
+  .eu-mini .no { color: #ff7ba8; }
+  .eu-toast { position: absolute; inset: auto var(--s-5) var(--s-5); padding: 12px 14px; border-radius: 14px; background: #f4f5fb; color: #1f2547;
+    display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; font: 500 14px/1.35 var(--font-text); }
+  .eu-toast i { width: 22px; height: 22px; border-radius: 50%; background: #ffc21c; display: grid; place-items: center; font: 700 14px/1 var(--font-text); font-style: normal; color: #121633; }
+  .eu-toast p { margin: 0; }
+  .eu-toast small { display: block; color: #5b617b; font-size: 13px; margin-bottom: 2px; }
+  .eu-wave { display: flex; gap: 3px; align-items: center; height: 18px; flex: none; }
+  .eu-wave i { width: 3px; border-radius: 2px; background: #2bff88; }
+
+  /* phone: the tile's QR code and the phone page side by side */
+  .eu-phone-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-6); align-items: center; padding: var(--s-6); align-self: start;
+    border-radius: var(--r-lg); background: radial-gradient(120% 140% at 80% 0%, #2a62c9 0%, #1b3a8a 40%, #121a4a 100%); }
+  .eu-qr { justify-self: center; display: grid; padding: var(--s-5); border-radius: 20px;
+    background: rgba(13, 17, 52, .72); border: 1px solid rgba(255, 255, 255, .14); }
+  .eu-qr svg { width: 184px; height: 184px; background: #fff; border-radius: 10px; padding: 10px; }
+  .eu-ph { justify-self: center; width: 240px; aspect-ratio: 9 / 18.5; border-radius: 34px; background: #0b0e22; border: 6px solid #2a3060; position: relative; overflow: hidden; }
+  .eu-ph__banner { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); white-space: nowrap; padding: 6px 12px; border-radius: 99px;
+    background: #2bff88; color: #121633; font: 700 12px/1.2 var(--font-text); }
+  .eu-ph svg { position: absolute; left: 14%; top: 18%; width: 72%; height: 56%; overflow: visible; }
+  .eu-ph__count { position: absolute; left: 12px; right: 12px; bottom: 14px; padding: 10px 12px; border-radius: 14px; background: #1b2050; color: #fff;
+    display: flex; align-items: baseline; gap: 8px; font: 500 13px/1.2 var(--font-text); }
+  .eu-ph__count b { font: 600 26px/1 var(--font-display); color: #2bff88; }
+  .eu-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-4); counter-reset: s; }
+  .eu-steps li { display: grid; grid-template-columns: 36px 1fr; gap: var(--s-3); align-items: center; counter-increment: s; }
+  .eu-steps li::before { content: counter(s); width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--ink); color: var(--bg); font-weight: 600; }
+  @media (max-width: 639px) {
+    .eu-steps { gap: var(--s-2); }
+    .eu-phone-row { padding: var(--s-4); gap: var(--s-3); }
+    .eu-qr { padding: var(--s-3); } .eu-qr svg { width: 112px; height: 112px; padding: 6px; }
+    .eu-ph { width: 116px; border-radius: 22px; border-width: 4px; } .eu-ph__banner { top: 12px; font-size: 10px; padding: 4px 8px; }
+    .eu-ph__count { left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; font-size: 11px; } .eu-ph__count b { font-size: 18px; }
+  }
+
+  /* privacy: two lanes into the child's PC */
+  .eu-flow { display: grid; gap: var(--s-7); align-content: center; padding: var(--s-7); border-radius: var(--r-lg); background: var(--surface); }
+  .eu-lane { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--s-4); }
+  .eu-node { display: flex; align-items: center; gap: var(--s-4); padding: 16px 20px; border-radius: 16px; background: var(--bg); border: 1px solid var(--line); font: 600 17px/1.25 var(--font-text); }
+  .eu-ico { width: 40px; height: 40px; flex: none; padding: 8px; border-radius: 12px; background: #2bff88; fill: none; stroke: #121633; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .eu-node small { display: block; font: 500 14px/1.3 var(--font-text); color: var(--muted); margin-top: 4px; }
+  .eu-node--pc { box-shadow: inset 0 0 0 2px #2bff88; }
+  .eu-arrow { display: grid; justify-items: center; gap: 6px; font: 500 13px/1.2 var(--font-mono); color: var(--muted); min-width: 120px; }
+  .eu-arrow svg { width: 120px; height: 12px; }
+  .eu-arrow svg path { stroke: #2bff88; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .eu-arrow .eu-tag { position: static; font-size: 12px; }
+  .eu-lane--cam .eu-node:first-child { grid-column: 1; } .eu-lane--cam .eu-arrow { grid-column: 2 / 5; } .eu-lane--cam .eu-arrow svg { width: 100%; }
+  .eu-lane--cam .eu-node--pc { grid-column: 5; }
+  @media (max-width: 1023px) {
+    .eu-flow { padding: var(--s-5); gap: var(--s-5); }
+    .eu-lane, .eu-lane--cam { grid-template-columns: 1fr; gap: 6px; }
+    .eu-lane > *, .eu-lane--cam > * { grid-column: 1 !important; }
+    .eu-arrow { grid-auto-flow: column; justify-content: start; align-items: center; min-width: 0; }
+    .eu-arrow { gap: var(--s-2); padding-left: 10px; }
+    .eu-arrow svg, .eu-lane--cam .eu-arrow svg { order: -1; width: 24px; height: 12px; transform: rotate(90deg); margin-inline: -6px; }
+    .eu-node { padding: 8px 12px; font-size: 15px; gap: var(--s-3); } .eu-node small { font-size: 13px; margin-top: 2px; }
+    .eu-ico { width: 32px; height: 32px; padding: 6px; border-radius: 10px; }
+    #privacy .eu-flow.fill { flex: 0 0 auto; }
+  }
+
+  /* get the link: the big line, the form and the email it sends */
+  .eu-get h2 { font-size: clamp(40px, 4.6vw, 64px); line-height: 1.02; letter-spacing: -0.045em; }
+  .eu-get .form { display: grid; gap: var(--s-3); }
+  .eu-get .form input[type="email"] { width: 100%; }
+  .eu-get .form .field { margin: 0; }
+  .eu-get .form p { margin: 0; }
+  .eu-get .eu-req { margin: var(--s-5) 0 0; max-width: 46ch; }
+  .eu-banner { margin: var(--s-4) 0 0; padding: 12px 16px; border-radius: 14px; background: var(--surface); }
+  .eu-banner--ok { box-shadow: inset 0 0 0 2px #2bff88; } .eu-banner--err { box-shadow: inset 0 0 0 2px #ff7ba8; }
+  @media (max-width: 639px) { #get .wrap > .grid { display: contents; } #get .eu-mail { margin-top: 0; } }
+  .eu-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .eu-mail { align-self: start; border-radius: var(--r-lg); background: radial-gradient(120% 140% at 80% 0%, #2a62c9 0%, #1b3a8a 40%, #121a4a 100%); padding: var(--s-7); }
+  .eu-mail__card { background: #f4f5fb; color: #1f2547; border-radius: 18px; overflow: hidden; }
+  .eu-mail__head { display: grid; grid-template-columns: 40px 1fr auto; gap: var(--s-3); align-items: center; padding: var(--s-5); border-bottom: 1px solid #e0e3ef; font: 500 14px/1.35 var(--font-text); }
+  .eu-mail__head img { width: 40px; height: 40px; border-radius: 12px; }
+  .eu-mail__head b { display: block; font: 600 15px/1.3 var(--font-text); }
+  .eu-mail__head span { color: #5b617b; }
+  .eu-mail__body { padding: var(--s-5); display: grid; gap: var(--s-4); font: 500 15px/1.45 var(--font-text); }
+  .eu-mail__body p { margin: 0; }
+  .eu-mail__link { padding: 12px 14px; border-radius: 12px; background: #fff; border: 1px dashed #3c6edc; font: 500 13px/1.45 var(--font-mono); color: #2b4fae; }
+  .eu-mail__link span { word-break: break-all; }
+  .eu-mail__btn { justify-self: start; padding: 10px 18px; border-radius: 99px; background: #121633; color: #fff; font: 600 14px/1.2 var(--font-text); }
+  .eu-mail__chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  @media (max-width: 639px) { .eu-mail { padding: var(--s-4); } .eu-mail__head { padding: var(--s-4); } .eu-mail__body { padding: var(--s-4); } }
+
+  /* questions: two columns on a desktop */
+  .faq { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--gutter); }
+  .faq > .faq__item:nth-child(2) { padding-top: 0; }
+  @media (max-width: 1023px) { .faq { grid-template-columns: 1fr; } .faq > .faq__item:nth-child(2) { padding-top: var(--s-5); } }
+
+  /* the closing name: 15 letters across the .wrap */
+  .close__word { font-size: min(186px, calc(min(100vw - 2 * var(--gut), 1280px) / 6.95)); line-height: 1.15; }
+  @media (max-width: 639px) { .close__word { font-size: calc((100vw - 2 * var(--gut)) / 6.95); } }
+
+  .eu-chk { display: flex; align-items: center; gap: 10px; margin-top: var(--s-4); font: 500 14px/1.3 var(--font-text); }
+  .eu-chk i { width: 18px; height: 18px; flex: none; border-radius: 5px; background: #2bff88; position: relative; }
+  .eu-chk i::after { content: ""; position: absolute; left: 6px; top: 2px; width: 4px; height: 9px; border: solid #121633; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .eu-mail__note { color: #5b617b; font-size: 14px; }
+
+  /* a desktop: every section's content runs down to the screen's foot, so no screen ends on an empty band.
+     Splits: the picture stretches to the foot and the words' last block sits on it; card rows: the panels grow. */
+  @media (min-width: 1024px) {
+    #minutes .wrap > .grid, #phone .wrap > .grid, #get .wrap > .grid { flex: 1 1 0; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+    #minutes .grid > .span-5, #phone .grid > .span-5, #get .grid > .span-5 { display: flex; flex-direction: column; }
+    #get .eu-req { margin-top: auto; padding-top: var(--s-6); }
+    /* the figures and the steps as one list down the rest of the column, a rule over each row */
+    #minutes .eu-stats, #phone .eu-steps { flex: 1 1 auto; margin-top: var(--s-6); display: grid; grid-auto-rows: minmax(0, 1fr); row-gap: 0; }
+    #minutes .eu-stats > div:nth-child(n) { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: var(--gutter);
+      align-items: baseline; align-content: center; border-top: 1px solid var(--line); }
+    #minutes .eu-stats > div:last-child { border-bottom: 1px solid var(--line); }
+    #minutes .eu-stats .t-stat { grid-column: 1 / span 2; }
+    #minutes .eu-stats .t-small { grid-column: 3 / span 3; font-size: 18px; color: var(--ink); }
+    #phone .eu-steps li { grid-template-columns: 48px 1fr; gap: var(--s-4); font-size: 20px; border-top: 1px solid var(--line); }
+    #phone .eu-steps li:last-child { border-bottom: 1px solid var(--line); }
+    #phone .eu-steps li::before { width: 48px; height: 48px; border-radius: 14px; font-size: 18px; }
+    .eu-get .form .field, .eu-get .form .btn-row { width: 100%; }
+    .eu-get .form input[type="email"] { width: 100%; max-width: none; height: 56px; font-size: 18px; }
+    .eu-win, .eu-phone-row, .eu-mail { align-self: stretch; }
+    .eu-win { display: flex; flex-direction: column; }
+    .eu-win__body { flex: 1 1 auto; }
+    .eu-win__main { display: flex; flex-direction: column; }
+    .eu-win__row { flex: 1 1 auto; padding-block: 10px; }
+    .eu-mail { display: grid; align-content: center; }
+    .eu-mail__body { gap: var(--s-5); font-size: 16px; }
+    #faq .faq__item > h3 { font-size: 22px; }
+    #faq .faq__item p { font-size: 18px; line-height: 1.6; }
+  }
+  @media (min-width: 1280px) {
+    #how .wrap > .grid, #rules .wrap > .grid, #faq .wrap > .faq { flex: 1 1 0; min-height: 0; }
+    #how .wrap > .grid, #rules .wrap > .grid { grid-template-rows: minmax(0, 1fr); }
+    #faq .wrap > .faq { grid-auto-rows: minmax(0, 1fr); }
+    #faq .faq > .faq__item { align-content: start; }
+    /* rules two by two: in each card the words on the left, its picture on the right, the card's full height */
+    #rules .wrap > .grid { grid-template-rows: repeat(2, minmax(0, 1fr)); }
+    #rules .grid > .card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto 1fr; column-gap: var(--gutter); align-content: stretch; }
+    #rules .card > h3 { grid-column: 1; grid-row: 1; }
+    #rules .card > p { grid-column: 1; grid-row: 2; align-self: start; min-height: 0; }
+    #rules .card > .panel { --p-h: 0px; grid-column: 2; grid-row: 1 / span 2; margin: 0; border-radius: var(--r-lg); }
+    #rules .eu-mini, #rules .eu-toast { left: 50%; right: auto; width: calc(100% - 48px); transform: translate(-50%, -50%); }
+    #how .eu-setup, #how .eu-signin, #rules .eu-mini, #rules .eu-toast { top: 50%; bottom: auto; transform: translateY(-50%); }
+    #rules .eu-mini, #rules .eu-toast { transform: translate(-50%, -50%); }
+    .eu-node { padding: 22px 26px; font-size: 20px; gap: var(--s-5); }
+    .eu-node small { font-size: 15px; }
+    .eu-ico { width: 52px; height: 52px; padding: 11px; border-radius: 14px; }
+    .eu-flow { gap: var(--s-8); }
+  }
+
+  /* a tablet: the footer's three columns on one row under the line, the questions and the email tighter */
+  @media (min-width: 640px) and (max-width: 1023px) {
+    .closing__links .grid > .span-6 { grid-column: 1 / -1; }
+    .closing__links .footer__col { grid-column: auto / span 4; }
+    #faq .faq > .faq__item { padding-block: var(--s-4); }
+    #faq .faq p { font-size: 16px; }
+    .eu-mail { padding: var(--s-5); }
+  }
+  /* a phone: the hero's pill runs from line to line */
+  @media (max-width: 639px) { .hero--centred .hero__c > .pill { justify-self: stretch; justify-content: center; } }
+  /* a stacked split keeps the section's gap between its words and its picture */
+  @media (max-width: 1023px) { .eu-win, .eu-phone-row, .eu-mail { margin-top: var(--s-7); } }
+  @media (max-width: 639px) {
+    .eu-win, .eu-phone-row, .eu-mail { margin-top: var(--s-6); }
+    #how .panel { --p-h: 236px; } #rules .panel { --p-h: 176px; }
+    #privacy .eu-flow { padding: var(--s-4); gap: var(--s-4); }
+  }
+  /* screens: stacked cards take two screens on a tablet */
+  @media (min-width: 640px) and (max-width: 1279px) { #how, #rules { --h: 2; } }
+</style>
+<script type="application/ld+json">{{{faq_jsonld}}}</script>
+</head>
+<body>
+<!-- type: software (a Windows app; parents install it, children use it)
+     deal: hero centred, nav nav-centre (nav-cards dealt first, no photographs for its cards), close close-word,
+     footer footer-statement, rhythm dark-band (one ground-inverse section: the phone), buttons pill,
+     mark arc (the client's own logo in its place), palette the client's own (navy #121633, green #2bff88),
+     ground sky (the client's blue, not dealt), type manrope (familjen dealt first, no Cyrillic)
+     moments: counter-rolls in #minutes (the minutes per exercise), liquid-type in #get (the line over the form) -->
+<header class="nav nav--centre">
+  <a class="skip-link" href="#top">{{skip}}</a>
+  <div class="wrap nav__bar">
+    <a class="nav__logo" href="#top"><img src="assets/img/logo.svg" alt="" width="28" height="28">Exercise Unlock</a>
+    <nav class="nav__links" aria-label="Main">
+      <div class="nav__item"><a class="nav__link" href="#how">{{nav_how}}</a></div>
+      <div class="nav__item"><a class="nav__link" href="#video">{{nav_video}}</a></div>
+      <div class="nav__item"><a class="nav__link" href="#phone">{{nav_phone}}</a></div>
+      <div class="nav__item"><a class="nav__link" href="#faq">{{nav_faq}}</a></div>
+    </nav>
+    <div class="nav__actions">
+      <a class="nav__link" href="?lang={{other_lang}}" hreflang="{{other_lang}}" lang="{{other_lang}}" title="{{other_lang_name}}">{{other_lang_label}}</a>
+      <a class="btn btn--primary" href="#get">{{cta}}</a>
+    </div>
+    <button class="nav__toggle" type="button" aria-expanded="false" aria-label="{{menu}}">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 5h14M2 13h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero hero--centred" id="hero" data-enter aria-labelledby="hero-h">
+    <div class="wrap"><div class="hero-text">
+      <div class="hero__c">
+        <a class="pill" href="#minutes"><span>{{hero_pill}}</span><span class="muted">{{hero_pill_more}}</span></a>
+        <h1 id="hero-h">{{hero_h1}}</h1>
+        <p class="hero__lead">{{hero_lead}}</p>
+        <div class="btn-row"><a class="btn btn--primary" href="#get">{{cta}}<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a><a class="btn btn--secondary" href="#video">{{hero_watch}}</a></div>
+      </div>
+      <div class="hero__window" role="img" aria-label="{{hero_window_alt}}" data-m-loop>
+        <div class="ly-piece eu-lock" aria-hidden="true">
+          <div class="eu-lock__kid"><img src="assets/img/kid-hoodie.webp" alt="" width="1024" height="1536" loading="lazy">
+            <span class="eu-tag eu-tag--green" style="left: -18%; top: 16%">+3 {{min}}</span>
+            <span class="eu-tag eu-tag--pink" style="right: -22%; top: 34%">+6 {{min}}</span>
+            <span class="eu-tag eu-tag--cyan" style="left: -12%; top: 56%">+5 {{min}}</span>
+          </div>
+          <div class="eu-tile">
+            <div class="eu-tile__fig">
+              {{{skeleton_squat}}}
+              <span class="eu-chip">+3 {{min}}</span>
+            </div>
+            <div>
+              <div class="eu-tile__head"><img src="assets/img/logo.svg" alt="" width="24" height="24" loading="lazy">Exercise Unlock<span class="eu-tile__time">16:42 · {{lock_day}}</span></div>
+              <dl class="eu-rows">
+                <div><dt>{{ex_squats}}</dt><dd><span class="eu-num"><span class="eu-was">6</span><span class="eu-now">7</span></span></dd></div>
+                <div><dt>{{ex_pushups}}</dt><dd>2</dd></div>
+                <div><dt>{{ex_situps}}</dt><dd>0</dd></div>
+              </dl>
+              <div class="eu-bar"><i></i></div>
+              <div class="eu-earned"><span>{{lock_earned}} <span class="eu-num"><span class="eu-was">24:00</span><span class="eu-now">27:00</span></span> / 10:00</span><b>{{lock_ready}}</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <section class="section" id="how" style="--hm: 2" aria-labelledby="how-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="how-h">{{how_h2}}</h2>
+        <p>{{how_lead}}</p>
+      </div>
+      <div class="grid">
+        <article class="card card--row card--open span-4">
+          <span class="step-num">1</span>
+          <h3>{{how1_t}}</h3>
+          <p>{{how1_d}}</p>
+          <div class="panel" role="img" aria-label="{{how1_alt}}">
+            <div class="ui eu-setup" aria-hidden="true">
+              <p>{{how1_ui_title}}</p>
+              <ul><li>Mama <span>{{how1_ui_admin}}, {{how1_ui_you}}</span></li><li class="is-on">Oleh</li><li>Marta</li></ul>
+              <span class="eu-lbl">{{how1_ui_pwd}}</span>
+              <div class="eu-pwd"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="eu-chk"><i></i>{{how1_ui_std}}</div>
+            </div>
+          </div>
+        </article>
+        <article class="card card--row card--open span-4">
+          <span class="step-num">2</span>
+          <h3>{{how2_t}}</h3>
+          <p>{{how2_d}}</p>
+          <div class="panel">
+            <div class="eu-kid">
+              <div class="eu-kid__box">
+                <img src="assets/img/kid-polo.webp" alt="{{how2_alt}}" width="1024" height="1536" loading="lazy">
+                {{{skeleton_polo}}}
+              </div>
+            </div>
+            <span class="eu-tag eu-tag--yellow">{{how2_tag}}</span>
+          </div>
+        </article>
+        <article class="card card--row card--open span-4">
+          <span class="step-num">3</span>
+          <h3>{{how3_t}}</h3>
+          <p>{{how3_d}}</p>
+          <div class="panel" role="img" aria-label="{{how3_alt}}">
+            <div class="ui eu-signin" aria-hidden="true">
+              <div class="eu-signin__who"><span class="eu-signin__ava">O</span><b>Oleh</b></div>
+              <div class="eu-signin__row"><span>{{lock_earned}}</span><b>10:00 / 10:00</b></div>
+              <div class="eu-bar"><i style="transform: none"></i></div>
+              <span class="eu-signin__btn">{{how3_ui_signin}}</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="video" aria-labelledby="video-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="video-h">{{video_h2}}</h2>
+        <p>{{video_lead}}</p>
+      </div>
+      <!-- the client's video, https://youtu.be/XXeh8Tjf5eI: YouTube (youtube-nocookie) loads only on a click -->
+      <div class="eu-video fill" data-video="XXeh8Tjf5eI" data-video-title="{{video_title}}">
+        <img src="assets/img/kid-shoes.webp" alt="" width="1312" height="1199" loading="lazy">
+        <div class="eu-video__go">
+          <p>{{video_note}}</p>
+          <button class="btn btn--primary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5v17l14-8.5z"/></svg>{{video_play}}</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="minutes" aria-labelledby="minutes-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5">
+          <div class="section-head"><h2 id="minutes-h">{{minutes_h2}}</h2>
+          <p>{{minutes_lead}}</p></div>
+          <div class="eu-stats" data-moment="counter-rolls">
+            <div><p class="t-stat">3 {{min}}</p><p class="t-small muted">{{stat1}}</p></div>
+            <div><p class="t-stat">5 {{min}}</p><p class="t-small muted">{{stat2}}</p></div>
+            <div><p class="t-stat">6 {{min}}</p><p class="t-small muted">{{stat3}}</p></div>
+            <div><p class="t-stat">60 {{min}}</p><p class="t-small muted">{{stat4}}</p></div>
+          </div>
+        </div>
+        <div class="ui eu-win span-7 start-6" role="img" aria-label="{{set_alt}}">
+          <div class="eu-win__bar" aria-hidden="true"><img src="assets/img/logo.svg" alt="" width="24" height="24" loading="lazy">Exercise Unlock</div>
+          <div class="eu-win__body" aria-hidden="true">
+            <div class="eu-win__side"><span class="is-on">{{set_side}}</span><span>{{set_schedule}}</span><span>{{set_users}}</span><span>{{ex_squats}}</span></div>
+            <div class="eu-win__main">
+              <div class="eu-win__scope">{{set_for}}<span>Oleh</span></div>
+              <div class="eu-win__row">{{set_r1}}<b class="is-edit">120</b></div>
+              <div class="eu-win__row">{{set_r2}}<b class="is-all">360</b></div>
+              <div class="eu-win__row">{{set_r3}}<b class="is-all">300</b></div>
+              <div class="eu-win__row">{{set_r4}}<b class="is-all">600</b></div>
+              <div class="eu-win__row">{{set_r5}}<b class="is-all">3600</b></div>
+              <div class="eu-win__row">{{set_r6}}<b class="is-all">300</b></div>
+              <div class="eu-win__row">{{set_r7}}<b class="is-all">60</b></div>
+              <div class="eu-win__foot"><span>{{set_save}}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="rules" style="--hm: 2" aria-labelledby="rules-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="rules-h">{{rules_h2}}</h2>
+        <p>{{rules_lead}}</p>
+      </div>
+      <div class="grid">
+        <article class="card card--row card--open span-6">
+          <h3>{{r1_t}}</h3>
+          <p>{{r1_d}}</p>
+          <div class="panel" role="img" aria-label="{{r1_alt}}"><div class="ui eu-mini" aria-hidden="true"><div>{{r1_wd}}<b>07:00–20:00</b></div><div>{{r1_we}}<b>08:00–21:00</b></div></div></div>
+        </article>
+        <article class="card card--row card--open span-6">
+          <h3>{{r2_t}}</h3>
+          <p>{{r2_d}}</p>
+          <div class="panel" role="img" aria-label="{{r2_toast}}"><div class="ui eu-toast" aria-hidden="true"><i>!</i><p><small>Exercise Unlock</small>{{r2_toast}}</p></div></div>
+        </article>
+        <article class="card card--row card--open span-6">
+          <h3>{{r3_t}}</h3>
+          <p>{{r3_d}}</p>
+          <div class="panel" role="img" aria-label="{{r3_alt}}"><div class="ui eu-mini" aria-hidden="true"><div>{{r3_a}}<span class="no">{{r3_a_v}}</span></div><div>{{r3_b}}<span class="no">{{r3_b_v}}</span></div><div>{{r3_c}}<span class="no">{{r3_c_v}}</span></div></div></div>
+        </article>
+        <article class="card card--row card--open span-6">
+          <h3>{{r4_t}}</h3>
+          <p>{{r4_d}}</p>
+          <div class="panel" role="img" aria-label="{{r4_alt}}"><div class="ui eu-mini" aria-hidden="true"><div>{{r4_a}}{{{wave_a}}}</div><div>{{r4_b}}{{{wave_b}}}</div><div>{{r4_c}}{{{wave_c}}}</div></div></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section ground-inverse" id="phone" aria-labelledby="phone-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5">
+          <div class="section-head"><h2 id="phone-h">{{phone_h2}}</h2>
+          <p>{{phone_lead}}</p></div>
+          <ol class="eu-steps"><li>{{phone_s1}}</li><li>{{phone_s2}}</li><li>{{phone_s3}}</li></ol>
+        </div>
+        <div class="ui eu-phone-row span-7 start-6" role="img" aria-label="{{phone_alt}}">
+          <div class="eu-qr" aria-hidden="true">{{{qr_svg}}}</div>
+          <div class="eu-ph" aria-hidden="true">
+            <span class="eu-ph__banner">{{phone_banner}}</span>
+            {{{skeleton_phone}}}
+            <div class="eu-ph__count"><b>6</b>{{ex_squats}}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="privacy" aria-labelledby="privacy-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="privacy-h">{{privacy_h2}}</h2>
+        <p>{{privacy_lead}}</p>
+      </div>
+      <div class="ui eu-flow fill" role="img" aria-label="{{privacy_alt}}">
+        <div class="eu-lane eu-lane--cam" aria-hidden="true">
+          <div class="eu-node"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="M16 10.5 21 8v8l-5-2.5"/></svg><div>{{dg_cam}}<small>{{dg_cam_note}}</small></div></div>
+          <div class="eu-arrow"><span>{{dg_frames}}</span><svg viewBox="0 0 120 12" preserveAspectRatio="none"><path d="M2 6h114M110 1l6 5-6 5"/></svg></div>
+          <div class="eu-node eu-node--pc"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></svg><div>{{dg_pc}}<small>{{dg_pc_note}}</small></div></div>
+        </div>
+        <div class="eu-lane" aria-hidden="true">
+          <div class="eu-node"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><div>{{dg_phone}}<small>{{dg_phone_note}}</small></div></div>
+          <div class="eu-arrow"><span class="eu-tag eu-tag--yellow">{{dg_no_video}}</span><svg viewBox="0 0 120 12"><path d="M2 6h114M110 1l6 5-6 5"/></svg><span>{{dg_points}}</span></div>
+          <div class="eu-node"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01"/></svg><div>{{dg_relay}}<small>{{dg_relay_note}}</small></div></div>
+          <div class="eu-arrow"><span>{{dg_points}}</span><svg viewBox="0 0 120 12"><path d="M2 6h114M110 1l6 5-6 5"/></svg></div>
+          <div class="eu-node eu-node--pc"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></svg><div>{{dg_pc}}<small>{{dg_pc_note}}</small></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq" style="--hm: 2" aria-labelledby="faq-h">
+    <div class="wrap">
+      <div class="section-head"><h2 id="faq-h">{{faq_h2}}</h2></div>
+      <div class="faq">
+{{{faq_items}}}
+      </div>
+    </div>
+  </section>
+
+  <section class="section g2m" id="get" aria-labelledby="get-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5 eu-get">
+          <div class="section-head" data-moment="liquid-type"><h2 class="mo-lt__type" id="get-h">{{get_h2}}</h2>
+          <p>{{get_lead}}</p></div>
+          <!--form-state-->
+          <form class="form" action="./#get" method="post" data-endpoint="/landing/" data-sent="{{form_sent}}" data-failed="{{form_failed}}" data-sending="{{form_sending}}" data-fix="{{form_fix}}" novalidate>
+            <div class="field field--full"><label for="f-email">{{form_label}}</label>
+              <input id="f-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" required maxlength="254" aria-describedby="f-email-err">
+              <p class="field__error" id="f-email-err" hidden>{{form_error}}</p></div>
+            <input type="hidden" name="lang" value="{{lang}}">
+            <div class="eu-hp" aria-hidden="true"><label>Website <input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
+            <div class="btn-row"><button class="btn btn--primary" type="submit">{{cta}}</button></div>
+            <p class="form__status" role="status" data-form-status></p>
+          </form>
+          <p class="t-small muted eu-req">{{req1}} · {{req2}} · {{req3}}. {{form_note}}</p>
+        </div>
+        <div class="ui eu-mail span-7 start-6" role="img" aria-label="{{mail_alt}}">
+          <div class="eu-mail__card" aria-hidden="true">
+            <div class="eu-mail__head"><img src="assets/img/logo.svg" alt="" width="24" height="24" loading="lazy"><div><b>Exercise Unlock</b><span>{{mail_subject}}</span></div><span>{{mail_now}}</span></div>
+            <div class="eu-mail__body">
+              <p>{{mail_hello}}</p>
+              <p>{{mail_hi}}</p>
+              <div class="eu-mail__link"><span>exercise-unlock.sdv291.com/landing/download.php?t=Q7fK2mXw9LpR4tVb8NcY1d</span></div>
+              <span class="eu-mail__btn">{{dl_button}}</span>
+              <p class="eu-mail__note">{{mail_note}}</p>
+              <div class="eu-mail__chips"><span class="eu-tag eu-tag--green" style="position: static">{{mail_only}}</span><span class="eu-tag eu-tag--yellow" style="position: static">{{mail_days}}</span><span class="eu-tag eu-tag--cyan" style="position: static">{{mail_left}}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer closing footer--statement g2m" id="contact" aria-labelledby="close-h">
+  <div class="wrap">
+    <div class="closing__cta close--word">
+      <div class="section-head--split">
+        <div><h2 id="close-h">{{close_h2}}</h2><p class="t-lead">{{close_lead}}</p></div>
+        <a class="btn btn--primary" href="#get">{{cta}}<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a>
+      </div>
+      <p class="close__word" aria-hidden="true">Exercise Unlock</p>
+    </div>
+    <div class="closing__links">
+      <div class="grid">
+        <div class="span-6 stack-4">
+          <a class="nav__logo" href="#top"><img src="assets/img/logo.svg" alt="" width="28" height="28">Exercise Unlock</a>
+          <p class="footer__lede">{{foot_lede}}</p>
+        </div>
+        <div class="span-2 footer__col"><h3>{{foot_product}}</h3><ul><li><a href="#how">{{nav_how}}</a></li><li><a href="#minutes">{{foot_minutes}}</a></li><li><a href="#phone">{{nav_phone}}</a></li></ul></div>
+        <div class="span-2 footer__col"><h3>{{foot_help}}</h3><ul><li><a href="#faq">{{nav_faq}}</a></li><li><a href="#privacy">{{foot_privacy}}</a></li><li><a href="https://github.com/sdv291/exercise-unlock">{{foot_source}}</a></li></ul></div>
+        <div class="span-2 footer__col"><h3>{{foot_lang}}</h3><ul><li><a href="?lang=uk" hreflang="uk" lang="uk">Українська</a></li><li><a href="?lang=en" hreflang="en" lang="en">English</a></li></ul></div>
+      </div>
+      <div class="footer__legal">
+        <span>&copy; 2026 Exercise Unlock</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<nav class="actionbar" aria-label="{{quick}}">
+  <a class="btn btn--primary" href="#get">{{cta}}</a>
+</nav>
+
+<script type="module" src="assets/system.js"></script>
+<script type="module" src="assets/motion/motion.js"></script>
+<script type="module" src="assets/layout/layout.js"></script>
+<script>
+  // the form: when the server says why it sent nothing (a wrong address, a link sent a moment ago, too many tries),
+  // its words take the place of the general "not sent" line
+  (() => {
+    const form = document.querySelector('form[data-endpoint]');
+    const status = form && form.querySelector('[data-form-status]');
+    if (!status || !window.fetch) return;
+    let why = '';
+    const show = () => { if (why && status.textContent.trim() === form.dataset.failed) status.textContent = why; };
+    new MutationObserver(show).observe(status, { childList: true, characterData: true, subtree: true });
+    form.addEventListener('submit', () => { why = ''; }, true);
+    const send = window.fetch;
+    window.fetch = function (input) {
+      const answer = send.apply(this, arguments);
+      if (String(input) === form.dataset.endpoint) {
+        answer.then(r => { if (!r.ok) r.clone().json().then(j => { why = (j && j.message) || ''; show(); }).catch(() => {}); }, () => {});
+      }
+      return answer;
+    };
+  })();
+</script>
+<script>
+  // the video: the still until a click, then the YouTube player (youtube-nocookie) in the same frame
+  document.querySelectorAll('[data-video]').forEach(box => {
+    box.querySelector('button').addEventListener('click', () => {
+      const f = document.createElement('iframe');
+      f.src = 'https://www.youtube-nocookie.com/embed/' + box.dataset.video + '?autoplay=1&rel=0';
+      f.title = box.dataset.videoTitle;
+      f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+      f.allowFullscreen = true;
+      box.replaceChildren(f);
+      f.focus();
+    });
+  });
+</script>
+</body>
+</html>

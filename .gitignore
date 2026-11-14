@@ -44,3 +44,6 @@ installer/out/
 
 # Relay server dependencies (npm install / Docker build)
 relay/node_modules/
+
+# Landing: the design checker's Chrome profile, shots and reports
+landing/.taste-skill/

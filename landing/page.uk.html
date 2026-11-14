@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="uk" data-type="software" data-radius="round" data-buttons="pill" data-ground="sky" data-motion>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Exercise Unlock: діти відкривають Windows вправами</title>
+<meta name="description" content="Застосунок для Windows 10 і 11: присідання, віджимання й прес перед вебкамерою або телефоном дають дитині хвилини за комп'ютером.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Exercise Unlock: діти відкривають Windows вправами">
+<meta property="og:description" content="Застосунок для Windows 10 і 11: присідання, віджимання й прес перед вебкамерою або телефоном дають дитині хвилини за комп'ютером.">
+<meta property="og:image" content="https://exercise-unlock.sdv291.com/landing/share.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+<meta name="theme-color" content="#121633">
+<link rel="canonical" href="https://exercise-unlock.sdv291.com/landing/?lang=uk">
+<link rel="alternate" hreflang="uk" href="https://exercise-unlock.sdv291.com/landing/?lang=uk">
+<link rel="alternate" hreflang="en" href="https://exercise-unlock.sdv291.com/landing/?lang=en">
+<meta name="site-kind" content="software">
+<meta name="page-type" content="software">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..700&family=JetBrains+Mono:wght@400..500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/system.css">
+<link rel="stylesheet" href="assets/ui/cards.css">
+<link rel="stylesheet" href="assets/motion/motion.css">
+<link rel="stylesheet" href="assets/backgrounds/backgrounds.css">
+<link rel="stylesheet" href="assets/layout/layout.css">
+<style>
+:root {
+  --p-bg: #121633; --p-surface: #1b2050; --p-ink: #eef0ff; --p-muted: #a7add8;
+  --p-accent: #2bff88; --p-accent-ink: #121633; --p-action: #2bff88; --p-action-ink: #121633;
+  --p-inv-bg: #eef0ff; --p-inv-surface: #dcdfef; --p-inv-ink: #121633; --p-inv-muted: #5b617b;
+  --p-inv-accent: #121633; --p-inv-accent-ink: #eef0ff; --p-inv-action: #121633; --p-inv-action-ink: #eef0ff;
+  --font-display: "Manrope", system-ui, sans-serif;
+  --font-text: "Manrope", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --display-weight: 500;
+  --display-tracking: -0.035em;
+  --display-tracking-xl: -0.045em;
+  --ly-scale: 0.97;
+}
+</style>
+<script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
+<script>document.documentElement.classList.add('mo-js');setTimeout(()=>document.documentElement.classList.add('mo-safe'),2500)</script>
+<link rel="modulepreload" href="assets/moments/moments.js">
+<link rel="modulepreload" href="assets/moments/lib.js">
+<link rel="modulepreload" href="assets/moments/counter-rolls/moment.js">
+<link rel="modulepreload" href="assets/moments/liquid-type/moment.js">
+<!-- page CSS: what sits inside the visuals (the lock screen, the boy and his skeleton, the video frame, the settings
+     window, the phone, the diagram, the email), one --p-h per card group, the sections' screen counts at tablet
+     width and the closing name's size. The brand's own colours inside the visuals: green #2bff88, pink #ff2e88,
+     cyan #15abcf, yellow #ffc21c, always with navy #121633 words on them. -->
+<style>
+  .nav__logo img { width: 28px; height: 28px; border-radius: 8px; }
+
+  /* hero: the Windows lock screen with the Exercise Unlock tile; one CSS loop (a squat, the count, +3 min) */
+  #hero .hero__window { background: radial-gradient(120% 140% at 80% 0%, #2a62c9 0%, #1b3a8a 38%, #121a4a 72%, #0e1238 100%); }
+  .eu-lock { color: #fff; display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: var(--s-8); align-items: start; }
+  .eu-lock__kid { position: relative; grid-column: 2; grid-row: 1; height: 330px; margin-top: calc(-1 * var(--s-3)); }
+  .eu-lock__kid img { display: block; height: 100%; width: auto; margin-inline: auto; }
+  .eu-lock .eu-tile { grid-column: 1; grid-row: 1; }
+  [data-m-loop] .eu-lock__kid .eu-tag { animation: eu-float var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .eu-lock__kid .eu-tag:nth-of-type(2) { animation-name: eu-float2; }
+  @keyframes eu-float  { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @keyframes eu-float2 { 0%, 100% { transform: translateY(-4px); } 50% { transform: translateY(3px); } }
+  .eu-tile__time { margin-left: auto; font: 500 14px/1 var(--font-text); opacity: .78; }
+  .eu-tile { display: grid; grid-template-columns: 132px 1fr; gap: var(--s-5); align-items: center; padding: var(--s-5);
+    border-radius: 20px; background: rgba(13, 17, 52, .72); border: 1px solid rgba(255, 255, 255, .14); }
+  .eu-tile__fig { position: relative; height: 196px; }
+  .eu-tile__fig svg { width: 100%; height: 100%; overflow: visible; }
+  .eu-tile__head { display: flex; align-items: center; gap: var(--s-2); font: 600 15px/1 var(--font-text); margin-bottom: var(--s-4); }
+  .eu-tile__head img { width: 24px; height: 24px; border-radius: 6px; }
+  .eu-rows { display: grid; gap: var(--s-2); margin: 0 0 var(--s-4); }
+  .eu-rows > div { display: flex; justify-content: space-between; font: 500 15px/1.3 var(--font-text); }
+  .eu-rows dt { opacity: .78; }
+  .eu-rows dd { margin: 0; font-family: var(--font-mono); min-width: 2ch; text-align: right; }
+  .eu-bar { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .14); overflow: hidden; }
+  .eu-bar i { display: block; height: 100%; width: 100%; background: #2bff88; transform-origin: left; transform: scaleX(.9); }
+  .eu-earned { display: flex; justify-content: space-between; gap: var(--s-3); margin-top: var(--s-2); font: 500 14px/1.3 var(--font-text); }
+  .eu-earned b { color: #2bff88; font-weight: 600; }
+  .eu-num { display: inline-grid; }
+  .eu-num > span { grid-area: 1 / 1; }
+  .eu-chip { position: absolute; right: -6px; top: 18px; padding: 4px 10px; border-radius: 99px; background: #ffc21c; color: #121633;
+    font: 700 14px/1.2 var(--font-text); }
+  .sk line, .sk circle.sk-head { stroke: #2bff88; stroke-width: 5; stroke-linecap: round; fill: none; }
+  .sk circle { fill: #fff; }
+  .sk g { transform-box: view-box; }
+  /* the squat: the shin turns at the ankle, the thigh at the knee, the torso at the hip, the arms at the shoulder */
+  [data-m-loop] .sk-shin { transform-origin: 80px 205px; animation: sk-shin var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .sk-thigh { transform-origin: 80px 150px; animation: sk-thigh var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .sk-torso { transform-origin: 80px 95px; animation: sk-torso var(--m-cycle) ease-in-out infinite; }
+  [data-m-loop] .sk-arm { transform-origin: 80px 40px; animation: sk-arm var(--m-cycle) ease-in-out infinite; }
+  @keyframes sk-shin  { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(35deg); } 76%, 100% { transform: rotate(0); } }
+  @keyframes sk-thigh { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(-110deg); } 76%, 100% { transform: rotate(0); } }
+  @keyframes sk-torso { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(115deg); } 76%, 100% { transform: rotate(0); } }
+  @keyframes sk-arm   { 0%, 8% { transform: rotate(0); } 34%, 50% { transform: rotate(-130deg); } 76%, 100% { transform: rotate(0); } }
+  /* the count turns over as he stands up: 6 to 7, 24:00 to 27:00, the bar fills a step, +3 min shows */
+  [data-m-loop] .eu-was { animation: eu-was var(--m-cycle) linear infinite; }
+  [data-m-loop] .eu-now { animation: eu-now var(--m-cycle) linear infinite; }
+  [data-m-loop] .eu-chip { animation: eu-chip var(--m-cycle) cubic-bezier(.22, 1, .36, 1) infinite; }
+  [data-m-loop] .eu-bar i { animation: eu-bar var(--m-cycle) cubic-bezier(.22, 1, .36, 1) infinite; }
+  @keyframes eu-was  { 0%, 76% { opacity: 1; } 80%, 100% { opacity: 0; } }
+  @keyframes eu-now  { 0%, 76% { opacity: 0; } 80%, 100% { opacity: 1; } }
+  @keyframes eu-chip { 0%, 76% { opacity: 0; transform: translateY(8px); } 82%, 100% { opacity: 1; transform: translateY(0); } }
+  @keyframes eu-bar  { 0%, 76% { transform: scaleX(.8); } 84%, 100% { transform: scaleX(.9); } }
+  #hero [data-m-loop] { --m-still: .97; }
+  /* without the loop the finished picture: 7 squats, 27:00, +3 min */
+  .eu-was { opacity: 0; } .eu-now { opacity: 1; }
+  @media (max-width: 1023px) { .eu-lock { grid-template-columns: minmax(0, 1fr) 150px; gap: var(--s-6); } .eu-lock__kid { height: 250px; } }
+  @media (max-width: 639px) {
+    .eu-lock { grid-template-columns: 1fr; } .eu-lock__kid { display: none; }
+    .eu-tile { grid-template-columns: 92px 1fr; gap: var(--s-4); padding: var(--s-4); }
+    .eu-tile__fig { height: 150px; }
+    .eu-rows { margin-bottom: var(--s-3); }
+    .eu-rows > div:nth-child(3) { display: none; }
+  }
+
+  /* the steps: one picture per card on the sky ground */
+  #how .panel { --p-h: 320px; }
+  .eu-setup { position: absolute; inset: var(--s-5) var(--s-5) auto; padding: var(--s-4); border-radius: 16px; background: var(--bg); color: var(--ink); }
+  .eu-setup p { margin: 0 0 var(--s-3); font: 600 15px/1.3 var(--font-text); }
+  .eu-setup ul { list-style: none; margin: 0 0 var(--s-4); padding: 0; display: grid; gap: 6px; }
+  .eu-setup li { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 10px; font: 500 14px/1.2 var(--font-text); background: var(--surface); }
+  .eu-setup li.is-on { box-shadow: inset 0 0 0 2px #2bff88; }
+  .eu-setup li span { color: var(--muted); }
+  .eu-setup .eu-lbl { display: block; font: 500 13px/1.2 var(--font-text); color: var(--muted); margin-bottom: 6px; }
+  .eu-setup .eu-pwd { height: 36px; border-radius: 10px; border: 1px solid var(--line); display: flex; align-items: center; gap: 6px; padding: 0 12px; }
+  .eu-setup .eu-pwd i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
+  .eu-kid { position: absolute; inset: var(--s-4) 0 0; display: grid; justify-items: center; }
+  .eu-kid__box { position: relative; height: 100%; aspect-ratio: 2 / 3; }
+  .eu-kid__box img, .eu-kid__box svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .eu-kid__box svg line { stroke: #2bff88; stroke-width: 12; stroke-linecap: round; }
+  .eu-kid__box svg circle { fill: #fff; stroke: #121633; stroke-width: 4; }
+  .eu-tag { position: absolute; padding: 4px 10px; border-radius: 99px; font: 700 14px/1.2 var(--font-text); white-space: nowrap; color: #121633; }
+  .eu-tag--yellow { background: #ffc21c; } .eu-tag--green { background: #2bff88; } .eu-tag--pink { background: #ff2e88; } .eu-tag--cyan { background: #15abcf; }
+  #how .panel > .eu-tag--yellow { left: var(--s-5); top: var(--s-5); z-index: 2; }
+  .eu-signin { position: absolute; inset: var(--s-5) var(--s-5) auto; padding: var(--s-5); border-radius: 18px; background: rgba(13, 17, 52, .92); color: #fff; display: grid; gap: var(--s-3); }
+  .eu-signin__who { display: flex; align-items: center; gap: var(--s-3); font: 600 17px/1.2 var(--font-text); }
+  .eu-signin__ava { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: #ffc21c; color: #121633; font: 700 18px/1 var(--font-text); }
+  .eu-signin__row { display: flex; justify-content: space-between; font: 500 14px/1.3 var(--font-text); }
+  .eu-signin__row span { opacity: .78; } .eu-signin__row b { font: 500 14px/1.3 var(--font-mono); color: #2bff88; }
+  .eu-signin__btn { justify-self: stretch; text-align: center; margin-top: var(--s-2); padding: 10px 16px; border-radius: 10px; background: #2bff88; color: #121633; font: 700 15px/1.2 var(--font-text); }
+
+  /* the video: a still of the boy until play, then the YouTube player (16:9) in the same frame */
+  .eu-video { position: relative; border-radius: var(--r-lg); overflow: hidden; container-type: size; min-height: 300px;
+    background: radial-gradient(110% 130% at 85% 10%, #2a62c9 0%, #1b2a7a 45%, #0e1238 100%); }
+  .eu-video > img { position: absolute; right: 5%; bottom: 0; height: 90%; width: auto; max-width: 60%; object-fit: contain; object-position: bottom right; }
+  .eu-video__go { position: absolute; left: var(--s-6); bottom: var(--s-6); display: grid; gap: var(--s-4); justify-items: start; width: min(360px, 40%);
+    padding: var(--s-5); border-radius: 20px; background: rgba(13, 17, 52, .78); border: 1px solid rgba(255, 255, 255, .14); color: #fff; }
+  .eu-video__go p { margin: 0; font: 500 16px/1.4 var(--font-text); }
+  .eu-video__go .btn svg { width: 14px; height: 14px; fill: currentColor; }
+  .eu-video iframe { position: absolute; inset: 0; margin: auto; border: 0; width: min(100cqw, 100cqh * 16 / 9); height: min(100cqh, 100cqw * 9 / 16); }
+  @media (max-width: 639px) {
+    .eu-video { min-height: 420px; }
+    .eu-video > img { right: 4%; top: var(--s-4); bottom: auto; height: 50%; max-width: 80%; object-position: top right; }
+    .eu-video__go { left: var(--s-4); right: var(--s-4); bottom: var(--s-4); width: auto; padding: var(--s-4); }
+    .eu-video__go .btn { width: 100%; }
+  }
+
+  /* minutes: the figures beside the settings window */
+  /* the figures on the page's own columns: inside span-5 the second starts on column 3, on a tablet on column 7, on a phone on the half */
+  .eu-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s-6) var(--gutter); }
+  .eu-stats > :nth-child(odd) { grid-column: 1 / span 2; } .eu-stats > :nth-child(even) { grid-column: 3 / span 3; }
+  @media (min-width: 640px) and (max-width: 1023px) { .eu-stats { grid-template-columns: repeat(12, minmax(0, 1fr)); } .eu-stats > :nth-child(odd) { grid-column: 1 / span 6; } .eu-stats > :nth-child(even) { grid-column: 7 / span 6; } }
+  @media (max-width: 639px) { .eu-stats { grid-template-columns: 1fr 1fr; } .eu-stats > :nth-child(n) { grid-column: auto; } }
+  .eu-stats > div { display: grid; gap: var(--s-2); align-content: start; }
+  .eu-stats .t-stat, .eu-stats p { margin: 0; }
+  .eu-win { border-radius: var(--r-lg); background: #f4f5fb; color: #1f2547; overflow: hidden; align-self: start; }
+  .eu-win__bar { display: flex; align-items: center; gap: var(--s-2); padding: 12px 16px; background: #e6e8f3; font: 600 14px/1 var(--font-text); }
+  .eu-win__bar img { width: 20px; height: 20px; border-radius: 5px; }
+  .eu-win__body { display: grid; grid-template-columns: 170px 1fr; }
+  .eu-win__side { padding: var(--s-4); display: grid; gap: 6px; align-content: start; border-right: 1px solid #dfe2ef; font: 500 14px/1.2 var(--font-text); }
+  .eu-win__side span { padding: 8px 10px; border-radius: 8px; color: #5b617b; }
+  .eu-win__side span.is-on { background: #fff; color: #1f2547; box-shadow: inset 3px 0 0 #3c6edc; }
+  .eu-win__main { padding: var(--s-5) var(--s-6); }
+  .eu-win__row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: 18px 0; border-bottom: 1px solid #e3e6f1; font: 500 15px/1.3 var(--font-text); }
+  .eu-win__row b { min-width: 86px; padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #cfd4e6; text-align: center; font: 500 15px/1.2 var(--font-mono); }
+  .eu-win__row b.is-edit { border-color: #13b85a; box-shadow: 0 0 0 3px rgba(43, 255, 136, .45); }
+  .eu-win__scope { display: flex; justify-content: flex-end; align-items: center; gap: var(--s-3); padding-bottom: var(--s-2); font: 500 14px/1.2 var(--font-text); color: #5b617b; }
+  .eu-win__scope span { min-width: 150px; padding: 7px 12px; border-radius: 8px; background: #fff; border: 1px solid #cfd4e6; color: #1f2547; font-weight: 600; }
+  .eu-win__scope span::after { content: ""; float: right; margin-top: 4px; border: 5px solid transparent; border-top-color: #5b617b; }
+  .eu-win__row b.is-all { color: #8a90ad; }
+  .eu-win__foot { display: flex; justify-content: flex-end; padding-top: var(--s-5); }
+  .eu-win__foot span { padding: 8px 18px; border-radius: 8px; background: #3c6edc; color: #fff; font: 600 14px/1.2 var(--font-text); }
+  @media (max-width: 639px) {
+    .eu-win__body { grid-template-columns: 1fr; } .eu-win__side { display: none; } .eu-win__main { padding: var(--s-2) var(--s-4) var(--s-4); }
+    .eu-win__row { padding: 10px 0; font-size: 14px; } .eu-win__row:nth-child(n+4), .eu-win__foot { display: none; }
+    .eu-win__scope { justify-content: flex-start; padding-top: var(--s-2); }
+  }
+
+  /* rules: four cards with a small picture each */
+  #rules .panel { --p-h: 264px; }
+  .eu-mini { position: absolute; inset: var(--s-5) var(--s-5) auto; display: grid; gap: 8px; }
+  .eu-mini > div { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); padding: 10px 12px; border-radius: 12px;
+    background: var(--bg); color: var(--ink); font: 500 14px/1.25 var(--font-text); }
+  .eu-mini b { font: 500 14px/1 var(--font-mono); }
+  .eu-mini .no { color: #ff7ba8; }
+  .eu-toast { position: absolute; inset: auto var(--s-5) var(--s-5); padding: 12px 14px; border-radius: 14px; background: #f4f5fb; color: #1f2547;
+    display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; font: 500 14px/1.35 var(--font-text); }
+  .eu-toast i { width: 22px; height: 22px; border-radius: 50%; background: #ffc21c; display: grid; place-items: center; font: 700 14px/1 var(--font-text); font-style: normal; color: #121633; }
+  .eu-toast p { margin: 0; }
+  .eu-toast small { display: block; color: #5b617b; font-size: 13px; margin-bottom: 2px; }
+  .eu-wave { display: flex; gap: 3px; align-items: center; height: 18px; flex: none; }
+  .eu-wave i { width: 3px; border-radius: 2px; background: #2bff88; }
+
+  /* phone: the tile's QR code and the phone page side by side */
+  .eu-phone-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-6); align-items: center; padding: var(--s-6); align-self: start;
+    border-radius: var(--r-lg); background: radial-gradient(120% 140% at 80% 0%, #2a62c9 0%, #1b3a8a 40%, #121a4a 100%); }
+  .eu-qr { justify-self: center; display: grid; padding: var(--s-5); border-radius: 20px;
+    background: rgba(13, 17, 52, .72); border: 1px solid rgba(255, 255, 255, .14); }
+  .eu-qr svg { width: 184px; height: 184px; background: #fff; border-radius: 10px; padding: 10px; }
+  .eu-ph { justify-self: center; width: 240px; aspect-ratio: 9 / 18.5; border-radius: 34px; background: #0b0e22; border: 6px solid #2a3060; position: relative; overflow: hidden; }
+  .eu-ph__banner { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); white-space: nowrap; padding: 6px 12px; border-radius: 99px;
+    background: #2bff88; color: #121633; font: 700 12px/1.2 var(--font-text); }
+  .eu-ph svg { position: absolute; left: 14%; top: 18%; width: 72%; height: 56%; overflow: visible; }
+  .eu-ph__count { position: absolute; left: 12px; right: 12px; bottom: 14px; padding: 10px 12px; border-radius: 14px; background: #1b2050; color: #fff;
+    display: flex; align-items: baseline; gap: 8px; font: 500 13px/1.2 var(--font-text); }
+  .eu-ph__count b { font: 600 26px/1 var(--font-display); color: #2bff88; }
+  .eu-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-4); counter-reset: s; }
+  .eu-steps li { display: grid; grid-template-columns: 36px 1fr; gap: var(--s-3); align-items: center; counter-increment: s; }
+  .eu-steps li::before { content: counter(s); width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--ink); color: var(--bg); font-weight: 600; }
+  @media (max-width: 639px) {
+    .eu-steps { gap: var(--s-2); }
+    .eu-phone-row { padding: var(--s-4); gap: var(--s-3); }
+    .eu-qr { padding: var(--s-3); } .eu-qr svg { width: 112px; height: 112px; padding: 6px; }
+    .eu-ph { width: 116px; border-radius: 22px; border-width: 4px; } .eu-ph__banner { top: 12px; font-size: 10px; padding: 4px 8px; }
+    .eu-ph__count { left: 8px; right: 8px; bottom: 8px; padding: 6px 8px; font-size: 11px; } .eu-ph__count b { font-size: 18px; }
+  }
+
+  /* privacy: two lanes into the child's PC */
+  .eu-flow { display: grid; gap: var(--s-7); align-content: center; padding: var(--s-7); border-radius: var(--r-lg); background: var(--surface); }
+  .eu-lane { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--s-4); }
+  .eu-node { display: flex; align-items: center; gap: var(--s-4); padding: 16px 20px; border-radius: 16px; background: var(--bg); border: 1px solid var(--line); font: 600 17px/1.25 var(--font-text); }
+  .eu-ico { width: 40px; height: 40px; flex: none; padding: 8px; border-radius: 12px; background: #2bff88; fill: none; stroke: #121633; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .eu-node small { display: block; font: 500 14px/1.3 var(--font-text); color: var(--muted); margin-top: 4px; }
+  .eu-node--pc { box-shadow: inset 0 0 0 2px #2bff88; }
+  .eu-arrow { display: grid; justify-items: center; gap: 6px; font: 500 13px/1.2 var(--font-mono); color: var(--muted); min-width: 120px; }
+  .eu-arrow svg { width: 120px; height: 12px; }
+  .eu-arrow svg path { stroke: #2bff88; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .eu-arrow .eu-tag { position: static; font-size: 12px; }
+  .eu-lane--cam .eu-node:first-child { grid-column: 1; } .eu-lane--cam .eu-arrow { grid-column: 2 / 5; } .eu-lane--cam .eu-arrow svg { width: 100%; }
+  .eu-lane--cam .eu-node--pc { grid-column: 5; }
+  @media (max-width: 1023px) {
+    .eu-flow { padding: var(--s-5); gap: var(--s-5); }
+    .eu-lane, .eu-lane--cam { grid-template-columns: 1fr; gap: 6px; }
+    .eu-lane > *, .eu-lane--cam > * { grid-column: 1 !important; }
+    .eu-arrow { grid-auto-flow: column; justify-content: start; align-items: center; min-width: 0; }
+    .eu-arrow { gap: var(--s-2); padding-left: 10px; }
+    .eu-arrow svg, .eu-lane--cam .eu-arrow svg { order: -1; width: 24px; height: 12px; transform: rotate(90deg); margin-inline: -6px; }
+    .eu-node { padding: 8px 12px; font-size: 15px; gap: var(--s-3); } .eu-node small { font-size: 13px; margin-top: 2px; }
+    .eu-ico { width: 32px; height: 32px; padding: 6px; border-radius: 10px; }
+    #privacy .eu-flow.fill { flex: 0 0 auto; }
+  }
+
+  /* get the link: the big line, the form and the email it sends */
+  .eu-get h2 { font-size: clamp(40px, 4.6vw, 64px); line-height: 1.02; letter-spacing: -0.045em; }
+  .eu-get .form { display: grid; gap: var(--s-3); }
+  .eu-get .form input[type="email"] { width: 100%; }
+  .eu-get .form .field { margin: 0; }
+  .eu-get .form p { margin: 0; }
+  .eu-get .eu-req { margin: var(--s-5) 0 0; max-width: 46ch; }
+  .eu-banner { margin: var(--s-4) 0 0; padding: 12px 16px; border-radius: 14px; background: var(--surface); }
+  .eu-banner--ok { box-shadow: inset 0 0 0 2px #2bff88; } .eu-banner--err { box-shadow: inset 0 0 0 2px #ff7ba8; }
+  @media (max-width: 639px) { #get .wrap > .grid { display: contents; } #get .eu-mail { margin-top: 0; } }
+  .eu-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+  .eu-mail { align-self: start; border-radius: var(--r-lg); background: radial-gradient(120% 140% at 80% 0%, #2a62c9 0%, #1b3a8a 40%, #121a4a 100%); padding: var(--s-7); }
+  .eu-mail__card { background: #f4f5fb; color: #1f2547; border-radius: 18px; overflow: hidden; }
+  .eu-mail__head { display: grid; grid-template-columns: 40px 1fr auto; gap: var(--s-3); align-items: center; padding: var(--s-5); border-bottom: 1px solid #e0e3ef; font: 500 14px/1.35 var(--font-text); }
+  .eu-mail__head img { width: 40px; height: 40px; border-radius: 12px; }
+  .eu-mail__head b { display: block; font: 600 15px/1.3 var(--font-text); }
+  .eu-mail__head span { color: #5b617b; }
+  .eu-mail__body { padding: var(--s-5); display: grid; gap: var(--s-4); font: 500 15px/1.45 var(--font-text); }
+  .eu-mail__body p { margin: 0; }
+  .eu-mail__link { padding: 12px 14px; border-radius: 12px; background: #fff; border: 1px dashed #3c6edc; font: 500 13px/1.45 var(--font-mono); color: #2b4fae; }
+  .eu-mail__link span { word-break: break-all; }
+  .eu-mail__btn { justify-self: start; padding: 10px 18px; border-radius: 99px; background: #121633; color: #fff; font: 600 14px/1.2 var(--font-text); }
+  .eu-mail__chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  @media (max-width: 639px) { .eu-mail { padding: var(--s-4); } .eu-mail__head { padding: var(--s-4); } .eu-mail__body { padding: var(--s-4); } }
+
+  /* questions: two columns on a desktop */
+  .faq { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--gutter); }
+  .faq > .faq__item:nth-child(2) { padding-top: 0; }
+  @media (max-width: 1023px) { .faq { grid-template-columns: 1fr; } .faq > .faq__item:nth-child(2) { padding-top: var(--s-5); } }
+
+  /* the closing name: 15 letters across the .wrap */
+  .close__word { font-size: min(186px, calc(min(100vw - 2 * var(--gut), 1280px) / 6.95)); line-height: 1.15; }
+  @media (max-width: 639px) { .close__word { font-size: calc((100vw - 2 * var(--gut)) / 6.95); } }
+
+  .eu-chk { display: flex; align-items: center; gap: 10px; margin-top: var(--s-4); font: 500 14px/1.3 var(--font-text); }
+  .eu-chk i { width: 18px; height: 18px; flex: none; border-radius: 5px; background: #2bff88; position: relative; }
+  .eu-chk i::after { content: ""; position: absolute; left: 6px; top: 2px; width: 4px; height: 9px; border: solid #121633; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .eu-mail__note { color: #5b617b; font-size: 14px; }
+
+  /* a desktop: every section's content runs down to the screen's foot, so no screen ends on an empty band.
+     Splits: the picture stretches to the foot and the words' last block sits on it; card rows: the panels grow. */
+  @media (min-width: 1024px) {
+    #minutes .wrap > .grid, #phone .wrap > .grid, #get .wrap > .grid { flex: 1 1 0; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+    #minutes .grid > .span-5, #phone .grid > .span-5, #get .grid > .span-5 { display: flex; flex-direction: column; }
+    #get .eu-req { margin-top: auto; padding-top: var(--s-6); }
+    /* the figures and the steps as one list down the rest of the column, a rule over each row */
+    #minutes .eu-stats, #phone .eu-steps { flex: 1 1 auto; margin-top: var(--s-6); display: grid; grid-auto-rows: minmax(0, 1fr); row-gap: 0; }
+    #minutes .eu-stats > div:nth-child(n) { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: var(--gutter);
+      align-items: baseline; align-content: center; border-top: 1px solid var(--line); }
+    #minutes .eu-stats > div:last-child { border-bottom: 1px solid var(--line); }
+    #minutes .eu-stats .t-stat { grid-column: 1 / span 2; }
+    #minutes .eu-stats .t-small { grid-column: 3 / span 3; font-size: 18px; color: var(--ink); }
+    #phone .eu-steps li { grid-template-columns: 48px 1fr; gap: var(--s-4); font-size: 20px; border-top: 1px solid var(--line); }
+    #phone .eu-steps li:last-child { border-bottom: 1px solid var(--line); }
+    #phone .eu-steps li::before { width: 48px; height: 48px; border-radius: 14px; font-size: 18px; }
+    .eu-get .form .field, .eu-get .form .btn-row { width: 100%; }
+    .eu-get .form input[type="email"] { width: 100%; max-width: none; height: 56px; font-size: 18px; }
+    .eu-win, .eu-phone-row, .eu-mail { align-self: stretch; }
+    .eu-win { display: flex; flex-direction: column; }
+    .eu-win__body { flex: 1 1 auto; }
+    .eu-win__main { display: flex; flex-direction: column; }
+    .eu-win__row { flex: 1 1 auto; padding-block: 10px; }
+    .eu-mail { display: grid; align-content: center; }
+    .eu-mail__body { gap: var(--s-5); font-size: 16px; }
+    #faq .faq__item > h3 { font-size: 22px; }
+    #faq .faq__item p { font-size: 18px; line-height: 1.6; }
+  }
+  @media (min-width: 1280px) {
+    #how .wrap > .grid, #rules .wrap > .grid, #faq .wrap > .faq { flex: 1 1 0; min-height: 0; }
+    #how .wrap > .grid, #rules .wrap > .grid { grid-template-rows: minmax(0, 1fr); }
+    #faq .wrap > .faq { grid-auto-rows: minmax(0, 1fr); }
+    #faq .faq > .faq__item { align-content: start; }
+    /* rules two by two: in each card the words on the left, its picture on the right, the card's full height */
+    #rules .wrap > .grid { grid-template-rows: repeat(2, minmax(0, 1fr)); }
+    #rules .grid > .card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto 1fr; column-gap: var(--gutter); align-content: stretch; }
+    #rules .card > h3 { grid-column: 1; grid-row: 1; }
+    #rules .card > p { grid-column: 1; grid-row: 2; align-self: start; min-height: 0; }
+    #rules .card > .panel { --p-h: 0px; grid-column: 2; grid-row: 1 / span 2; margin: 0; border-radius: var(--r-lg); }
+    #rules .eu-mini, #rules .eu-toast { left: 50%; right: auto; width: calc(100% - 48px); transform: translate(-50%, -50%); }
+    #how .eu-setup, #how .eu-signin, #rules .eu-mini, #rules .eu-toast { top: 50%; bottom: auto; transform: translateY(-50%); }
+    #rules .eu-mini, #rules .eu-toast { transform: translate(-50%, -50%); }
+    .eu-node { padding: 22px 26px; font-size: 20px; gap: var(--s-5); }
+    .eu-node small { font-size: 15px; }
+    .eu-ico { width: 52px; height: 52px; padding: 11px; border-radius: 14px; }
+    .eu-flow { gap: var(--s-8); }
+  }
+
+  /* a tablet: the footer's three columns on one row under the line, the questions and the email tighter */
+  @media (min-width: 640px) and (max-width: 1023px) {
+    .closing__links .grid > .span-6 { grid-column: 1 / -1; }
+    .closing__links .footer__col { grid-column: auto / span 4; }
+    #faq .faq > .faq__item { padding-block: var(--s-4); }
+    #faq .faq p { font-size: 16px; }
+    .eu-mail { padding: var(--s-5); }
+  }
+  /* a phone: the hero's pill runs from line to line */
+  @media (max-width: 639px) { .hero--centred .hero__c > .pill { justify-self: stretch; justify-content: center; } }
+  /* a stacked split keeps the section's gap between its words and its picture */
+  @media (max-width: 1023px) { .eu-win, .eu-phone-row, .eu-mail { margin-top: var(--s-7); } }
+  @media (max-width: 639px) {
+    .eu-win, .eu-phone-row, .eu-mail { margin-top: var(--s-6); }
+    #how .panel { --p-h: 236px; } #rules .panel { --p-h: 176px; }
+    #privacy .eu-flow { padding: var(--s-4); gap: var(--s-4); }
+  }
+  /* screens: stacked cards take two screens on a tablet */
+  @media (min-width: 640px) and (max-width: 1279px) { #how, #rules { --h: 2; } }
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Чи можна змінити, скільки часу дає вправа?","acceptedAnswer":{"@type":"Answer","text":"Так: меню «Пуск» → «Налаштування Exercise Unlock», сторінка «Час». Там секунди за кожну вправу, мінімум для входу й максимум за раз, для всіх дітей або для кожної окремо."}},{"@type":"Question","name":"Чи передаються відео або інші дані в хмару?","acceptedAnswer":{"@type":"Answer","text":"Ні. Відео з вебкамери обробляється лише на комп'ютері. З телефона через сервер ідуть тільки 17 точок тіла без картинки, і сервер нічого не записує."}},{"@type":"Question","name":"Чи обов'язкова вебкамера?","acceptedAnswer":{"@type":"Answer","text":"Ні, підійде смартфон із браузером: на екрані блокування є QR-код. Для телефона потрібен інтернет, без нього працює лише вебкамера."}},{"@type":"Question","name":"Чи може дитина обійти програму?","acceptedAnswer":{"@type":"Answer","text":"Служба працює від імені системи, і звичайний обліковий запис не може її зупинити. Головне, щоб у дитини не було прав адміністратора."}},{"@type":"Question","name":"Чи можуть комп'ютером користуватися кілька дітей?","acceptedAnswer":{"@type":"Answer","text":"Так, з версії 1.5. Додайте їхні облікові записи на сторінці «Користувачі» в налаштуваннях: у кожного свої хвилини за повтор, дозволені години й зароблений час."}},{"@type":"Question","name":"Як видалити програму?","acceptedAnswer":{"@type":"Answer","text":"«Параметри» → «Програми» → Exercise Unlock → «Видалити». Вхід через PIN-код та інші налаштування Windows повертаються, як були."}}]}</script>
+</head>
+<body>
+<!-- type: software (a Windows app; parents install it, children use it)
+     deal: hero centred, nav nav-centre (nav-cards dealt first, no photographs for its cards), close close-word,
+     footer footer-statement, rhythm dark-band (one ground-inverse section: the phone), buttons pill,
+     mark arc (the client's own logo in its place), palette the client's own (navy #121633, green #2bff88),
+     ground sky (the client's blue, not dealt), type manrope (familjen dealt first, no Cyrillic)
+     moments: counter-rolls in #minutes (the minutes per exercise), liquid-type in #get (the line over the form) -->
+<header class="nav nav--centre">
+  <a class="skip-link" href="#top">Перейти до змісту</a>
+  <div class="wrap nav__bar">
+    <a class="nav__logo" href="#top"><img src="assets/img/logo.svg" alt="" width="28" height="28">Exercise Unlock</a>
+    <nav class="nav__links" aria-label="Main">
+      <div class="nav__item"><a class="nav__link" href="#how">Кроки</a></div>
+      <div class="nav__item"><a class="nav__link" href="#video">Відео</a></div>
+      <div class="nav__item"><a class="nav__link" href="#phone">Телефон</a></div>
+      <div class="nav__item"><a class="nav__link" href="#faq">Питання</a></div>
+    </nav>
+    <div class="nav__actions">
+      <a class="nav__link" href="?lang=en" hreflang="en" lang="en" title="English">EN</a>
+      <a class="btn btn--primary" href="#get">Отримати посилання</a>
+    </div>
+    <button class="nav__toggle" type="button" aria-expanded="false" aria-label="Меню">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 5h14M2 13h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero hero--centred" id="hero" data-enter aria-labelledby="hero-h">
+    <div class="wrap"><div class="hero-text">
+      <div class="hero__c">
+        <a class="pill" href="#minutes"><span>Версія 1.5</span><span class="muted">кілька дітей на одному комп'ютері</span></a>
+        <h1 id="hero-h">Діти відкривають Windows вправами</h1>
+        <p class="hero__lead">Вправи перед вебкамерою або телефоном дають хвилини за комп'ютером: один присід дає 3 хвилини. Коли час вийшов, Windows блокується сама.</p>
+        <div class="btn-row"><a class="btn btn--primary" href="#get">Отримати посилання<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a><a class="btn btn--secondary" href="#video">Дивитися відео</a></div>
+      </div>
+      <div class="hero__window" role="img" aria-label="Екран блокування Windows з плиткою Exercise Unlock: скелет присідає, лічильник присідань зростає до 7, зароблено 27 хвилин; поруч намальований хлопчик і мітки зароблених хвилин" data-m-loop>
+        <div class="ly-piece eu-lock" aria-hidden="true">
+          <div class="eu-lock__kid"><img src="assets/img/kid-hoodie.webp" alt="" width="1024" height="1536" loading="lazy">
+            <span class="eu-tag eu-tag--green" style="left: -18%; top: 16%">+3 хв</span>
+            <span class="eu-tag eu-tag--pink" style="right: -22%; top: 34%">+6 хв</span>
+            <span class="eu-tag eu-tag--cyan" style="left: -12%; top: 56%">+5 хв</span>
+          </div>
+          <div class="eu-tile">
+            <div class="eu-tile__fig">
+              <svg class="sk" viewBox="0 0 160 220" aria-hidden="true" focusable="false"><line x1="80" y1="205" x2="104" y2="205"/><g class="sk-shin"><line x1="80" y1="205" x2="80" y2="150"/><g class="sk-thigh"><line x1="80" y1="150" x2="80" y2="95"/><g class="sk-torso"><line x1="80" y1="95" x2="80" y2="40"/><circle class="sk-head" cx="80" cy="22" r="13"/><g class="sk-arm"><line x1="80" y1="40" x2="80" y2="90"/><circle cx="80" cy="90" r="5"/></g><circle cx="80" cy="40" r="5"/></g><circle cx="80" cy="95" r="5"/></g><circle cx="80" cy="150" r="5"/></g><circle cx="80" cy="205" r="5"/><circle cx="104" cy="205" r="4"/></svg>
+              <span class="eu-chip">+3 хв</span>
+            </div>
+            <div>
+              <div class="eu-tile__head"><img src="assets/img/logo.svg" alt="" width="24" height="24" loading="lazy">Exercise Unlock<span class="eu-tile__time">16:42 · Четвер</span></div>
+              <dl class="eu-rows">
+                <div><dt>Присідання</dt><dd><span class="eu-num"><span class="eu-was">6</span><span class="eu-now">7</span></span></dd></div>
+                <div><dt>Віджимання</dt><dd>2</dd></div>
+                <div><dt>Прес</dt><dd>0</dd></div>
+              </dl>
+              <div class="eu-bar"><i></i></div>
+              <div class="eu-earned"><span>Зароблено <span class="eu-num"><span class="eu-was">24:00</span><span class="eu-now">27:00</span></span> / 10:00</span><b>можна входити</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </section>
+
+  <section class="section" id="how" style="--hm: 2" aria-labelledby="how-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="how-h">Як працює Exercise Unlock</h2>
+        <p>Від інсталятора до першого входу за вправи: три кроки, кожен на кілька хвилин.</p>
+      </div>
+      <div class="grid">
+        <article class="card card--row card--open span-4">
+          <span class="step-num">1</span>
+          <h3>Встановіть на комп'ютер</h3>
+          <p>Інсталятор запитає обліковий запис дитини та його пароль Windows. Інших дітей додасте в налаштуваннях.</p>
+          <div class="panel" role="img" aria-label="Вікно інсталятора: обрано обліковий запис дитини Oleh і введено його пароль Windows">
+            <div class="ui eu-setup" aria-hidden="true">
+              <p>Обліковий запис дитини</p>
+              <ul><li>Mama <span>адміністратор, це ви</span></li><li class="is-on">Oleh</li><li>Marta</li></ul>
+              <span class="eu-lbl">Пароль Windows</span>
+              <div class="eu-pwd"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="eu-chk"><i></i>Прибрати права адміністратора</div>
+            </div>
+          </div>
+        </article>
+        <article class="card card--row card--open span-4">
+          <span class="step-num">2</span>
+          <h3>Відкалібруйте під дитину</h3>
+          <p>По 5 присідань, віджимань і підйомів корпусу: межі підлаштовуються під зріст і гнучкість дитини.</p>
+          <div class="panel">
+            <div class="eu-kid">
+              <div class="eu-kid__box">
+                <img src="assets/img/kid-polo.webp" alt="Намальований хлопчик стоїть боком, поверх нього скелет із 17 точок, який бачить нейромережа" width="1024" height="1536" loading="lazy">
+                <svg viewBox="0 0 1000 1500" aria-hidden="true" focusable="false"><line x1="669" y1="420" x2="679" y2="639"/><line x1="679" y1="639" x2="627" y2="823"/><line x1="365" y1="387" x2="329" y2="606"/><line x1="329" y1="606" x2="315" y2="775"/><line x1="669" y1="420" x2="365" y2="387"/><line x1="669" y1="420" x2="572" y2="800"/><line x1="365" y1="387" x2="412" y2="787"/><line x1="572" y1="800" x2="412" y2="787"/><line x1="572" y1="800" x2="568" y2="1092"/><line x1="568" y1="1092" x2="597" y2="1359"/><line x1="412" y1="787" x2="398" y2="1085"/><line x1="398" y1="1085" x2="380" y2="1359"/><line x1="474" y1="251" x2="497" y2="191"/><line x1="474" y1="251" x2="427" y2="224"/><line x1="497" y1="191" x2="572" y2="173"/><line x1="427" y1="224" x2="412" y2="249"/><circle cx="474" cy="251" r="11"/><circle cx="497" cy="191" r="11"/><circle cx="427" cy="224" r="11"/><circle cx="572" cy="173" r="11"/><circle cx="412" cy="249" r="11"/><circle cx="669" cy="420" r="15"/><circle cx="365" cy="387" r="15"/><circle cx="679" cy="639" r="15"/><circle cx="329" cy="606" r="15"/><circle cx="627" cy="823" r="15"/><circle cx="315" cy="775" r="15"/><circle cx="572" cy="800" r="15"/><circle cx="412" cy="787" r="15"/><circle cx="568" cy="1092" r="15"/><circle cx="398" cy="1085" r="15"/><circle cx="597" cy="1359" r="15"/><circle cx="380" cy="1359" r="15"/></svg>
+              </div>
+            </div>
+            <span class="eu-tag eu-tag--yellow">коліно 177°</span>
+          </div>
+        </article>
+        <article class="card card--row card--open span-4">
+          <span class="step-num">3</span>
+          <h3>Тренуйтеся біля плитки</h3>
+          <p>Кожен зарахований повтор звучить сигналом, а з 10 хвилинами вже можна входити.</p>
+          <div class="panel" role="img" aria-label="Плитка на екрані блокування: зароблено 10 хвилин із 10, кнопка «Увійти» вже активна">
+            <div class="ui eu-signin" aria-hidden="true">
+              <div class="eu-signin__who"><span class="eu-signin__ava">O</span><b>Oleh</b></div>
+              <div class="eu-signin__row"><span>Зароблено</span><b>10:00 / 10:00</b></div>
+              <div class="eu-bar"><i style="transform: none"></i></div>
+              <span class="eu-signin__btn">Увійти</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="video" aria-labelledby="video-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="video-h">Exercise Unlock у дії</h2>
+        <p>Дитина присідає перед ноутбуком, плитка рахує повтори, і Windows відкривається.</p>
+      </div>
+      <!-- the client's video, https://youtu.be/XXeh8Tjf5eI: YouTube (youtube-nocookie) loads only on a click -->
+      <div class="eu-video fill" data-video="XXeh8Tjf5eI" data-video-title="Відео про Exercise Unlock">
+        <img src="assets/img/kid-shoes.webp" alt="" width="1312" height="1199" loading="lazy">
+        <div class="eu-video__go">
+          <p>YouTube завантажиться після натискання</p>
+          <button class="btn btn--primary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5v17l14-8.5z"/></svg>Дивитися відео</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="minutes" aria-labelledby="minutes-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5">
+          <div class="section-head"><h2 id="minutes-h">Хвилини за кожен повтор</h2>
+          <p>Це типові значення. У налаштуваннях можна задати свої секунди за кожну вправу, мінімум і максимум, для всіх дітей або для кожної окремо.</p></div>
+          <div class="eu-stats" data-moment="counter-rolls">
+            <div><p class="t-stat">3 хв</p><p class="t-small muted">за присідання</p></div>
+            <div><p class="t-stat">5 хв</p><p class="t-small muted">за підйом корпуса</p></div>
+            <div><p class="t-stat">6 хв</p><p class="t-small muted">за віджимання</p></div>
+            <div><p class="t-stat">60 хв</p><p class="t-small muted">найбільше за один вхід</p></div>
+          </div>
+        </div>
+        <div class="ui eu-win span-7 start-6" role="img" aria-label="Вікно налаштувань, сторінка «Час» для дитини Oleh: 120 секунд за присід, решта як для всіх: 360 за віджимання, 300 за підйом корпуса, мінімум 600, максимум 3600, пільговий період 300, коротке розблокування 60">
+          <div class="eu-win__bar" aria-hidden="true"><img src="assets/img/logo.svg" alt="" width="24" height="24" loading="lazy">Exercise Unlock</div>
+          <div class="eu-win__body" aria-hidden="true">
+            <div class="eu-win__side"><span class="is-on">Час</span><span>Розклад</span><span>Користувачі</span><span>Присідання</span></div>
+            <div class="eu-win__main">
+              <div class="eu-win__scope">Для кого:<span>Oleh</span></div>
+              <div class="eu-win__row">Секунд за один присід<b class="is-edit">120</b></div>
+              <div class="eu-win__row">Секунд за одне віджимання<b class="is-all">360</b></div>
+              <div class="eu-win__row">Секунд за один підйом корпуса<b class="is-all">300</b></div>
+              <div class="eu-win__row">Мінімум для розблокування, секунд<b class="is-all">600</b></div>
+              <div class="eu-win__row">Максимум заробітку, секунд<b class="is-all">3600</b></div>
+              <div class="eu-win__row">Пільговий період після сеансу, секунд<b class="is-all">300</b></div>
+              <div class="eu-win__row">Тривалість цього розблокування, секунд<b class="is-all">60</b></div>
+              <div class="eu-win__foot"><span>Зберегти</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="rules" style="--hm: 2" aria-labelledby="rules-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="rules-h">Розклад, блокування й захист</h2>
+        <p>Правила працюють без вашої участі, навіть коли вас немає вдома.</p>
+      </div>
+      <div class="grid">
+        <article class="card card--row card--open span-6">
+          <h3>Тримає розклад</h3>
+          <p>Повтори зараховуються лише в дозволені години, будні й вихідні окремо, у кожної дитини свої.</p>
+          <div class="panel" role="img" aria-label="Розклад: у будні 07:00–20:00, у вихідні 08:00–21:00"><div class="ui eu-mini" aria-hidden="true"><div>Пн–Пт<b>07:00–20:00</b></div><div>Сб–Нд<b>08:00–21:00</b></div></div></div>
+        </article>
+        <article class="card card--row card--open span-6">
+          <h3>Блокує вчасно</h3>
+          <p>За 5 хвилин до кінця з'являється попередження, потім Windows блокується.</p>
+          <div class="panel" role="img" aria-label="Комп'ютер заблокується через 5 хвилин"><div class="ui eu-toast" aria-hidden="true"><i>!</i><p><small>Exercise Unlock</small>Комп'ютер заблокується через 5 хвилин</p></div></div>
+        </article>
+        <article class="card card--row card--open span-6">
+          <h3>Не дає обійти</h3>
+          <p>Службу не зупинити з облікового запису дитини, а вхід через PIN можна вимкнути.</p>
+          <div class="panel" role="img" aria-label="Вхід через PIN вимкнено, зупинити службу немає прав, віртуальна камера не рахується"><div class="ui eu-mini" aria-hidden="true"><div>Вхід через PIN<span class="no">вимкнено</span></div><div>Зупинити службу<span class="no">немає прав</span></div><div>Віртуальна камера<span class="no">не рахується</span></div></div></div>
+        </article>
+        <article class="card card--row card--open span-6">
+          <h3>Озвучує повтори</h3>
+          <p>Сигнал «бачу тебе», звук на кожен повтор і звук помилки поза розкладом.</p>
+          <div class="panel" role="img" aria-label="Три звуки: бачу тебе, повтор зараховано, поза розкладом"><div class="ui eu-mini" aria-hidden="true"><div>Бачу тебе<span class="eu-wave"><i style="height:4px"></i><i style="height:7px"></i><i style="height:10px"></i><i style="height:14px"></i><i style="height:18px"></i></span></div><div>Повтор зараховано<span class="eu-wave"><i style="height:6px"></i><i style="height:16px"></i><i style="height:6px"></i></span></div><div>Поза розкладом<span class="eu-wave"><i style="height:12px"></i><i style="height:12px"></i><i style="height:12px"></i><i style="height:12px"></i><i style="height:12px"></i></span></div></div></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section ground-inverse" id="phone" aria-labelledby="phone-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5">
+          <div class="section-head"><h2 id="phone-h">Телефон замість вебкамери</h2>
+          <p>Немає камери біля комп'ютера? На екрані блокування є QR-код. Потрібен інтернет на комп'ютері й телефоні.</p></div>
+          <ol class="eu-steps"><li>Відскануйте QR-код на плитці</li><li>Поставте телефон на підлогу за 2–3 м</li><li>Присідайте: повтори рахує комп'ютер</li></ol>
+        </div>
+        <div class="ui eu-phone-row span-7 start-6" role="img" aria-label="Плитка з QR-кодом на екрані блокування і телефон, який бачить скелет дитини й рахує 6 присідань">
+          <div class="eu-qr" aria-hidden="true"><svg viewBox="0 0 29 29" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><path fill="#121633" d="M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM8 0h1v1h-1zM11 0h1v1h-1zM12 0h1v1h-1zM15 0h1v1h-1zM16 0h1v1h-1zM17 0h1v1h-1zM18 0h1v1h-1zM19 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM24 0h1v1h-1zM25 0h1v1h-1zM26 0h1v1h-1zM27 0h1v1h-1zM28 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM11 1h1v1h-1zM12 1h1v1h-1zM13 1h1v1h-1zM14 1h1v1h-1zM16 1h1v1h-1zM18 1h1v1h-1zM20 1h1v1h-1zM22 1h1v1h-1zM28 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM8 2h1v1h-1zM9 2h1v1h-1zM14 2h1v1h-1zM15 2h1v1h-1zM16 2h1v1h-1zM18 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM28 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM9 3h1v1h-1zM10 3h1v1h-1zM11 3h1v1h-1zM14 3h1v1h-1zM17 3h1v1h-1zM18 3h1v1h-1zM20 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM25 3h1v1h-1zM26 3h1v1h-1zM28 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM9 4h1v1h-1zM10 4h1v1h-1zM11 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM18 4h1v1h-1zM20 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM25 4h1v1h-1zM26 4h1v1h-1zM28 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM15 5h1v1h-1zM17 5h1v1h-1zM18 5h1v1h-1zM19 5h1v1h-1zM20 5h1v1h-1zM22 5h1v1h-1zM28 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM20 6h1v1h-1zM22 6h1v1h-1zM23 6h1v1h-1zM24 6h1v1h-1zM25 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM9 7h1v1h-1zM10 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM18 7h1v1h-1zM19 7h1v1h-1zM0 8h1v1h-1zM2 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM9 8h1v1h-1zM10 8h1v1h-1zM13 8h1v1h-1zM14 8h1v1h-1zM17 8h1v1h-1zM23 8h1v1h-1zM26 8h1v1h-1zM28 8h1v1h-1zM1 9h1v1h-1zM2 9h1v1h-1zM3 9h1v1h-1zM5 9h1v1h-1zM8 9h1v1h-1zM10 9h1v1h-1zM13 9h1v1h-1zM14 9h1v1h-1zM17 9h1v1h-1zM20 9h1v1h-1zM21 9h1v1h-1zM22 9h1v1h-1zM25 9h1v1h-1zM1 10h1v1h-1zM2 10h1v1h-1zM4 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM8 10h1v1h-1zM10 10h1v1h-1zM12 10h1v1h-1zM15 10h1v1h-1zM17 10h1v1h-1zM18 10h1v1h-1zM19 10h1v1h-1zM20 10h1v1h-1zM21 10h1v1h-1zM24 10h1v1h-1zM25 10h1v1h-1zM28 10h1v1h-1zM0 11h1v1h-1zM1 11h1v1h-1zM2 11h1v1h-1zM3 11h1v1h-1zM4 11h1v1h-1zM5 11h1v1h-1zM8 11h1v1h-1zM11 11h1v1h-1zM12 11h1v1h-1zM13 11h1v1h-1zM19 11h1v1h-1zM20 11h1v1h-1zM23 11h1v1h-1zM27 11h1v1h-1zM6 12h1v1h-1zM7 12h1v1h-1zM11 12h1v1h-1zM13 12h1v1h-1zM15 12h1v1h-1zM16 12h1v1h-1zM19 12h1v1h-1zM20 12h1v1h-1zM22 12h1v1h-1zM28 12h1v1h-1zM2 13h1v1h-1zM3 13h1v1h-1zM4 13h1v1h-1zM8 13h1v1h-1zM10 13h1v1h-1zM11 13h1v1h-1zM16 13h1v1h-1zM18 13h1v1h-1zM19 13h1v1h-1zM23 13h1v1h-1zM25 13h1v1h-1zM26 13h1v1h-1zM28 13h1v1h-1zM2 14h1v1h-1zM4 14h1v1h-1zM6 14h1v1h-1zM7 14h1v1h-1zM11 14h1v1h-1zM13 14h1v1h-1zM14 14h1v1h-1zM16 14h1v1h-1zM20 14h1v1h-1zM21 14h1v1h-1zM22 14h1v1h-1zM24 14h1v1h-1zM26 14h1v1h-1zM28 14h1v1h-1zM2 15h1v1h-1zM3 15h1v1h-1zM9 15h1v1h-1zM14 15h1v1h-1zM15 15h1v1h-1zM16 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM23 15h1v1h-1zM24 15h1v1h-1zM25 15h1v1h-1zM26 15h1v1h-1zM28 15h1v1h-1zM0 16h1v1h-1zM4 16h1v1h-1zM6 16h1v1h-1zM9 16h1v1h-1zM11 16h1v1h-1zM12 16h1v1h-1zM13 16h1v1h-1zM14 16h1v1h-1zM17 16h1v1h-1zM20 16h1v1h-1zM21 16h1v1h-1zM22 16h1v1h-1zM26 16h1v1h-1zM27 16h1v1h-1zM1 17h1v1h-1zM3 17h1v1h-1zM7 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM12 17h1v1h-1zM13 17h1v1h-1zM14 17h1v1h-1zM18 17h1v1h-1zM19 17h1v1h-1zM21 17h1v1h-1zM23 17h1v1h-1zM28 17h1v1h-1zM0 18h1v1h-1zM1 18h1v1h-1zM2 18h1v1h-1zM6 18h1v1h-1zM8 18h1v1h-1zM9 18h1v1h-1zM11 18h1v1h-1zM12 18h1v1h-1zM15 18h1v1h-1zM18 18h1v1h-1zM21 18h1v1h-1zM22 18h1v1h-1zM23 18h1v1h-1zM25 18h1v1h-1zM27 18h1v1h-1zM2 19h1v1h-1zM4 19h1v1h-1zM5 19h1v1h-1zM7 19h1v1h-1zM8 19h1v1h-1zM9 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM17 19h1v1h-1zM21 19h1v1h-1zM24 19h1v1h-1zM26 19h1v1h-1zM27 19h1v1h-1zM0 20h1v1h-1zM1 20h1v1h-1zM2 20h1v1h-1zM3 20h1v1h-1zM6 20h1v1h-1zM7 20h1v1h-1zM8 20h1v1h-1zM11 20h1v1h-1zM13 20h1v1h-1zM15 20h1v1h-1zM16 20h1v1h-1zM17 20h1v1h-1zM20 20h1v1h-1zM21 20h1v1h-1zM22 20h1v1h-1zM23 20h1v1h-1zM24 20h1v1h-1zM26 20h1v1h-1zM27 20h1v1h-1zM28 20h1v1h-1zM8 21h1v1h-1zM9 21h1v1h-1zM10 21h1v1h-1zM16 21h1v1h-1zM17 21h1v1h-1zM18 21h1v1h-1zM19 21h1v1h-1zM20 21h1v1h-1zM24 21h1v1h-1zM25 21h1v1h-1zM27 21h1v1h-1zM28 21h1v1h-1zM0 22h1v1h-1zM1 22h1v1h-1zM2 22h1v1h-1zM3 22h1v1h-1zM4 22h1v1h-1zM5 22h1v1h-1zM6 22h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM12 22h1v1h-1zM13 22h1v1h-1zM14 22h1v1h-1zM16 22h1v1h-1zM17 22h1v1h-1zM20 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM27 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM9 23h1v1h-1zM12 23h1v1h-1zM14 23h1v1h-1zM15 23h1v1h-1zM16 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM24 23h1v1h-1zM25 23h1v1h-1zM27 23h1v1h-1zM0 24h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM6 24h1v1h-1zM9 24h1v1h-1zM10 24h1v1h-1zM12 24h1v1h-1zM13 24h1v1h-1zM14 24h1v1h-1zM16 24h1v1h-1zM17 24h1v1h-1zM18 24h1v1h-1zM20 24h1v1h-1zM21 24h1v1h-1zM22 24h1v1h-1zM23 24h1v1h-1zM24 24h1v1h-1zM26 24h1v1h-1zM28 24h1v1h-1zM0 25h1v1h-1zM2 25h1v1h-1zM3 25h1v1h-1zM4 25h1v1h-1zM6 25h1v1h-1zM10 25h1v1h-1zM11 25h1v1h-1zM13 25h1v1h-1zM14 25h1v1h-1zM17 25h1v1h-1zM18 25h1v1h-1zM23 25h1v1h-1zM24 25h1v1h-1zM27 25h1v1h-1zM0 26h1v1h-1zM2 26h1v1h-1zM3 26h1v1h-1zM4 26h1v1h-1zM6 26h1v1h-1zM8 26h1v1h-1zM10 26h1v1h-1zM12 26h1v1h-1zM14 26h1v1h-1zM15 26h1v1h-1zM16 26h1v1h-1zM18 26h1v1h-1zM20 26h1v1h-1zM22 26h1v1h-1zM23 26h1v1h-1zM25 26h1v1h-1zM27 26h1v1h-1zM28 26h1v1h-1zM0 27h1v1h-1zM6 27h1v1h-1zM9 27h1v1h-1zM10 27h1v1h-1zM12 27h1v1h-1zM14 27h1v1h-1zM16 27h1v1h-1zM17 27h1v1h-1zM18 27h1v1h-1zM19 27h1v1h-1zM20 27h1v1h-1zM21 27h1v1h-1zM22 27h1v1h-1zM28 27h1v1h-1zM0 28h1v1h-1zM1 28h1v1h-1zM2 28h1v1h-1zM3 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM9 28h1v1h-1zM10 28h1v1h-1zM11 28h1v1h-1zM12 28h1v1h-1zM13 28h1v1h-1zM14 28h1v1h-1zM16 28h1v1h-1zM18 28h1v1h-1zM20 28h1v1h-1zM22 28h1v1h-1zM23 28h1v1h-1zM25 28h1v1h-1zM27 28h1v1h-1zM28 28h1v1h-1z"/></svg></div>
+          <div class="eu-ph" aria-hidden="true">
+            <span class="eu-ph__banner">Бачу тебе, присідай!</span>
+            <svg class="sk" viewBox="0 0 160 220" aria-hidden="true" focusable="false"><line x1="80" y1="205" x2="104" y2="205"/><g class="sk-shin" transform="rotate(28 80 205)"><line x1="80" y1="205" x2="80" y2="150"/><g class="sk-thigh" transform="rotate(-88 80 150)"><line x1="80" y1="150" x2="80" y2="95"/><g class="sk-torso" transform="rotate(92 80 95)"><line x1="80" y1="95" x2="80" y2="40"/><circle class="sk-head" cx="80" cy="22" r="13"/><g class="sk-arm" transform="rotate(-100 80 40)"><line x1="80" y1="40" x2="80" y2="90"/><circle cx="80" cy="90" r="5"/></g><circle cx="80" cy="40" r="5"/></g><circle cx="80" cy="95" r="5"/></g><circle cx="80" cy="150" r="5"/></g><circle cx="80" cy="205" r="5"/><circle cx="104" cy="205" r="4"/></svg>
+            <div class="eu-ph__count"><b>6</b>Присідання</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="privacy" aria-labelledby="privacy-h">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="privacy-h">Відео з камери нікуди не надсилається</h2>
+        <p>Поза визначається прямо на комп'ютері або в браузері телефона, а наш сервер нічого не записує.</p>
+      </div>
+      <div class="ui eu-flow fill" role="img" aria-label="Схема: відео з вебкамери обробляється на комп'ютері; телефон передає через сервер лише 17 точок тіла">
+        <div class="eu-lane eu-lane--cam" aria-hidden="true">
+          <div class="eu-node"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="M16 10.5 21 8v8l-5-2.5"/></svg><div>Вебкамера<small>поза на комп'ютері</small></div></div>
+          <div class="eu-arrow"><span>кадри</span><svg viewBox="0 0 120 12" preserveAspectRatio="none"><path d="M2 6h114M110 1l6 5-6 5"/></svg></div>
+          <div class="eu-node eu-node--pc"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></svg><div>Комп'ютер дитини<small>рахує повтори</small></div></div>
+        </div>
+        <div class="eu-lane" aria-hidden="true">
+          <div class="eu-node"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><div>Телефон<small>поза в браузері</small></div></div>
+          <div class="eu-arrow"><span class="eu-tag eu-tag--yellow">без відео</span><svg viewBox="0 0 120 12"><path d="M2 6h114M110 1l6 5-6 5"/></svg><span>17 точок</span></div>
+          <div class="eu-node"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01"/></svg><div>Сервер<small>лише пересилає</small></div></div>
+          <div class="eu-arrow"><span>17 точок</span><svg viewBox="0 0 120 12"><path d="M2 6h114M110 1l6 5-6 5"/></svg></div>
+          <div class="eu-node eu-node--pc"><svg class="eu-ico" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></svg><div>Комп'ютер дитини<small>рахує повтори</small></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq" style="--hm: 2" aria-labelledby="faq-h">
+    <div class="wrap">
+      <div class="section-head"><h2 id="faq-h">Часті запитання</h2></div>
+      <div class="faq">
+        <div class="faq__item"><h3>Чи можна змінити, скільки часу дає вправа?</h3><p>Так: меню «Пуск» → «Налаштування Exercise Unlock», сторінка «Час». Там секунди за кожну вправу, мінімум для входу й максимум за раз, для всіх дітей або для кожної окремо.</p></div>
+        <div class="faq__item"><h3>Чи передаються відео або інші дані в хмару?</h3><p>Ні. Відео з вебкамери обробляється лише на комп'ютері. З телефона через сервер ідуть тільки 17 точок тіла без картинки, і сервер нічого не записує.</p></div>
+        <div class="faq__item"><h3>Чи обов'язкова вебкамера?</h3><p>Ні, підійде смартфон із браузером: на екрані блокування є QR-код. Для телефона потрібен інтернет, без нього працює лише вебкамера.</p></div>
+        <div class="faq__item"><h3>Чи може дитина обійти програму?</h3><p>Служба працює від імені системи, і звичайний обліковий запис не може її зупинити. Головне, щоб у дитини не було прав адміністратора.</p></div>
+        <div class="faq__item"><h3>Чи можуть комп'ютером користуватися кілька дітей?</h3><p>Так, з версії 1.5. Додайте їхні облікові записи на сторінці «Користувачі» в налаштуваннях: у кожного свої хвилини за повтор, дозволені години й зароблений час.</p></div>
+        <div class="faq__item"><h3>Як видалити програму?</h3><p>«Параметри» → «Програми» → Exercise Unlock → «Видалити». Вхід через PIN-код та інші налаштування Windows повертаються, як були.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section g2m" id="get" aria-labelledby="get-h">
+    <div class="wrap">
+      <div class="grid">
+        <div class="span-5 eu-get">
+          <div class="section-head" data-moment="liquid-type"><h2 class="mo-lt__type" id="get-h">Спершу присід, потім гра</h2>
+          <p>Надішлемо посилання на інсталятор для Windows 10 і 11. Воно особисте й діє 7 днів.</p></div>
+          <!--form-state-->
+          <form class="form" action="./#get" method="post" data-endpoint="/landing/" data-sent="Посилання надіслано. Перевірте пошту, зокрема теку «Спам»." data-failed="Не вдалося надіслати. Спробуйте ще раз за хвилину." data-sending="Надсилаємо" data-fix="Виправте email." novalidate>
+            <div class="field field--full"><label for="f-email">Email</label>
+              <input id="f-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" required maxlength="254" aria-describedby="f-email-err">
+              <p class="field__error" id="f-email-err" hidden>Напишіть адресу з @, наприклад name@example.com.</p></div>
+            <input type="hidden" name="lang" value="uk">
+            <div class="eu-hp" aria-hidden="true"><label>Website <input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
+            <div class="btn-row"><button class="btn btn--primary" type="submit">Отримати посилання</button></div>
+            <p class="form__status" role="status" data-form-status></p>
+          </form>
+          <p class="t-small muted eu-req">Windows 10 або 11, 64-біт · Вебкамера або смартфон · Окремий обліковий запис для дитини. Для встановлення потрібні права адміністратора.</p>
+        </div>
+        <div class="ui eu-mail span-7 start-6" role="img" aria-label="Лист з особистим посиланням на інсталятор: воно лише для вас, діє 7 днів і дозволяє 3 завантаження">
+          <div class="eu-mail__card" aria-hidden="true">
+            <div class="eu-mail__head"><img src="assets/img/logo.svg" alt="" width="24" height="24" loading="lazy"><div><b>Exercise Unlock</b><span>Ваше посилання на Exercise Unlock</span></div><span>щойно</span></div>
+            <div class="eu-mail__body">
+              <p>Вітаємо!</p>
+              <p>Ось ваше особисте посилання на інсталятор:</p>
+              <div class="eu-mail__link"><span>exercise-unlock.sdv291.com/landing/download.php?t=Q7fK2mXw9LpR4tVb8NcY1d</span></div>
+              <span class="eu-mail__btn">Завантажити інсталятор</span>
+              <p class="eu-mail__note">Встановлення потребує прав адміністратора. Після встановлення відкриється калібрування.</p>
+              <div class="eu-mail__chips"><span class="eu-tag eu-tag--green" style="position: static">лише для вас</span><span class="eu-tag eu-tag--yellow" style="position: static">діє 7 днів</span><span class="eu-tag eu-tag--cyan" style="position: static">3 завантаження</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer closing footer--statement g2m" id="contact" aria-labelledby="close-h">
+  <div class="wrap">
+    <div class="closing__cta close--word">
+      <div class="section-head--split">
+        <div><h2 id="close-h">Отримайте посилання на інсталятор</h2><p class="t-lead">Посилання приходить на пошту й діє 7 днів.</p></div>
+        <a class="btn btn--primary" href="#get">Отримати посилання<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a>
+      </div>
+      <p class="close__word" aria-hidden="true">Exercise Unlock</p>
+    </div>
+    <div class="closing__links">
+      <div class="grid">
+        <div class="span-6 stack-4">
+          <a class="nav__logo" href="#top"><img src="assets/img/logo.svg" alt="" width="28" height="28">Exercise Unlock</a>
+          <p class="footer__lede">Застосунок для Windows: дитина відкриває комп'ютер присіданнями, віджиманнями й пресом.</p>
+        </div>
+        <div class="span-2 footer__col"><h3>Продукт</h3><ul><li><a href="#how">Кроки</a></li><li><a href="#minutes">Хвилини</a></li><li><a href="#phone">Телефон</a></li></ul></div>
+        <div class="span-2 footer__col"><h3>Допомога</h3><ul><li><a href="#faq">Питання</a></li><li><a href="#privacy">Приватність</a></li><li><a href="https://github.com/sdv291/exercise-unlock">Вихідний код</a></li></ul></div>
+        <div class="span-2 footer__col"><h3>Мова</h3><ul><li><a href="?lang=uk" hreflang="uk" lang="uk">Українська</a></li><li><a href="?lang=en" hreflang="en" lang="en">English</a></li></ul></div>
+      </div>
+      <div class="footer__legal">
+        <span>&copy; 2026 Exercise Unlock</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<nav class="actionbar" aria-label="Швидкі дії">
+  <a class="btn btn--primary" href="#get">Отримати посилання</a>
+</nav>
+
+<script type="module" src="assets/system.js"></script>
+<script type="module" src="assets/motion/motion.js"></script>
+<script type="module" src="assets/layout/layout.js"></script>
+<script>
+  // the form: when the server says why it sent nothing (a wrong address, a link sent a moment ago, too many tries),
+  // its words take the place of the general "not sent" line
+  (() => {
+    const form = document.querySelector('form[data-endpoint]');
+    const status = form && form.querySelector('[data-form-status]');
+    if (!status || !window.fetch) return;
+    let why = '';
+    const show = () => { if (why && status.textContent.trim() === form.dataset.failed) status.textContent = why; };
+    new MutationObserver(show).observe(status, { childList: true, characterData: true, subtree: true });
+    form.addEventListener('submit', () => { why = ''; }, true);
+    const send = window.fetch;
+    window.fetch = function (input) {
+      const answer = send.apply(this, arguments);
+      if (String(input) === form.dataset.endpoint) {
+        answer.then(r => { if (!r.ok) r.clone().json().then(j => { why = (j && j.message) || ''; show(); }).catch(() => {}); }, () => {});
+      }
+      return answer;
+    };
+  })();
+</script>
+<script>
+  // the video: the still until a click, then the YouTube player (youtube-nocookie) in the same frame
+  document.querySelectorAll('[data-video]').forEach(box => {
+    box.querySelector('button').addEventListener('click', () => {
+      const f = document.createElement('iframe');
+      f.src = 'https://www.youtube-nocookie.com/embed/' + box.dataset.video + '?autoplay=1&rel=0';
+      f.title = box.dataset.videoTitle;
+      f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+      f.allowFullscreen = true;
+      box.replaceChildren(f);
+      f.focus();
+    });
+  });
+</script>
+</body>
+</html>
